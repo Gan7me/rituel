@@ -1,7 +1,7 @@
 
-const APP_VERSION='1.0.0';
+const APP_VERSION='1.1.0';
 let PROGRAM={sessions:[]};
-const WEEKS = [
+let WEEKS = [
   {n:1,label:'S1 calibrage',from:'2026-09-07',to:'2026-09-13',rirNote:'RIR 3 · établir les références, tout noter'},
   {n:2,label:'S2 accumulation',from:'2026-09-14',to:'2026-09-20',rirNote:'RIR 2 · +1 série sur les ★ · +2,5 % ou +1 rep · partielles étirées'},
   {n:3,label:'S3 intensification',from:'2026-09-21',to:'2026-09-27',rirNote:'RIR 1 (0 sur la dernière série des isolations) · +2,5 à 5 % · drop sets, rest-pause'},
@@ -16,9 +16,14 @@ const fmtD = iso=>{const [y,m,d]=iso.split('-');return `${d}/${m}`;};
 const KEY='rituel.v1';
 let S = {logs:{}, bw:{}, tests:{}, weekOverride:null, session:null, gh:null, dirty:false, lastSync:0, wake:true};
 try{ const raw=localStorage.getItem(KEY); if(raw) S=Object.assign(S,JSON.parse(raw)); }catch(e){}
-function save(){ try{ localStorage.setItem(KEY, JSON.stringify(S)); }catch(e){} }
+function save(){ const j=JSON.stringify(S); try{ localStorage.setItem(KEY, j); }catch(e){} idbSet(j); }
+function idb(){ return new Promise((res,rej)=>{ const r=indexedDB.open('rituel',1); r.onupgradeneeded=()=>r.result.createObjectStore('kv'); r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error); }); }
+function idbSet(j){ try{ idb().then(d=>{ d.transaction('kv','readwrite').objectStore('kv').put(j,KEY); }).catch(()=>{}); }catch(e){} }
+function idbGet(){ return new Promise(res=>{ try{ idb().then(d=>{ const q=d.transaction('kv').objectStore('kv').get(KEY); q.onsuccess=()=>res(q.result||null); q.onerror=()=>res(null); }).catch(()=>res(null)); }catch(e){ res(null); } }); }
+try{ navigator.storage&&navigator.storage.persist&&navigator.storage.persist(); }catch(e){}
 
-function weekFor(iso){ const w=WEEKS.find(w=>iso>=w.from&&iso<=w.to); if(w) return w.n; return iso<WEEKS[0].from?1:4; }
+function weekFor(iso){ const w=WEEKS.find(w=>iso>=w.from&&iso<=w.to); if(w) return w.n; return iso<WEEKS[0].from?1:WEEKS.length; }
+function cycleOver(){ return todayISO()>WEEKS[WEEKS.length-1].to; }
 function curWeek(){ return S.weekOverride||weekFor(todayISO()); }
 function sessionForDay(){ const d=new Date().getDay(); return PROGRAM.sessions.find(s=>s.day===d)||null; }
 function curSession(){ return PROGRAM.sessions.find(s=>s.id===S.session)||sessionForDay()||PROGRAM.sessions[0]; }
@@ -183,23 +188,29 @@ function renderSeance(){
   const wk=curWeek(), W=WEEKS[wk-1], date=todayISO(), ses=curSession(), log=getLog(date,ses.id);
   const el=$('#tab-seance'); let h='';
   h+=`<div class="days">`+PROGRAM.sessions.map(s=>{ const done=Object.values(S.logs).some(l=>l.session===s.id&&l.week===wk&&l.done); return `<button data-s="${s.id}" aria-pressed="${s.id===ses.id}" class="${done?'done':''}"><b>${esc(s.name)}</b><span>${esc(s.dayName)}</span></button>`; }).join('')+`<button data-s="rest" aria-pressed="false"><b>Repos</b><span>Dimanche</span></button></div>`;
-  h+=`<div class="sesshead"><h2>${esc(ses.name)}</h2><span class="meta">${esc(ses.sub)} · ${esc(ses.duration)}${ses.place?' · '+esc(ses.place):''} · ${fmtD(date)}</span></div>`;
+  h+=`<div class="sesshead"><h2>${esc(ses.name)}</h2><span class="meta">${esc(ses.sub)} · ${esc(ses.duration)}${ses.place?' · '+esc(ses.place):''} · ${fmtD(date)}</span><span class="meta" id="elapsed"></span></div>`;
   h+=`<div class="banner info"><b>${esc(W.label)}</b> — ${esc(W.rirNote)}</div>`;
   if(ses.note) h+=`<div class="banner">${esc(ses.note)}</div>`;
   if(wk===4&&ses.id==='jambesA') h+=`<div class="banner ok">Test tractions à froid avant la séance : 2 × 8 espacées de 2 min, repos 5 min, une série max stricte filmée. Saisis le résultat dans Suivi.</div>`;
+  if(cycleOver()) h+=`<div class="banner">Cycle terminé le ${fmtD(WEEKS[WEEKS.length-1].to)}. Les prescriptions affichées sont celles de la décharge en attendant le cycle suivant.</div>`;
+  const dow=new Date().getDay(); if((dow===1||dow===4)&&!S.bw[date]) h+=`<div class="banner">Jour de pesée. À jeun, après les toilettes. Saisie dans Suivi.</div>`;
   if(log.done) h+=`<div class="banner ok">Séance validée. Tu peux encore corriger les valeurs.</div>`;
+  const prevLog=Object.values(S.logs).filter(l=>l.session===ses.id&&l.date<date&&l.notes).sort((a,b)=>a.date<b.date?1:-1)[0];
+  if(prevLog) h+=`<p class="small muted" style="margin:-4px 0 12px"><b>Notes du ${fmtD(prevLog.date)} :</b> ${esc(prevLog.notes)}</p>`;
+  const wu=(PROGRAM.warmup||{})[ses.id.replace(/[AB]$/,'')]; if(wu) h+=`<details class="more wu"><summary>Échauffement · 8-10 min</summary><p class="small">${esc(PROGRAM.warmup.common)}</p><p class="small">${esc(wu)}</p><p class="small">${esc(PROGRAM.warmup.ramp)}</p></details>`;
   if(ses.gtg){ h+=`<div class="ex gtg"><div class="exh"><span class="n">GTG</span><span class="name">Tractions sous-maximales 3 × 15</span></div><p class="mach">Après l'échauffement, après l'exercice 3, avant la fin. Loin de l'échec, prise pronation.</p><div class="gtgrow">${[0,1,2].map(i=>`<label><input type="checkbox" data-gtg="${i}" ${log.gtg[i]?'checked':''}> Bloc ${i+1}</label>`).join('')}</div></div>`; }
   ses.exercises.forEach(ex=>{
     const p=rx(ex,wk); const done=(log.sets[ex.id]||[]).filter(s=>s&&s.done).length; const complete=done>=p.sets;
     const ref=lastRef(ex.id,date);
-    h+=`<div class="ex ${complete?'complete':''}" data-ex="${ex.id}"><div class="exh"><span class="n">${ex.n}</span><span class="name">${esc(ex.name)}${ex.star?'<span class="star" title="+1 série en S2/S3">★</span>':''}</span></div>`;
+    const flags=(log.flags||{})[ex.id]||{};
+    h+=`<div class="ex ${complete?'complete':''} ${flags.skip?'skipped':''}" data-ex="${ex.id}"><div class="exh"><span class="n">${ex.n}</span><span class="name">${esc(ex.name)}${ex.star?'<span class="star" title="+1 série en S2/S3">★</span>':''}</span>${flags.alt?'<span class="tag">alternative</span>':''}${flags.skip?'<span class="tag">sauté</span>':''}</div>`;
     h+=`<p class="mach">${esc(ex.machine)}${ex.alt?' <span class="muted">· alt. '+esc(ex.alt)+'</span>':''}${ex.url?` <a href="${esc(ex.url)}" target="_blank" rel="noopener">voir ↗</a>`:''}</p>`;
     h+=`<div class="rx"><b>${p.sets} × ${esc(p.reps)}${ex.per?' '+esc(ex.per):''}</b>${p.rir!=null?`<span>RIR</span><b>${p.rir}</b>`:''}<span>tempo</span><b>${esc(ex.tempo)}</b><span>repos</span><b>${esc(p.restText)}</b>${ex.mode==='emom'?'<span>départ à départ</span>':''}</div>`;
     if(ex.chargeNote&&!/^RIR \d( → \d)*$/.test(ex.chargeNote)) h+=`<p class="small muted" style="margin:0 0 6px">${esc(ex.chargeNote)}</p>`;
     if(ref){ const best=ref.sets.reduce((m,s)=>Math.max(m,e1rm(s.w,s.r)),0); const top=ref.sets.find(s=>s.w)||ref.sets[0]; let tgt=''; if(top&&top.w&&wk>1&&wk<4){ const hi=parseInt(String(p.reps).split('-').pop()); const allHi=ref.sets.every(s=>s.r>=hi); tgt=allHi?` → <span class="tgt">cible ${Math.round(top.w*1.025*2)/2} kg</span>`:` → <span class="tgt">même charge, +1 rep</span>`; } if(wk===4&&top&&top.w) tgt=` → <span class="tgt">décharge ≈ ${Math.round(top.w*0.9*2)/2} kg</span>`; h+=`<p class="ref">Dernier (${fmtD(ref.date)}, S${ref.week}) : <b>${esc(fmtSets(ref.sets))}</b>${tgt}</p>`; }
     else h+=`<p class="ref">Aucune référence. Note la charge de la première série sérieuse.</p>`;
     // sets grid
-    h+=`<div class="sets"><span class="hd"></span><span class="hd">${ex.mode==='emom'||ex.mode==='max'||!ex.rir?'charge':'kg'}</span><span class="hd">reps</span><span class="hd">RIR</span><span class="hd"></span>`;
+    h+=`<div class="sets"><span class="hd"></span><span class="hd">${/lest/i.test(ex.name)?'lest kg':ex.mode==='emom'?'—':ex.mode==='max'?'assist kg':!ex.rir?'charge':'kg'}</span><span class="hd">reps</span><span class="hd">RIR</span><span class="hd"></span>`;
     const arr=log.sets[ex.id]||[]; const prev=ref?ref.sets:[];
     for(let i=0;i<p.sets;i++){
       const s=arr[i]||{}; const pf=prev[i]||prev[prev.length-1]||{};
@@ -212,6 +223,7 @@ function renderSeance(){
     }
     h+=`</div>`;
     if(ex.mode==='emom') h+=`<div class="row2"><button class="btn sm acc" data-emom="start">Top série</button><span class="small muted">Lance le chrono de 90 s à chaque départ. Valide la série avec ▶ quand elle est faite.</span></div>`;
+    h+=`<div class="row2 flags"><button class="link" data-flag="alt">${flags.alt?'✓ alternative utilisée':'machine absente → alternative'}</button><button class="link" data-flag="skip">${flags.skip?'✓ sauté · annuler':'sauter'}</button></div>`;
     h+=`<div class="row2"><button class="btn sm" data-rest="${p.rest}">Repos ${esc(p.restText)}</button><button class="btn sm" data-rest="60">1:00</button><button class="btn sm" data-rest="120">2:00</button><button class="btn sm" data-rest="180">3:00</button></div>`;
     h+=`<details class="more"><summary>Pourquoi · exécution · ce qu'on cherche</summary><dl class="dl">`;
     if(ex.reco) h+=`<dt>Reconnaissance</dt><dd>${esc(ex.reco)}</dd>`;
@@ -244,12 +256,23 @@ function renderSeance(){
       renderSeance(); card.scrollIntoView({block:'nearest'});
     });
     card.querySelectorAll('[data-rest]').forEach(b=>b.onclick=()=>startTimer(+b.dataset.rest,`Repos · ${ex.name}`,''));
+    card.querySelectorAll('[data-flag]').forEach(b=>b.onclick=()=>{ log.flags=log.flags||{}; const f=log.flags[exId]||(log.flags[exId]={}); f[b.dataset.flag]=!f[b.dataset.flag]; touch(log); renderSeance(); });
     const em=card.querySelector('[data-emom]'); if(em) em.onclick=()=>startTimer(p.rest,`EMOM · série ${arr().filter(s=>s&&s.done).length+1}/${p.sets}`,`${p.reps} reps strictes, repart au top`);
   });
   $('#notes').onchange=e=>{ log.notes=e.target.value; touch(log); };
+  updateElapsed(log);
+  if(!GH.ready()&&Object.keys(log.sets).length) el.insertAdjacentHTML('afterbegin','<div class="banner">Synchro non configurée : tes séries ne sont que sur ce téléphone. Onglet ⚙ pour brancher le dépôt.</div>');
   $('#endBtn').onclick=()=>{ log.done=!log.done; touch(log); stopTimer(); if(log.done){ releaseWake(); sync(); } renderSeance(); if(log.done) window.scrollTo({top:0}); };
 }
 
+let elapsedTimer=0;
+function updateElapsed(log){
+  clearInterval(elapsedTimer); const el=$('#elapsed'); if(!el) return;
+  const ts=Object.values(log.sets).flat().filter(s=>s&&s.done&&s.t).map(s=>s.t); if(!ts.length){ el.textContent=''; return; }
+  const start=Math.min(...ts); const end=log.done?Math.max(...ts):null;
+  const f=()=>{ const m=Math.floor(((end||Date.now())-start)/60000); el.textContent=`· ${m} min${log.done?' · terminée':''}`; };
+  f(); if(!log.done) elapsedTimer=setInterval(f,30000);
+}
 /* ---------- render: programme ---------- */
 function renderProgramme(){
   const wk=curWeek(); let h=`<h2>Programme · S${wk}</h2><p class="small muted">Prescriptions de la semaine affichée. Change de semaine avec la puce en haut.</p>`;
@@ -302,15 +325,16 @@ function renderHist(){
 
 /* ---------- tabs, week ---------- */
 document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>{ document.querySelectorAll('.tabs button').forEach(x=>x.setAttribute('aria-selected',x===b)); ['seance','programme','suivi','cycle','reglages'].forEach(t=>$('#tab-'+t).hidden=t!==b.dataset.tab); window.scrollTo({top:0}); });
-$('#weekChip').onclick=()=>{ const auto=weekFor(todayISO()); const cur=curWeek(); const nx=cur%4+1; S.weekOverride=nx===auto?null:nx; save(); render(); };
+$('#weekChip').onclick=()=>{ const auto=weekFor(todayISO()); const cur=curWeek(); const nx=cur%WEEKS.length+1; S.weekOverride=nx===auto?null:nx; save(); render(); };
 document.addEventListener('pointerdown',unlockAudio,{once:true});
 document.addEventListener('pointerdown',()=>{ if(window.Notification&&Notification.permission==='default'){ try{Notification.requestPermission();}catch(e){} } },{once:true});
 
 /* ---------- démarrage ---------- */
 async function boot(){
+  if(!Object.keys(S.logs).length){ const j=await idbGet(); if(j){ try{ const d=JSON.parse(j); if(Object.keys(d.logs||{}).length) S=Object.assign(S,d); }catch(e){} } }
   try{
     const [p,c]=await Promise.all([fetch('program.json').then(r=>r.json()), fetch('cycle.html').then(r=>r.text())]);
-    PROGRAM=p; $('#tab-cycle').innerHTML=c;
+    PROGRAM=p; if(p.weeks&&p.weeks.length) WEEKS=p.weeks; $('#tab-cycle').innerHTML=c; document.querySelector('.brand small').textContent=p.cycleName||'';
   }catch(e){ $('#tab-seance').innerHTML='<p>Impossible de charger le programme. Recharge la page avec du réseau une première fois.</p>'; return; }
   render(); syncStatusIdle(); sync();
   if('serviceWorker' in navigator){ navigator.serviceWorker.register('sw.js').then(r=>{ r.addEventListener('updatefound',()=>{ const w=r.installing; w&&w.addEventListener('statechange',()=>{ if(w.state==='installed'&&navigator.serviceWorker.controller) setSync('pend','mise à jour dispo · recharge'); }); }); }).catch(()=>{}); }
