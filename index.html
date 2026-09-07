@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Rituel</title>
+<meta name="description" content="Programme, saisie des séries, chrono de repos et suivi de progression. Fonctionne hors ligne.">
+<meta name="theme-color" content="#161C24">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Rituel">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header class="top"><div class="wrap">
+  <div class="brand">Rituel<small>Mésocycle 1 · septembre 2026</small></div>
+  <div class="spacer"></div>
+  <button class="chip week" id="weekChip" title="Changer de semaine">S1</button>
+  <button class="chip sync off" id="syncChip" title="Synchroniser maintenant">local</button>
+</div></header>
+
+<main class="wrap">
+  <section id="tab-seance"></section>
+  <section id="tab-programme" hidden></section>
+  <section id="tab-suivi" hidden></section>
+  <section id="tab-cycle" hidden class="doc"></section>
+  <section id="tab-reglages" hidden></section>
+</main>
+
+<div class="timer" id="timer" role="status" aria-live="polite">
+  <div class="wrap">
+    <div class="t" id="tT">0:00</div>
+    <div class="lab"><b id="tL1">Repos</b><span id="tL2"></span></div>
+    <button id="tMinus" aria-label="Moins 15 secondes">−15</button>
+    <button id="tPlus" aria-label="Plus 30 secondes">+30</button>
+    <button id="tStop" aria-label="Arrêter">Stop</button>
+  </div>
+  <div class="bar"><i id="tBar"></i></div>
+</div>
+
+<nav class="tabs" role="tablist">
+  <button role="tab" aria-selected="true" data-tab="seance">Séance</button>
+  <button role="tab" aria-selected="false" data-tab="programme">Programme</button>
+  <button role="tab" aria-selected="false" data-tab="suivi">Suivi</button>
+  <button role="tab" aria-selected="false" data-tab="cycle">Cycle</button>
+  <button role="tab" aria-selected="false" data-tab="reglages" aria-label="Réglages">⚙</button>
+</nav>
+
+<script src="app.js"></script>
+</body>
+</html>
