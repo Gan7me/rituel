@@ -1,5 +1,5 @@
 
-const APP_VERSION='1.1.0';
+const APP_VERSION='1.2.0';
 let PROGRAM={sessions:[]};
 let WEEKS = [
   {n:1,label:'S1 calibrage',from:'2026-09-07',to:'2026-09-13',rirNote:'RIR 3 · établir les références, tout noter'},
@@ -89,9 +89,9 @@ function sameData(a,b){ return JSON.stringify({l:a.logs,b:a.bw,t:a.tests})===JSO
 
 function setSync(cls,txt){ const c=$('#syncChip'); c.className='chip sync '+cls; c.textContent=txt; }
 function syncStatusIdle(){
-  if(!GH.ready()) return setSync('off','local · pas de dépôt');
-  if(!navigator.onLine) return setSync('pend', S.dirty?'hors ligne · à sync':'hors ligne');
-  setSync(S.dirty?'pend':'on', S.dirty?'à synchroniser':'synchronisé'+(S.lastSync?' '+new Date(S.lastSync).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}):''));
+  if(!GH.ready()) return setSync('off','local');
+  if(!navigator.onLine) return setSync('pend','hors ligne');
+  setSync(S.dirty?'pend':'on', S.dirty?'à sync':'sync ok');
 }
 let syncing=false, syncTimer=0;
 function markDirty(){ S.dirty=true; save(); syncStatusIdle(); clearTimeout(syncTimer); syncTimer=setTimeout(()=>sync(),20000); }
@@ -113,7 +113,7 @@ async function sync(manual){
     S.dirty=false; S.lastSync=Date.now(); save(); syncStatusIdle();
   }catch(e){
     console.warn('sync',e);
-    setSync('pend', /401|403/.test(e.message)?'token refusé':'sync échouée · réessai');
+    setSync('pend', /401|403/.test(e.message)?'token refusé':'sync échouée');
     if(manual) alert('Synchronisation impossible : '+e.message);
   }
   syncing=false;
@@ -182,18 +182,17 @@ $('#tStop').onclick=stopTimer; $('#tPlus').onclick=()=>{T.end+=30000;T.total+=30
 document.addEventListener('visibilitychange',()=>{ if(!document.hidden&&$('#timer').classList.contains('on')) tick(); });
 
 /* ---------- render: séance ---------- */
-function render(){ if(!PROGRAM.sessions.length) return; renderSeance(); renderProgramme(); renderSuivi(); renderReglages(); const w=WEEKS[curWeek()-1]; $('#weekChip').textContent=`S${w.n} · ${fmtD(w.from)}–${fmtD(w.to)}`; }
+function render(){ if(!PROGRAM.sessions.length) return; renderSeance(); renderProgramme(); renderSuivi(); renderReglages(); const w=WEEKS[curWeek()-1]; $('#weekChip').textContent=`S${w.n}`; }
 
 function renderSeance(){
   const wk=curWeek(), W=WEEKS[wk-1], date=todayISO(), ses=curSession(), log=getLog(date,ses.id);
   const el=$('#tab-seance'); let h='';
-  h+=`<div class="days">`+PROGRAM.sessions.map(s=>{ const done=Object.values(S.logs).some(l=>l.session===s.id&&l.week===wk&&l.done); return `<button data-s="${s.id}" aria-pressed="${s.id===ses.id}" class="${done?'done':''}"><b>${esc(s.name)}</b><span>${esc(s.dayName)}</span></button>`; }).join('')+`<button data-s="rest" aria-pressed="false"><b>Repos</b><span>Dimanche</span></button></div>`;
+  h+=`<div class="days">`+PROGRAM.sessions.map(s=>{ const done=Object.values(S.logs).some(l=>l.session===s.id&&l.week===wk&&l.done); return `<button data-s="${s.id}" aria-pressed="${s.id===ses.id}" class="${done?'done':''}"><b>${esc(s.dayName.slice(0,3))}</b><span>${esc(s.name.split(' ')[0])}</span></button>`; }).join('')+`<button data-s="rest" aria-pressed="false"><b>Dim</b><span>Repos</span></button></div>`;
   h+=`<div class="sesshead"><h2>${esc(ses.name)}</h2><span class="meta">${esc(ses.sub)} · ${esc(ses.duration)}${ses.place?' · '+esc(ses.place):''} · ${fmtD(date)}</span><span class="meta" id="elapsed"></span></div>`;
-  h+=`<div class="banner info"><b>${esc(W.label)}</b> — ${esc(W.rirNote)}</div>`;
+  h+=`<div class="banner info"><b>${esc(W.label)}</b> · ${fmtD(W.from)}–${fmtD(W.to)} — ${esc(W.rirNote)}</div>`;
   if(ses.note) h+=`<div class="banner">${esc(ses.note)}</div>`;
   if(wk===4&&ses.id==='jambesA') h+=`<div class="banner ok">Test tractions à froid avant la séance : 2 × 8 espacées de 2 min, repos 5 min, une série max stricte filmée. Saisis le résultat dans Suivi.</div>`;
   if(cycleOver()) h+=`<div class="banner">Cycle terminé le ${fmtD(WEEKS[WEEKS.length-1].to)}. Les prescriptions affichées sont celles de la décharge en attendant le cycle suivant.</div>`;
-  const dow=new Date().getDay(); if((dow===1||dow===4)&&!S.bw[date]) h+=`<div class="banner">Jour de pesée. À jeun, après les toilettes. Saisie dans Suivi.</div>`;
   if(log.done) h+=`<div class="banner ok">Séance validée. Tu peux encore corriger les valeurs.</div>`;
   const prevLog=Object.values(S.logs).filter(l=>l.session===ses.id&&l.date<date&&l.notes).sort((a,b)=>a.date<b.date?1:-1)[0];
   if(prevLog) h+=`<p class="small muted" style="margin:-4px 0 12px"><b>Notes du ${fmtD(prevLog.date)} :</b> ${esc(prevLog.notes)}</p>`;
@@ -277,9 +276,9 @@ function updateElapsed(log){
 function renderProgramme(){
   const wk=curWeek(); let h=`<h2>Programme · S${wk}</h2><p class="small muted">Prescriptions de la semaine affichée. Change de semaine avec la puce en haut.</p>`;
   PROGRAM.sessions.forEach(s=>{
-    h+=`<h3>${esc(s.dayName)} — ${esc(s.name)} <span class="muted small">(${esc(s.sub)})</span></h3><div class="tw"><table><thead><tr><th>#</th><th>Exercice</th><th>Machine</th><th>Séries</th><th>RIR</th><th>Tempo</th><th>Repos</th></tr></thead><tbody>`;
-    s.exercises.forEach(ex=>{ const p=rx(ex,wk); h+=`<tr><td class="num">${ex.n}</td><td>${esc(ex.name)}${ex.star?' <span style="color:var(--accent)">★</span>':''}</td><td class="small muted">${esc(ex.machine)}</td><td class="num">${p.sets} × ${esc(p.reps)}${ex.per?' '+esc(ex.per):''}</td><td class="num">${p.rir??'—'}</td><td class="num">${esc(ex.tempo)}</td><td class="num">${esc(p.restText)}</td></tr>`; });
-    h+=`</tbody></table></div>`;
+    h+=`<h3>${esc(s.dayName)} — ${esc(s.name)} <span class="muted small">(${esc(s.sub)})</span></h3><div class="pcard">`;
+    s.exercises.forEach(ex=>{ const p=rx(ex,wk); h+=`<div class="prow"><span class="n">${ex.n}</span><span class="nm">${esc(ex.name)}${ex.star?' <span style="color:var(--accent)">★</span>':''}</span><span class="rx2">${p.sets}×${esc(p.reps)}${p.rir!=null?' · RIR '+p.rir:''}</span><span class="mc">${esc(ex.machine)} · ${esc(ex.tempo)} · repos ${esc(p.restText)}</span></div>`; });
+    h+=`</div>`;
   });
   $('#tab-programme').innerHTML=h;
 }

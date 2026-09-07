@@ -8,7 +8,7 @@
 <meta name="theme-color" content="#161C24">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Rituel">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icons/icon-192.png">
@@ -20,7 +20,7 @@
   <div class="brand">Rituel<small>Mésocycle 1 · septembre 2026</small></div>
   <div class="spacer"></div>
   <button class="chip week" id="weekChip" title="Changer de semaine">S1</button>
-  <button class="chip sync off" id="syncChip" title="Synchroniser maintenant">local</button>
+  <button class="chip sync off" id="syncChip" title="Synchroniser maintenant" aria-label="Synchronisation">local</button>
 </div></header>
 
 <main class="wrap">
@@ -43,11 +43,11 @@
 </div>
 
 <nav class="tabs" role="tablist">
-  <button role="tab" aria-selected="true" data-tab="seance">Séance</button>
-  <button role="tab" aria-selected="false" data-tab="programme">Programme</button>
-  <button role="tab" aria-selected="false" data-tab="suivi">Suivi</button>
-  <button role="tab" aria-selected="false" data-tab="cycle">Cycle</button>
-  <button role="tab" aria-selected="false" data-tab="reglages" aria-label="Réglages">⚙</button>
+  <button role="tab" aria-selected="true" data-tab="seance"><svg viewBox="0 0 24 24"><path d="M4 9v6M20 9v6M7 7v10M17 7v10M7 12h10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><span>Séance</span></button>
+  <button role="tab" aria-selected="false" data-tab="programme"><svg viewBox="0 0 24 24"><rect x="4" y="3" width="16" height="18" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M8 8h8M8 12h8M8 16h5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><span>Programme</span></button>
+  <button role="tab" aria-selected="false" data-tab="suivi"><svg viewBox="0 0 24 24"><path d="M4 18l5-6 4 3 7-9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Suivi</span></button>
+  <button role="tab" aria-selected="false" data-tab="cycle"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M3 10h18M8 3v4M16 3v4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><span>Cycle</span></button>
+  <button role="tab" aria-selected="false" data-tab="reglages"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="2"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" fill="none" stroke="currentColor" stroke-width="1.6"/></svg><span>Réglages</span></button>
 </nav>
 
 <script src="app.js"></script>
