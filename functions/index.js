@@ -17,6 +17,7 @@ async function resolveModel(apiKey, wanted) {
   if (wanted && wanted !== 'auto') return wanted;
   if (resolvedModel) return resolvedModel;
   const r = await fetch('https://api.anthropic.com/v1/models?limit=100', { headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' } });
+  if (r.status === 401) throw new HttpsError('failed-precondition', 'Clé API Anthropic refusée (401). La clé enregistrée côté serveur est invalide ou révoquée : régénère une clé sur console.anthropic.com et enregistre-la à nouveau.');
   if (!r.ok) throw new HttpsError('internal', 'Impossible de lister les modèles Anthropic (' + r.status + ').');
   const ids = ((await r.json()).data || []).map(m => m.id);
   const pick = ids.find(i => /sonnet/.test(i)) || ids.find(i => /opus/.test(i)) || ids[0];
@@ -165,7 +166,10 @@ exports.coach = onCall({ region: 'europe-west1', secrets: [ANTHROPIC_API_KEY], t
   const uid = req.auth.uid; const { mode } = req.data || {};
   if (!QUOTAS[mode]) throw new HttpsError('invalid-argument', 'mode inconnu');
   await checkQuota(uid, mode);
-  const apiKey = ANTHROPIC_API_KEY.value(); const model = await resolveModel(apiKey, MODEL.value());
+  // Nettoyage : un secret collé depuis Windows peut contenir BOM, octets nuls, retours à la ligne ou guillemets.
+  const apiKey = String(ANTHROPIC_API_KEY.value() || '').replace(/[^\x21-\x7E]/g, '').replace(/^["']+|["']+$/g, '');
+  if (!/^sk-ant-/.test(apiKey)) throw new HttpsError('failed-precondition', 'Clé API Anthropic absente ou mal formée côté serveur (doit commencer par sk-ant-).');
+  const model = await resolveModel(apiKey, MODEL.value());
   const meta = await loadMeta(uid);
   if (!meta.profile) throw new HttpsError('failed-precondition', 'Profil manquant.');
 
