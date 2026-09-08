@@ -1,5 +1,5 @@
 
-const APP_VERSION='3.1.1';
+const APP_VERSION='3.1.2';
 let PROGRAM={sessions:[]};
 let WEEKS = [
   {n:1,label:'S1 calibrage',from:'2026-09-07',to:'2026-09-13',rirNote:'RIR 3 · établir les références, tout noter'},
@@ -184,7 +184,7 @@ function renderCoach(){
   h+=`<h3>Analyses</h3>`;
   if(!COACH.items.length) h+=`<p class="small muted">Aucune analyse. Termine une séance puis lance l'analyse.</p>`;
   COACH.items.forEach(it=>{
-    h+=`<div class="ana"><div class="anah"><b>${esc(it.title||it.logKey||'')}</b><span class="small muted">${it.createdAt?new Date(it.createdAt).toLocaleDateString('fr-FR'):''}</span></div><div class="anab">${esc(it.analysis||'').replace(/\n/g,'<br>')}</div>`;
+    h+=`<div class="ana"><div class="anah"><b>${esc(it.title||it.logKey||'')}</b><span class="small muted">${it.createdAt?new Date(it.createdAt).toLocaleDateString('fr-FR'):''}</span></div><div class="anab">${esc(it.analysis||'').replace(/\n/g,'<br>')}</div>${it.nextFocus?`<p class="coachline"><b>Prochaine fois</b> ${esc(it.nextFocus)}</p>`:''}`;
     if(it.adjustments&&it.adjustments.length){ h+=`<div class="adj"><b class="small">Ajustements proposés pour la prochaine séance</b><ul>${it.adjustments.map(a=>`<li><b>${esc(a.name||a.exId)}</b> : ${esc(a.change)}${a.reason?' <span class="muted">— '+esc(a.reason)+'</span>':''}</li>`).join('')}</ul>${it.applied?'<span class="tag ok">appliqué</span>':`<button class="btn sm acc" data-apply="${it.id}">Appliquer</button>`}</div>`; }
     h+=`</div>`;
   });

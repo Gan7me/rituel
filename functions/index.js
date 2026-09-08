@@ -87,6 +87,32 @@ async function loadContext(uid, prog, limit = 14) {
   return `## Journal (du plus récent au plus ancien)\n${sessions.join('\n\n') || '(vide)'}\n\n## Poids de corps\n${weights || '(aucune pesée)'}\n\n## Tests tractions max\n${pull || '35 au départ'}`;
 }
 
+// Sortie structurée garantie : on force un appel d'outil dont le schéma est le JSON attendu.
+async function claudeJSON(apiKey, model, system, messages, schema, maxTokens = 2500) {
+  const tool = { name: 'reponse', description: 'Réponse structurée du coach.', input_schema: schema };
+  const r = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
+    body: JSON.stringify({ model, max_tokens: maxTokens, system, messages, tools: [tool], tool_choice: { type: 'tool', name: 'reponse' } })
+  });
+  if (!r.ok) { const t = await r.text(); throw new HttpsError('internal', `Anthropic ${r.status}: ${t.slice(0, 300)}`); }
+  const j = await r.json();
+  const use = (j.content || []).find(c => c.type === 'tool_use');
+  if (!use || !use.input) throw new HttpsError('internal', 'Le coach n\'a pas renvoyé de réponse structurée.');
+  return use.input;
+}
+
+const ANALYSIS_SCHEMA = {
+  type: 'object',
+  required: ['title', 'analysis', 'adjustments', 'nextFocus'],
+  properties: {
+    title: { type: 'string', description: 'Ex. « Push A · 08/09 · S1 »' },
+    analysis: { type: 'string', description: "Analyse en 8 à 14 phrases, en français, chiffrée : charges et reps réalisées vs prescription et vs dernière référence, RIR déclaré vs reps atteintes, ce que dit la note de séance, signaux de fatigue ou de douleur, verdict clair sur la séance, ce qu'on retient pour la suite." },
+    adjustments: { type: 'array', items: { type: 'object', required: ['exId', 'change', 'reason'], properties: { exId: { type: 'string' }, name: { type: 'string' }, change: { type: 'string', description: 'Prescription concrète pour la prochaine fois, ex. « 4 × 6-8 à 125 kg (RIR 2) »' }, reason: { type: 'string' }, load: { type: 'number' } } } },
+    nextFocus: { type: 'string', description: 'Une phrase : priorité de la prochaine séance de ce type.' }
+  }
+};
+
 async function claude(apiKey, model, system, messages, maxTokens = 1500) {
   const r = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
@@ -199,11 +225,11 @@ exports.coach = onCall({ region: 'europe-west1', secrets: [ANTHROPIC_API_KEY], t
     if (!snap.exists) throw new HttpsError('not-found', 'Séance introuvable.');
     const log = snap.data();
     const sessionName = (prog.sessions.find(s => s.id === log.session) || {}).name || log.session;
-    const user = `Programme :\n${programSummary}\n\n${context}\n\n## Séance à analyser\n${log.date} · ${sessionName} · S${log.week}${log.done ? '' : ' (non terminée)'}\n${fmtLog(log, idx)}${log.notes ? '\nNotes : ' + log.notes : ''}\n\n${SCHEMA_NOTE}`;
-    const text = await claude(apiKey, model, SYSTEM, [{ role: 'user', content: user }], 1800);
-    let parsed;
-    try { parsed = JSON.parse(text.slice(text.indexOf('{'), text.lastIndexOf('}') + 1)); }
-    catch (e) { parsed = { title: `${sessionName} · ${log.date}`, analysis: text, adjustments: [] }; }
+    const guide = `Consignes d'analyse : compare chaque exercice à sa prescription et à la dernière référence (charge, reps, RIR). Si l'athlète écrit que c'était facile, ou si les reps dépassent le haut de fourchette au RIR prescrit, tu augmentes la charge (règle : +2,5 % quand le haut de fourchette est atteint partout, +5 % si la note dit "facile" et que les RIR déclarés sont ≥ 3) et tu le dis exercice par exercice. Si une charge manque, tu le signales et tu demandes de la noter. Tu ne fais pas de généralités : chaque phrase s'appuie sur une donnée de la séance ou de l'historique. Propose un ajustement pour chaque exercice où les données le justifient.`;
+    const user = `Programme :\n${programSummary}\n\n${context}\n\n## Séance à analyser\n${log.date} · ${sessionName} · S${log.week}${log.done ? '' : ' (non terminée)'}\n${fmtLog(log, idx)}${log.notes ? '\nNote de l\'athlète : ' + log.notes : ''}\n\n${guide}`;
+    const parsed = await claudeJSON(apiKey, model, SYSTEM, [{ role: 'user', content: user }], ANALYSIS_SCHEMA, 2500);
+    if (!parsed.analysis || !String(parsed.analysis).trim()) parsed.analysis = 'Analyse vide renvoyée par le modèle. Relance l\'analyse.';
+    parsed.title = parsed.title || `${sessionName} · ${log.date}`;
     parsed.adjustments = (parsed.adjustments || []).filter(a => a && idx[a.exId]).map(a => ({ exId: a.exId, name: idx[a.exId].name, change: String(a.change || ''), reason: String(a.reason || ''), load: typeof a.load === 'number' ? a.load : null }));
     const doc = { ...parsed, logKey, session: log.session, createdAt: Date.now(), applied: false, model };
     await db.collection('users').doc(uid).collection('coach').doc(logKey).set(doc);
