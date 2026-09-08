@@ -1,5 +1,5 @@
 
-const APP_VERSION='2.1.0';
+const APP_VERSION='2.2.0';
 let PROGRAM={sessions:[]};
 let WEEKS = [
   {n:1,label:'S1 calibrage',from:'2026-09-07',to:'2026-09-13',rirNote:'RIR 3 · établir les références, tout noter'},
@@ -134,14 +134,14 @@ function renderReglages(){
   <div class="row2"><button class="btn" id="expBtn">Exporter le journal (JSON)</button><label class="btn" for="impFile">Importer</label><input id="impFile" type="file" accept="application/json" hidden></div>
   <h3>Appareil</h3>
   <div class="row2"><label class="gtgrow"><input type="checkbox" id="wakeOpt" ${S.wake!==false?'checked':''}> Garder l'écran allumé pendant une séance</label></div>
-  <div class="row2"><button class="btn" id="notifBtn">Autoriser les notifications</button><span class="small muted" id="notifMsg">${window.Notification?('état : '+Notification.permission):'non supporté'}</span></div>
+  <div class="row2"><button class="btn" id="notifBtn">Autoriser les notifications</button><span class="small muted" id="notifMsg">${window.Notification?({granted:'autorisées',denied:'refusées',default:'pas encore demandées'}[Notification.permission]||Notification.permission):'non supporté sur cet appareil'}</span></div>
   <p class="small muted">Version ${APP_VERSION}. <button class="link" id="reloadBtn">Recharger l'application</button></p>`;
   const si=$('#signIn'); if(si) si.onclick=signIn; const so=$('#signOut'); if(so) so.onclick=signOut;
   if($('#profForm')) bindProfileForm(()=>{ $('#profDet').open=false; alert('Profil enregistré. Le coach en tient compte dès la prochaine analyse.'); });
   $('#expBtn').onclick=()=>{ const blob=new Blob([JSON.stringify(snapshot(),null,1)],{type:'application/json'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='rituel-journal-'+todayISO()+'.json'; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),2000); };
   $('#impFile').onchange=e=>{ const f=e.target.files[0]; if(!f) return; const rd=new FileReader(); rd.onload=()=>{ try{ const d=JSON.parse(rd.result); mergeInto(S,d); save(); render(); alert('Import fusionné.'); }catch(err){ alert('Fichier invalide.'); } }; rd.readAsText(f); };
   $('#wakeOpt').onchange=e=>{ S.wake=e.target.checked; save(); if(!S.wake) releaseWake(); };
-  $('#notifBtn').onclick=async()=>{ if(!window.Notification) return; const p=await Notification.requestPermission(); $('#notifMsg').textContent='état : '+p; };
+  $('#notifBtn').onclick=async()=>{ if(!window.Notification) return; const p=await Notification.requestPermission(); $('#notifMsg').textContent=({granted:'autorisées',denied:'refusées',default:'pas encore demandées'}[p]||p); };
   $('#reloadBtn').onclick=async()=>{ if(navigator.serviceWorker){ const r=await navigator.serviceWorker.getRegistration(); if(r){ await r.update(); } } location.reload(); };
 }
 
@@ -205,14 +205,15 @@ const LEVELS=[['debutant','Débutant (moins d’un an)'],['intermediaire','Inter
 function showGate(){
   document.querySelector('.tabs').hidden=true; document.querySelector('.top').hidden=true;
   const m=document.querySelector('main'); m.innerHTML=`<section class="gate">
-    <div class="gateh"><div class="brand big">Rituel</div><p class="lede">Ton programme, ton coach, ta séance du jour. Tout se synchronise sur tes appareils, la séance marche sans réseau.</p></div>
+    <div class="gateh"><div class="mark"><svg viewBox="0 0 24 24"><path d="M4 9v6M20 9v6M7 7v10M17 7v10M7 12h10" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round"/></svg></div><div class="brand big">Rituel</div><p class="lede">Ton programme, ton coach, ta séance du jour.</p></div>
+    <div class="feats"><div><b>01</b><span>Un mésocycle construit sur ton profil, ton matériel, tes objectifs.</span></div><div><b>02</b><span>La séance guidée : charges, RIR, tempo, chrono de repos automatique. Sans réseau.</span></div><div><b>03</b><span>Après chaque séance, le coach analyse et ajuste la suivante.</span></div></div>
     <button class="btn fill" id="gateIn">Continuer avec Google</button>
     <p class="small muted">Un compte par personne. Chacun ne voit que ses propres données.</p></section>`;
   $('#gateIn').onclick=signIn;
 }
 function restoreShell(){
   const m=document.querySelector('main');
-  if(!$('#tab-seance')) m.innerHTML=`<section id="tab-seance"></section><section id="tab-coach" hidden></section><section id="tab-programme" hidden></section><section id="tab-suivi" hidden></section><section id="tab-cycle" hidden class="doc"></section><section id="tab-reglages" hidden></section>`;
+  if(!$('#tab-seance')) m.innerHTML=`<section id="tab-seance"></section><section id="tab-coach" hidden></section><section id="tab-programme" hidden></section><section id="tab-suivi" hidden></section><section id="tab-reglages" hidden></section>`;
   document.querySelector('.tabs').hidden=false; document.querySelector('.top').hidden=false;
 }
 function showOnboarding(step){
@@ -267,16 +268,16 @@ function applyProgram(p){
   const sm=document.querySelector('.brand small'); if(sm) sm.textContent=p.cycleName||'';
   restoreShell(); renderCycle(); render();
 }
-function renderCycle(){
-  const el=$('#tab-cycle'); if(!el) return;
-  if(PROGRAM.cycleHtml){ el.innerHTML=PROGRAM.cycleHtml; return; }
+function cycleHtml(){
+  if(PROGRAM.cycleHtml) return PROGRAM.cycleHtml;
   let h=`<h2>${esc(PROGRAM.cycleName||'Cycle')}</h2>`;
   if(PROGRAM.rationale) h+=mdToHtml(PROGRAM.rationale);
   if(PROGRAM.weeks) h+=`<h3>Semaines</h3><div class="tw"><table><thead><tr><th>Semaine</th><th>Dates</th><th>Consigne</th></tr></thead><tbody>${PROGRAM.weeks.map(w=>`<tr><td>${esc(w.label)}</td><td class="num">${fmtD(w.from)}–${fmtD(w.to)}</td><td>${esc(w.rirNote||'')}</td></tr>`).join('')}</tbody></table></div>`;
   if(PROGRAM.nutrition) h+=`<h3>Nutrition</h3>${mdToHtml(PROGRAM.nutrition)}`;
-  h+=`<p class="small muted">Programme généré ${PROGRAM.generatedAt?'le '+new Date(PROGRAM.generatedAt).toLocaleDateString('fr-FR'):''}${PROGRAM.model?' · '+esc(PROGRAM.model):''}.</p>`;
-  el.innerHTML=h;
+  if(PROGRAM.generatedAt) h+=`<p class="small muted">Programme généré par le coach le ${new Date(PROGRAM.generatedAt).toLocaleDateString('fr-FR')}.</p>`;
+  return h;
 }
+function renderCycle(){}
 function mdToHtml(md){ return String(md||'').split(/\n{2,}/).map(par=>{ par=par.trim(); if(!par) return ''; if(/^#+\s/.test(par)) return `<h3>${esc(par.replace(/^#+\s*/,''))}</h3>`; if(/^[-*]\s/m.test(par)) return `<ul>${par.split(/\n/).map(l=>`<li>${inline(l.replace(/^[-*]\s*/,''))}</li>`).join('')}</ul>`; return `<p>${inline(par).replace(/\n/g,'<br>')}</p>`; }).join(''); function inline(s){ return esc(s).replace(/\*\*(.+?)\*\*/g,'<b>$1</b>'); } }
 
 /* écoute du profil et du programme après connexion */
@@ -331,12 +332,13 @@ function renderSeance(){
   const wk=curWeek(), W=WEEKS[wk-1], date=todayISO(), ses=curSession(), log=getLog(date,ses.id);
   const el=$('#tab-seance'); let h='';
   h+=`<div class="days">`+PROGRAM.sessions.map(s=>{ const done=Object.values(S.logs).some(l=>l.session===s.id&&l.week===wk&&l.done); return `<button data-s="${s.id}" aria-pressed="${s.id===ses.id}" class="${done?'done':''}"><b>${esc(s.dayName.slice(0,3))}</b><span>${esc(s.name.split(' ')[0])}</span></button>`; }).join('')+`<button data-s="rest" aria-pressed="false"><b>Dim</b><span>Repos</span></button></div>`;
-  h+=`<div class="sesshead"><h2>${esc(ses.name)}</h2><span class="meta">${esc(ses.sub)} · ${esc(ses.duration)}${ses.place?' · '+esc(ses.place):''} · ${fmtD(date)}</span><span class="meta" id="elapsed"></span></div>`;
+  h+=`<div class="sesshead"><h2>${esc(ses.name)}</h2><span class="meta">${esc(ses.sub)} · ${esc(ses.duration)}${ses.place?' · '+esc(ses.place):''} · ${fmtD(date)}${PROGRAM.cycleName?' · '+esc(PROGRAM.cycleName):''}</span><span class="meta" id="elapsed"></span></div>`;
   h+=`<div class="banner info"><b>${esc(W.label)}</b> · ${fmtD(W.from)}–${fmtD(W.to)} — ${esc(W.rirNote)}</div>`;
   if(ses.note) h+=`<div class="banner">${esc(ses.note)}</div>`;
   if(wk===4&&ses.id==='jambesA') h+=`<div class="banner ok">Test tractions à froid avant la séance : 2 × 8 espacées de 2 min, repos 5 min, une série max stricte filmée. Saisis le résultat dans Suivi.</div>`;
   if(cycleOver()) h+=`<div class="banner">Cycle terminé le ${fmtD(WEEKS[WEEKS.length-1].to)}. Les prescriptions affichées sont celles de la décharge en attendant le cycle suivant.</div>`;
   if(log.done) h+=`<div class="banner ok">Séance validée. Tu peux encore corriger les valeurs.</div>`;
+  if(!ses.exercises.some(ex=>lastRef(ex.id,date))) h+=`<p class="hint">Première fois sur cette séance : note la charge de chaque série sérieuse, elle servira de référence la semaine prochaine.</p>`;
   const prevLog=Object.values(S.logs).filter(l=>l.session===ses.id&&l.date<date&&l.notes).sort((a,b)=>a.date<b.date?1:-1)[0];
   if(prevLog) h+=`<p class="small muted" style="margin:-4px 0 12px"><b>Notes du ${fmtD(prevLog.date)} :</b> ${esc(prevLog.notes)}</p>`;
   const wu=(PROGRAM.warmup||{})[ses.id.replace(/[AB]$/,'')]; if(wu) h+=`<details class="more wu"><summary>Échauffement · 8-10 min</summary><p class="small">${esc(PROGRAM.warmup.common)}</p><p class="small">${esc(wu)}</p><p class="small">${esc(PROGRAM.warmup.ramp)}</p></details>`;
@@ -351,7 +353,7 @@ function renderSeance(){
     if(ex.chargeNote&&!/^RIR \d( → \d)*$/.test(ex.chargeNote)) h+=`<p class="small muted" style="margin:0 0 6px">${esc(ex.chargeNote)}</p>`;
     const ov=((S.overrides||{})[ses.id]||{}).adj; const o=ov&&ov[ex.id]; if(o) h+=`<p class="coachline"><b>Coach</b> ${esc(o.change)}${o.reason?' <span class="muted">— '+esc(o.reason)+'</span>':''}</p>`;
     if(ref){ const best=ref.sets.reduce((m,s)=>Math.max(m,e1rm(s.w,s.r)),0); const top=ref.sets.find(s=>s.w)||ref.sets[0]; let tgt=''; if(top&&top.w&&wk>1&&wk<4){ const hi=parseInt(String(p.reps).split('-').pop()); const allHi=ref.sets.every(s=>s.r>=hi); tgt=allHi?` → <span class="tgt">cible ${Math.round(top.w*1.025*2)/2} kg</span>`:` → <span class="tgt">même charge, +1 rep</span>`; } if(wk===4&&top&&top.w) tgt=` → <span class="tgt">décharge ≈ ${Math.round(top.w*0.9*2)/2} kg</span>`; h+=`<p class="ref">Dernier (${fmtD(ref.date)}, S${ref.week}) : <b>${esc(fmtSets(ref.sets))}</b>${tgt}</p>`; }
-    else h+=`<p class="ref">Aucune référence. Note la charge de la première série sérieuse.</p>`;
+    else h+=`<p class="ref none"></p>`;
     // sets grid
     h+=`<div class="sets"><span class="hd"></span><span class="hd">${/lest/i.test(ex.name)?'lest kg':ex.mode==='emom'?'—':ex.mode==='max'?'assist kg':!ex.rir?'charge':'kg'}</span><span class="hd">reps</span><span class="hd">RIR</span><span class="hd"></span>`;
     const arr=log.sets[ex.id]||[]; const prev=ref?ref.sets:[];
@@ -425,6 +427,7 @@ function renderProgramme(){
     s.exercises.forEach(ex=>{ const p=rx(ex,wk); h+=`<div class="prow"><span class="n">${ex.n}</span><span class="nm">${esc(ex.name)}${ex.star?' <span style="color:var(--accent)">★</span>':''}</span><span class="rx2">${p.sets}×${esc(p.reps)}${p.rir!=null?' · RIR '+p.rir:''}</span><span class="mc">${esc(ex.machine)} · ${esc(ex.tempo)} · repos ${esc(p.restText)}</span></div>`; });
     h+=`</div>`;
   });
+  h+=`<details class="cyc doc"><summary>Lire le cycle</summary>${cycleHtml()}</details>`;
   $('#tab-programme').innerHTML=h;
   const rb=$('#regenBtn'); if(rb) rb.onclick=regenerateProgram;
 }
@@ -469,7 +472,7 @@ function renderHist(){
 }
 
 /* ---------- tabs, week ---------- */
-document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>{ document.querySelectorAll('.tabs button').forEach(x=>x.setAttribute('aria-selected',x===b)); ['seance','coach','programme','suivi','cycle','reglages'].forEach(t=>$('#tab-'+t).hidden=t!==b.dataset.tab); window.scrollTo({top:0}); });
+document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>{ document.querySelectorAll('.tabs button').forEach(x=>x.setAttribute('aria-selected',x===b)); ['seance','coach','programme','suivi','reglages'].forEach(t=>{ const s=$('#tab-'+t); if(s) s.hidden=t!==b.dataset.tab; }); window.scrollTo({top:0}); });
 $('#weekChip').onclick=()=>{ const auto=weekFor(todayISO()); const cur=curWeek(); const nx=cur%WEEKS.length+1; S.weekOverride=nx===auto?null:nx; save(); render(); };
 document.addEventListener('pointerdown',unlockAudio,{once:true});
 document.addEventListener('pointerdown',()=>{ if(window.Notification&&Notification.permission==='default'){ try{Notification.requestPermission();}catch(e){} } },{once:true});
