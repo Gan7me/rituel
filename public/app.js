@@ -1,5 +1,5 @@
 
-const APP_VERSION='1.2.0';
+const APP_VERSION='2.0.0';
 let PROGRAM={sessions:[]};
 let WEEKS = [
   {n:1,label:'S1 calibrage',from:'2026-09-07',to:'2026-09-13',rirNote:'RIR 3 · établir les références, tout noter'},
@@ -14,7 +14,7 @@ const fmtD = iso=>{const [y,m,d]=iso.split('-');return `${d}/${m}`;};
 
 /* ---------- state ---------- */
 const KEY='rituel.v1';
-let S = {logs:{}, bw:{}, tests:{}, weekOverride:null, session:null, gh:null, dirty:false, lastSync:0, wake:true};
+let S = {logs:{}, bw:{}, tests:{}, overrides:{}, weekOverride:null, session:null, wake:true};
 try{ const raw=localStorage.getItem(KEY); if(raw) S=Object.assign(S,JSON.parse(raw)); }catch(e){}
 function save(){ const j=JSON.stringify(S); try{ localStorage.setItem(KEY, j); }catch(e){} idbSet(j); }
 function idb(){ return new Promise((res,rej)=>{ const r=indexedDB.open('rituel',1); r.onupgradeneeded=()=>r.result.createObjectStore('kv'); r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error); }); }
@@ -35,7 +35,7 @@ function rx(ex, wk){ // prescription for a week
 }
 function logKey(date,sid){ return date+'_'+sid; }
 function getLog(date,sid){ const k=logKey(date,sid); if(!S.logs[k]) S.logs[k]={date,session:sid,week:weekFor(date),sets:{},gtg:[false,false,false],notes:'',done:false,updatedAt:0}; return S.logs[k]; }
-function touch(log){ log.updatedAt=Date.now(); save(); markDirty(); requestWake(); }
+function touch(log){ log.updatedAt=Date.now(); save(); writeDoc('logs',logKey(log.date,log.session),log); requestWake(); }
 
 
 // history of an exercise: [{date,week,sets:[{w,r,rir}]}] newest first
@@ -46,112 +46,149 @@ function lastRef(exId, date){ return history(exId).find(h=>h.date<date)||null; }
 function e1rm(w,r){ if(!w||!r) return 0; return r===1?w:w*(1+r/30); }
 function fmtSets(sets){ return sets.map(s=>(s.w?s.w+'×':'')+(s.r??'?')+(s.rir!=null?'@'+s.rir:'')).join(' · '); }
 
-/* ---------- synchro GitHub ----------
-   Les données vivent d'abord sur l'appareil (localStorage). Quand il y a du réseau,
-   elles sont fusionnées avec data/journal.json d'un dépôt GitHub via l'API Contents,
-   avec un token à droits limités (Contents read/write sur ce seul dépôt).
-   Fusion document par document sur updatedAt : le plus récent gagne. */
-const GH = {
-  cfg(){ return S.gh || {owner:'', repo:'', branch:'main', path:'data/journal.json', token:''}; },
-  ready(){ const c=this.cfg(); return !!(c.owner&&c.repo&&c.token); },
-  url(){ const c=this.cfg(); return `https://api.github.com/repos/${c.owner}/${c.repo}/contents/${c.path}`; },
-  headers(){ return {'Authorization':'Bearer '+this.cfg().token,'Accept':'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28'}; },
-  async pull(){
-    const r=await fetch(this.url()+'?ref='+encodeURIComponent(this.cfg().branch),{headers:this.headers(),cache:'no-store'});
-    if(r.status===404) return {sha:null,data:null};
-    if(!r.ok) throw new Error('GitHub '+r.status);
-    const j=await r.json();
-    const txt=decodeURIComponent(escape(atob(j.content.replace(/\n/g,''))));
-    return {sha:j.sha,data:JSON.parse(txt)};
-  },
-  async push(data,sha){
-    const c=this.cfg();
-    const content=btoa(unescape(encodeURIComponent(JSON.stringify(data,null,1))));
-    const body={message:'journal '+new Date().toISOString().slice(0,16).replace('T',' '),content,branch:c.branch};
-    if(sha) body.sha=sha;
-    const r=await fetch(this.url(),{method:'PUT',headers:{...this.headers(),'Content-Type':'application/json'},body:JSON.stringify(body)});
-    if(r.status===409||r.status===422) throw Object.assign(new Error('conflict'),{conflict:true});
-    if(!r.ok) throw new Error('GitHub '+r.status);
-    return (await r.json()).content.sha;
-  }
+/* ---------- Firebase : auth, Firestore hors ligne, Coach ----------
+   Les données vivent dans users/{uid}/... . Firestore garde une copie locale
+   (persistance IndexedDB) : l'app fonctionne sans réseau et synchronise seule.
+   localStorage reste le cache de démarrage et le mode « sans compte ». */
+const FB_CONFIG = {
+  apiKey: "AIzaSyAh3zhRXhfqQSQ2v6d7eJjFoGwVS-rW2Ok",
+  authDomain: "rituel-6b365.firebaseapp.com",
+  projectId: "rituel-6b365",
+  storageBucket: "rituel-6b365.firebasestorage.app",
+  messagingSenderId: "119051816935",
+  appId: "1:119051816935:web:35cfbb05dc893fa8a43742"
 };
-
-function mergeInto(local, remote){ // returns true if local changed
-  let changed=false;
-  for(const col of ['logs','bw','tests']){
-    const L=local[col]||(local[col]={}), R=(remote&&remote[col])||{};
-    for(const k in R){ if(!L[k]||(R[k].updatedAt||0)>(L[k].updatedAt||0)){ L[k]=R[k]; changed=true; } }
-  }
-  return changed;
+let fbApp=null, fbAuth=null, fbDb=null, fbFn=null, USER=null, unsubs=[], applyingRemote=false;
+function fbReady(){ return !!(window.firebase && fbDb); }
+function initFirebase(){
+  if(!window.firebase){ setSync('off','local'); return; }
+  try{
+    fbApp=firebase.initializeApp(FB_CONFIG);
+    fbAuth=firebase.auth(); fbDb=firebase.firestore(); fbFn=firebase.app().functions('europe-west1');
+    fbDb.settings({ignoreUndefinedProperties:true});
+    fbDb.enablePersistence({synchronizeTabs:true}).catch(()=>{});
+    fbAuth.useDeviceLanguage();
+    fbAuth.getRedirectResult().catch(e=>console.warn('redirect',e));
+    fbAuth.onAuthStateChanged(u=>{ USER=u||null; onAuth(); });
+  }catch(e){ console.warn('firebase init',e); setSync('off','local'); }
 }
-function snapshot(){ return {version:1, exportedAt:new Date().toISOString(), logs:S.logs, bw:S.bw, tests:S.tests}; }
-function sameData(a,b){ return JSON.stringify({l:a.logs,b:a.bw,t:a.tests})===JSON.stringify({l:b.logs,b:b.bw,t:b.tests}); }
+function isStandalone(){ return window.matchMedia('(display-mode: standalone)').matches || navigator.standalone===true; }
+async function signIn(){
+  const p=new firebase.auth.GoogleAuthProvider();
+  try{ if(isStandalone()||/iPhone|iPad|Android/i.test(navigator.userAgent)) await fbAuth.signInWithRedirect(p); else await fbAuth.signInWithPopup(p); }
+  catch(e){ alert('Connexion impossible : '+e.message); }
+}
+async function signOut(){ unsubs.forEach(u=>u()); unsubs=[]; await fbAuth.signOut(); }
+function col(name){ return fbDb.collection('users').doc(USER.uid).collection(name); }
+
+async function onAuth(){
+  unsubs.forEach(u=>u()); unsubs=[];
+  if(!USER){ syncStatusIdle(); renderReglages(); return; }
+  setSync('pend','connexion…');
+  // 1. pousser le local vers Firestore (fusion par updatedAt, jamais d'écrasement du plus récent)
+  await pushLocalToRemote();
+  // 2. écouter Firestore : la source de vérité devient le cloud (copie locale gérée par Firestore)
+  const listen=(name, key)=>unsubs.push(col(name).onSnapshot(snap=>{
+    applyingRemote=true; let changed=false;
+    snap.docChanges().forEach(ch=>{ const d=ch.doc.data(); const id=ch.doc.id;
+      if(ch.type==='removed'){ delete S[key][id]; changed=true; return; }
+      if(!S[key][id]||(d.updatedAt||0)>=(S[key][id].updatedAt||0)){ S[key][id]=d; changed=true; } });
+    applyingRemote=false; if(changed){ save(); render(); }
+    setSync(snap.metadata.hasPendingWrites?'pend':'on', snap.metadata.hasPendingWrites?'à sync':'sync ok');
+  }, err=>{ console.warn(name,err); setSync('pend','sync erreur'); }));
+  listen('logs','logs'); listen('bw','bw'); listen('tests','tests');
+  unsubs.push(col('coach').orderBy('createdAt','desc').limit(30).onSnapshot(snap=>{ COACH.items=snap.docs.map(d=>({id:d.id,...d.data()})); renderCoach(); }));
+  unsubs.push(col('overrides').onSnapshot(snap=>{ S.overrides={}; snap.docs.forEach(d=>S.overrides[d.id]=d.data()); save(); renderSeance(); }));
+  renderReglages();
+}
+async function pushLocalToRemote(){
+  const batchWrites=[];
+  for(const [name,key] of [['logs','logs'],['bw','bw'],['tests','tests']]){
+    for(const id in S[key]){ const local=S[key][id]; if(!local||!local.updatedAt) continue;
+      batchWrites.push(async()=>{ const ref=col(name).doc(id); const snap=await ref.get({source:'server'}).catch(()=>ref.get()); const remote=snap.exists?snap.data():null;
+        if(!remote||(local.updatedAt||0)>(remote.updatedAt||0)) await ref.set(JSON.parse(JSON.stringify(local))); });
+    }
+  }
+  for(const w of batchWrites){ try{ await w(); }catch(e){ console.warn('push',e); } }
+}
+function writeDoc(name,id,data){ if(!USER||!fbDb||applyingRemote) return; col(name).doc(id).set(JSON.parse(JSON.stringify(data))).catch(e=>console.warn('write',e)); }
 
 function setSync(cls,txt){ const c=$('#syncChip'); c.className='chip sync '+cls; c.textContent=txt; }
-function syncStatusIdle(){
-  if(!GH.ready()) return setSync('off','local');
-  if(!navigator.onLine) return setSync('pend','hors ligne');
-  setSync(S.dirty?'pend':'on', S.dirty?'à sync':'sync ok');
-}
-let syncing=false, syncTimer=0;
-function markDirty(){ S.dirty=true; save(); syncStatusIdle(); clearTimeout(syncTimer); syncTimer=setTimeout(()=>sync(),20000); }
-async function sync(manual){
-  if(!GH.ready()){ syncStatusIdle(); return; }
-  if(!navigator.onLine||syncing){ syncStatusIdle(); return; }
-  syncing=true; setSync('pend','synchro…');
-  try{
-    for(let attempt=0;attempt<2;attempt++){
-      const {sha,data}=await GH.pull();
-      const changedLocal=mergeInto(S,data);
-      if(changedLocal){ save(); render(); }
-      if(!data||!sameData(snapshot(),data)){
-        try{ await GH.push(snapshot(),sha); }
-        catch(e){ if(e.conflict&&attempt===0) continue; throw e; }
-      }
-      break;
-    }
-    S.dirty=false; S.lastSync=Date.now(); save(); syncStatusIdle();
-  }catch(e){
-    console.warn('sync',e);
-    setSync('pend', /401|403/.test(e.message)?'token refusé':'sync échouée');
-    if(manual) alert('Synchronisation impossible : '+e.message);
-  }
-  syncing=false;
-}
-window.addEventListener('online',()=>sync());
-window.addEventListener('offline',syncStatusIdle);
-document.addEventListener('visibilitychange',()=>{ if(!document.hidden) sync(); });
-$('#syncChip').onclick=()=>sync(true);
+function syncStatusIdle(){ if(!USER) return setSync('off','local'); setSync(navigator.onLine?'on':'pend', navigator.onLine?'sync ok':'hors ligne'); }
+function markDirty(){ save(); }
+function mergeInto(local, remote){ let changed=false; for(const c of ['logs','bw','tests']){ const L=local[c]||(local[c]={}), R=(remote&&remote[c])||{}; for(const k in R){ if(!L[k]||(R[k].updatedAt||0)>(L[k].updatedAt||0)){ L[k]=R[k]; changed=true; writeDoc(c,k,R[k]); } } } return changed; }
+function snapshot(){ return {version:1, exportedAt:new Date().toISOString(), logs:S.logs, bw:S.bw, tests:S.tests}; }
+window.addEventListener('online',syncStatusIdle); window.addEventListener('offline',syncStatusIdle);
+$('#syncChip').onclick=()=>{ if(!USER) signIn(); };
 
 /* ---------- réglages ---------- */
 function renderReglages(){
-  const c=GH.cfg(); const el=$('#tab-reglages');
-  const guess=(()=>{ const m=location.hostname.match(/^([^.]+)\.github\.io$/); return m?m[1]:''; })();
+  const el=$('#tab-reglages');
   el.innerHTML=`<h2>Réglages</h2>
-  <h3>Synchronisation GitHub</h3>
-  <p class="small muted">Un dépôt <b>privé</b> séparé de l'application, dans lequel le fichier <span class="mono">data/journal.json</span> est écrit. Le token doit être un « fine-grained personal access token » limité à ce dépôt avec la permission Contents : Read and write.</p>
-  <div class="form">
-    <label>Propriétaire (compte GitHub)<input id="ghOwner" value="${esc(c.owner||guess)}" autocapitalize="off" autocomplete="off"></label>
-    <label>Dépôt de données<input id="ghRepo" value="${esc(c.repo||'rituel-data')}" autocapitalize="off" autocomplete="off"></label>
-    <label>Branche<input id="ghBranch" value="${esc(c.branch||'main')}" autocapitalize="off"></label>
-    <label>Token<input id="ghToken" type="password" value="${esc(c.token||'')}" autocomplete="off" placeholder="github_pat_…"></label>
-    <div class="row2"><button class="btn acc" id="ghSave">Enregistrer</button><button class="btn" id="ghTest">Tester</button><span class="small muted" id="ghMsg"></span></div>
-  </div>
+  <h3>Compte</h3>
+  ${USER?`<p>Connecté : <b>${esc(USER.displayName||'')}</b> <span class="muted small">${esc(USER.email||'')}</span></p><p class="small muted">Tes séances sont synchronisées sur tous tes appareils. Hors ligne, tout est conservé sur le téléphone puis envoyé au retour du réseau.</p><div class="row2"><button class="btn" id="signOut">Se déconnecter</button></div>`
+        :`<p class="small muted">Sans compte, les données restent sur cet appareil. Connecte-toi pour la synchronisation multi-appareils et le Coach.</p><div class="row2"><button class="btn fill" id="signIn">Se connecter avec Google</button></div>`}
   <h3>Sauvegarde</h3>
   <div class="row2"><button class="btn" id="expBtn">Exporter le journal (JSON)</button><label class="btn" for="impFile">Importer</label><input id="impFile" type="file" accept="application/json" hidden></div>
-  <p class="small muted">L'export est le fichier à m'envoyer si la synchro n'est pas configurée. L'import fusionne sans écraser ce qui est plus récent.</p>
   <h3>Appareil</h3>
   <div class="row2"><label class="gtgrow"><input type="checkbox" id="wakeOpt" ${S.wake!==false?'checked':''}> Garder l'écran allumé pendant une séance</label></div>
   <div class="row2"><button class="btn" id="notifBtn">Autoriser les notifications</button><span class="small muted" id="notifMsg">${window.Notification?('état : '+Notification.permission):'non supporté'}</span></div>
   <p class="small muted">Version ${APP_VERSION}. <button class="link" id="reloadBtn">Recharger l'application</button></p>`;
-  const msg=$('#ghMsg');
-  $('#ghSave').onclick=()=>{ S.gh={owner:$('#ghOwner').value.trim(),repo:$('#ghRepo').value.trim(),branch:$('#ghBranch').value.trim()||'main',path:'data/journal.json',token:$('#ghToken').value.trim()}; save(); msg.textContent='enregistré'; syncStatusIdle(); sync(true); };
-  $('#ghTest').onclick=async()=>{ $('#ghSave').click(); msg.textContent='test…'; try{ const r=await GH.pull(); msg.textContent=r.data?`OK · ${Object.keys(r.data.logs||{}).length} séances sur GitHub`:'OK · dépôt vide, premier envoi au prochain sync'; }catch(e){ msg.textContent='échec : '+e.message; } };
+  const si=$('#signIn'); if(si) si.onclick=signIn; const so=$('#signOut'); if(so) so.onclick=signOut;
   $('#expBtn').onclick=()=>{ const blob=new Blob([JSON.stringify(snapshot(),null,1)],{type:'application/json'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='rituel-journal-'+todayISO()+'.json'; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),2000); };
-  $('#impFile').onchange=e=>{ const f=e.target.files[0]; if(!f) return; const rd=new FileReader(); rd.onload=()=>{ try{ const d=JSON.parse(rd.result); mergeInto(S,d); markDirty(); render(); alert('Import fusionné.'); }catch(err){ alert('Fichier invalide.'); } }; rd.readAsText(f); };
+  $('#impFile').onchange=e=>{ const f=e.target.files[0]; if(!f) return; const rd=new FileReader(); rd.onload=()=>{ try{ const d=JSON.parse(rd.result); mergeInto(S,d); save(); render(); alert('Import fusionné.'); }catch(err){ alert('Fichier invalide.'); } }; rd.readAsText(f); };
   $('#wakeOpt').onchange=e=>{ S.wake=e.target.checked; save(); if(!S.wake) releaseWake(); };
   $('#notifBtn').onclick=async()=>{ if(!window.Notification) return; const p=await Notification.requestPermission(); $('#notifMsg').textContent='état : '+p; };
   $('#reloadBtn').onclick=async()=>{ if(navigator.serviceWorker){ const r=await navigator.serviceWorker.getRegistration(); if(r){ await r.update(); } } location.reload(); };
+}
+
+/* ---------- Coach ---------- */
+const COACH={items:[], busy:false, thread:[]};
+async function callCoach(payload){
+  if(!USER) throw new Error('Connecte-toi pour utiliser le Coach.');
+  if(!navigator.onLine) throw new Error('Le Coach a besoin du réseau.');
+  const fn=fbFn.httpsCallable('coach',{timeout:120000});
+  const res=await fn(payload); return res.data;
+}
+async function analyseSession(logKeyStr){
+  if(COACH.busy) return; COACH.busy=true; renderCoach();
+  try{ await callCoach({mode:'analyse', logKey:logKeyStr, week:curWeek()}); }
+  catch(e){ alert('Coach : '+(e.message||e)); }
+  COACH.busy=false; renderCoach();
+}
+async function askCoach(text){
+  if(!text.trim()||COACH.busy) return; COACH.busy=true; COACH.thread.push({role:'user',content:text}); renderCoach();
+  try{ const r=await callCoach({mode:'chat', messages:COACH.thread.slice(-12), week:curWeek(), session:curSession().id}); COACH.thread.push({role:'assistant',content:r.text||''}); }
+  catch(e){ COACH.thread.push({role:'assistant',content:'Erreur : '+(e.message||e)}); }
+  COACH.busy=false; renderCoach();
+}
+function applyOverride(item){
+  if(!USER||!item.adjustments) return;
+  const bySession={};
+  item.adjustments.forEach(a=>{ const sid=a.exId.split('-')[0]; (bySession[sid]=bySession[sid]||{}); bySession[sid][a.exId]=a; });
+  Object.entries(bySession).forEach(([sid,adj])=>col('overrides').doc(sid).set({adj, fromCoach:item.id, updatedAt:Date.now()}));
+  col('coach').doc(item.id).set({applied:true},{merge:true});
+}
+function renderCoach(){
+  const el=$('#tab-coach'); if(!el) return;
+  let h=`<h2>Coach</h2>`;
+  if(!USER){ h+=`<p class="small muted">Connecte-toi (Réglages) pour activer le Coach : analyse de chaque séance, ajustement des charges, réponses sur ta progression.</p>`; el.innerHTML=h; return; }
+  const date=todayISO(), ses=curSession(), log=S.logs[logKey(date,ses.id)];
+  const todayAnalysed=COACH.items.some(i=>i.logKey===logKey(date,ses.id));
+  h+=`<div class="row2"><button class="btn acc" id="anaBtn" ${COACH.busy||!log||!Object.keys(log.sets||{}).length?'disabled':''}>${COACH.busy?'Analyse en cours…':todayAnalysed?'Ré-analyser la séance du jour':'Analyser la séance du jour'}</button></div>`;
+  h+=`<div class="chat">`+COACH.thread.map(m=>`<div class="msg ${m.role}">${esc(m.content).replace(/\n/g,'<br>')}</div>`).join('')+(COACH.busy&&COACH.thread.length&&COACH.thread[COACH.thread.length-1].role==='user'?'<div class="msg assistant muted">…</div>':'')+`</div>`;
+  h+=`<form class="ask" id="askForm"><input id="askInput" placeholder="Question au coach (charges, douleur, garde, nutrition…)" autocomplete="off"><button class="btn fill" type="submit" ${COACH.busy?'disabled':''}>Envoyer</button></form>`;
+  h+=`<h3>Analyses</h3>`;
+  if(!COACH.items.length) h+=`<p class="small muted">Aucune analyse. Termine une séance puis lance l'analyse.</p>`;
+  COACH.items.forEach(it=>{
+    h+=`<div class="ana"><div class="anah"><b>${esc(it.title||it.logKey||'')}</b><span class="small muted">${it.createdAt?new Date(it.createdAt).toLocaleDateString('fr-FR'):''}</span></div><div class="anab">${esc(it.analysis||'').replace(/\n/g,'<br>')}</div>`;
+    if(it.adjustments&&it.adjustments.length){ h+=`<div class="adj"><b class="small">Ajustements proposés pour la prochaine séance</b><ul>${it.adjustments.map(a=>`<li><b>${esc(a.name||a.exId)}</b> : ${esc(a.change)}${a.reason?' <span class="muted">— '+esc(a.reason)+'</span>':''}</li>`).join('')}</ul>${it.applied?'<span class="tag ok">appliqué</span>':`<button class="btn sm acc" data-apply="${it.id}">Appliquer</button>`}</div>`; }
+    h+=`</div>`;
+  });
+  el.innerHTML=h;
+  const ab=$('#anaBtn'); if(ab) ab.onclick=()=>analyseSession(logKey(date,ses.id));
+  $('#askForm').onsubmit=e=>{ e.preventDefault(); const v=$('#askInput').value; $('#askInput').value=''; askCoach(v); };
+  el.querySelectorAll('[data-apply]').forEach(b=>b.onclick=()=>applyOverride(COACH.items.find(i=>i.id===b.dataset.apply)));
 }
 
 /* ---------- wake lock ---------- */
@@ -182,7 +219,7 @@ $('#tStop').onclick=stopTimer; $('#tPlus').onclick=()=>{T.end+=30000;T.total+=30
 document.addEventListener('visibilitychange',()=>{ if(!document.hidden&&$('#timer').classList.contains('on')) tick(); });
 
 /* ---------- render: séance ---------- */
-function render(){ if(!PROGRAM.sessions.length) return; renderSeance(); renderProgramme(); renderSuivi(); renderReglages(); const w=WEEKS[curWeek()-1]; $('#weekChip').textContent=`S${w.n}`; }
+function render(){ if(!PROGRAM.sessions.length) return; renderSeance(); renderProgramme(); renderSuivi(); renderReglages(); renderCoach(); const w=WEEKS[curWeek()-1]; $('#weekChip').textContent=`S${w.n}`; }
 
 function renderSeance(){
   const wk=curWeek(), W=WEEKS[wk-1], date=todayISO(), ses=curSession(), log=getLog(date,ses.id);
@@ -206,6 +243,7 @@ function renderSeance(){
     h+=`<p class="mach">${esc(ex.machine)}${ex.alt?' <span class="muted">· alt. '+esc(ex.alt)+'</span>':''}${ex.url?` <a href="${esc(ex.url)}" target="_blank" rel="noopener">voir ↗</a>`:''}</p>`;
     h+=`<div class="rx"><b>${p.sets} × ${esc(p.reps)}${ex.per?' '+esc(ex.per):''}</b>${p.rir!=null?`<span>RIR</span><b>${p.rir}</b>`:''}<span>tempo</span><b>${esc(ex.tempo)}</b><span>repos</span><b>${esc(p.restText)}</b>${ex.mode==='emom'?'<span>départ à départ</span>':''}</div>`;
     if(ex.chargeNote&&!/^RIR \d( → \d)*$/.test(ex.chargeNote)) h+=`<p class="small muted" style="margin:0 0 6px">${esc(ex.chargeNote)}</p>`;
+    const ov=((S.overrides||{})[ses.id]||{}).adj; const o=ov&&ov[ex.id]; if(o) h+=`<p class="coachline"><b>Coach</b> ${esc(o.change)}${o.reason?' <span class="muted">— '+esc(o.reason)+'</span>':''}</p>`;
     if(ref){ const best=ref.sets.reduce((m,s)=>Math.max(m,e1rm(s.w,s.r)),0); const top=ref.sets.find(s=>s.w)||ref.sets[0]; let tgt=''; if(top&&top.w&&wk>1&&wk<4){ const hi=parseInt(String(p.reps).split('-').pop()); const allHi=ref.sets.every(s=>s.r>=hi); tgt=allHi?` → <span class="tgt">cible ${Math.round(top.w*1.025*2)/2} kg</span>`:` → <span class="tgt">même charge, +1 rep</span>`; } if(wk===4&&top&&top.w) tgt=` → <span class="tgt">décharge ≈ ${Math.round(top.w*0.9*2)/2} kg</span>`; h+=`<p class="ref">Dernier (${fmtD(ref.date)}, S${ref.week}) : <b>${esc(fmtSets(ref.sets))}</b>${tgt}</p>`; }
     else h+=`<p class="ref">Aucune référence. Note la charge de la première série sérieuse.</p>`;
     // sets grid
@@ -260,8 +298,8 @@ function renderSeance(){
   });
   $('#notes').onchange=e=>{ log.notes=e.target.value; touch(log); };
   updateElapsed(log);
-  if(!GH.ready()&&Object.keys(log.sets).length) el.insertAdjacentHTML('afterbegin','<div class="banner">Synchro non configurée : tes séries ne sont que sur ce téléphone. Onglet ⚙ pour brancher le dépôt.</div>');
-  $('#endBtn').onclick=()=>{ log.done=!log.done; touch(log); stopTimer(); if(log.done){ releaseWake(); sync(); } renderSeance(); if(log.done) window.scrollTo({top:0}); };
+  if(!USER&&Object.keys(log.sets).length) el.insertAdjacentHTML('afterbegin','<div class="banner">Pas connecté : tes séries ne sont que sur ce téléphone. Réglages → Se connecter avec Google.</div>');
+  $('#endBtn').onclick=()=>{ log.done=!log.done; touch(log); stopTimer(); if(log.done){ releaseWake(); if(USER&&navigator.onLine){ analyseSession(logKey(log.date,log.session)); document.querySelector('.tabs button[data-tab="coach"]').click(); } } renderSeance(); if(log.done) window.scrollTo({top:0}); };
 }
 
 let elapsedTimer=0;
@@ -307,8 +345,8 @@ function renderSuivi(){
   if(!logs.length) h+=`<p class="muted small">Rien encore.</p>`;
   else h+=`<div class="tw"><table><thead><tr><th>Date</th><th>Séance</th><th>S</th><th>Séries</th><th>Notes</th></tr></thead><tbody>${logs.map(l=>{ const s=PROGRAM.sessions.find(x=>x.id===l.session); const n=Object.values(l.sets).flat().filter(x=>x&&x.done).length; return `<tr><td class="num">${fmtD(l.date)}</td><td>${s?esc(s.name):l.session}${l.done?' ✓':''}</td><td class="num">${l.week}</td><td class="num">${n}</td><td class="small">${esc(l.notes)}</td></tr>`; }).join('')}</tbody></table></div>`;
   el.innerHTML=h;
-  $('#bwAdd').onclick=()=>{ const d=$('#bwDate').value, kg=parseFloat($('#bwKg').value); if(!d||isNaN(kg)) return; S.bw[d]={date:d,kg,updatedAt:Date.now()}; markDirty(); renderSuivi(); };
-  $('#tAdd').onclick=()=>{ const d=$('#tDate').value, r=parseInt($('#tReps').value); if(!d||isNaN(r)) return; S.tests[d]={date:d,reps:r,updatedAt:Date.now()}; markDirty(); renderSuivi(); };
+  $('#bwAdd').onclick=()=>{ const d=$('#bwDate').value, kg=parseFloat($('#bwKg').value); if(!d||isNaN(kg)) return; S.bw[d]={date:d,kg,updatedAt:Date.now()}; save(); writeDoc('bw',d,S.bw[d]); renderSuivi(); };
+  $('#tAdd').onclick=()=>{ const d=$('#tDate').value, r=parseInt($('#tReps').value); if(!d||isNaN(r)) return; S.tests[d]={date:d,reps:r,updatedAt:Date.now()}; save(); writeDoc('tests',d,S.tests[d]); renderSuivi(); };
   const sel=$('#exSel'); if(!suiviEx) suiviEx=sel.value; sel.value=suiviEx; sel.onchange=()=>{ suiviEx=sel.value; renderHist(); }; renderHist();
 }
 function addDays(iso,n){ const d=new Date(iso+'T12:00:00'); d.setDate(d.getDate()+n); return d.toISOString().slice(0,10); }
@@ -323,7 +361,7 @@ function renderHist(){
 }
 
 /* ---------- tabs, week ---------- */
-document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>{ document.querySelectorAll('.tabs button').forEach(x=>x.setAttribute('aria-selected',x===b)); ['seance','programme','suivi','cycle','reglages'].forEach(t=>$('#tab-'+t).hidden=t!==b.dataset.tab); window.scrollTo({top:0}); });
+document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>{ document.querySelectorAll('.tabs button').forEach(x=>x.setAttribute('aria-selected',x===b)); ['seance','coach','programme','suivi','cycle','reglages'].forEach(t=>$('#tab-'+t).hidden=t!==b.dataset.tab); window.scrollTo({top:0}); });
 $('#weekChip').onclick=()=>{ const auto=weekFor(todayISO()); const cur=curWeek(); const nx=cur%WEEKS.length+1; S.weekOverride=nx===auto?null:nx; save(); render(); };
 document.addEventListener('pointerdown',unlockAudio,{once:true});
 document.addEventListener('pointerdown',()=>{ if(window.Notification&&Notification.permission==='default'){ try{Notification.requestPermission();}catch(e){} } },{once:true});
@@ -335,7 +373,7 @@ async function boot(){
     const [p,c]=await Promise.all([fetch('program.json').then(r=>r.json()), fetch('cycle.html').then(r=>r.text())]);
     PROGRAM=p; if(p.weeks&&p.weeks.length) WEEKS=p.weeks; $('#tab-cycle').innerHTML=c; document.querySelector('.brand small').textContent=p.cycleName||'';
   }catch(e){ $('#tab-seance').innerHTML='<p>Impossible de charger le programme. Recharge la page avec du réseau une première fois.</p>'; return; }
-  render(); syncStatusIdle(); sync();
+  render(); initFirebase();
   if('serviceWorker' in navigator){ navigator.serviceWorker.register('sw.js').then(r=>{ r.addEventListener('updatefound',()=>{ const w=r.installing; w&&w.addEventListener('statechange',()=>{ if(w.state==='installed'&&navigator.serviceWorker.controller) setSync('pend','mise à jour dispo · recharge'); }); }); }).catch(()=>{}); }
 }
 boot();

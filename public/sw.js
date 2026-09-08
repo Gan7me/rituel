@@ -1,6 +1,6 @@
 /* Service worker — app shell en cache, fonctionnement hors ligne complet.
    Incrémente VERSION à chaque déploiement pour forcer la mise à jour. */
-const VERSION = 'rituel-v1.2';
+const VERSION = 'rituel-v2.0';
 const SHELL = [
   './',
   './index.html',
@@ -11,7 +11,11 @@ const SHELL = [
   './manifest.webmanifest',
   './icons/icon-192.png',
   './icons/icon-512.png',
-  './icons/icon-512-maskable.png'
+  './icons/icon-512-maskable.png',
+  'https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js',
+  'https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js',
+  'https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js',
+  'https://www.gstatic.com/firebasejs/10.14.1/firebase-functions-compat.js'
 ];
 
 self.addEventListener('install', e => {
@@ -28,7 +32,7 @@ self.addEventListener('activate', e => {
 self.addEventListener('fetch', e => {
   const url = new URL(e.request.url);
   // Jamais de cache pour l'API GitHub (synchro) ni pour les requêtes hors origine.
-  if (url.origin !== location.origin) return;
+  if (url.origin !== location.origin && !url.hostname.endsWith('gstatic.com')) return;
   // Cache d'abord pour le shell, réseau en secours puis mise à jour du cache (stale-while-revalidate).
   e.respondWith(
     caches.match(e.request).then(cached => {
