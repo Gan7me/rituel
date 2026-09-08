@@ -104,12 +104,13 @@ async function claudeJSON(apiKey, model, system, messages, schema, maxTokens = 2
 
 const ANALYSIS_SCHEMA = {
   type: 'object',
-  required: ['title', 'analysis', 'adjustments', 'nextFocus'],
+  required: ['title', 'verdict', 'exercises', 'adjustments', 'nextFocus'],
   properties: {
-    title: { type: 'string', description: 'Ex. « Push A · 08/09 · S1 »' },
-    analysis: { type: 'string', description: "Analyse en 8 à 14 phrases, en français, chiffrée : charges et reps réalisées vs prescription et vs dernière référence, RIR déclaré vs reps atteintes, ce que dit la note de séance, signaux de fatigue ou de douleur, verdict clair sur la séance, ce qu'on retient pour la suite." },
-    adjustments: { type: 'array', items: { type: 'object', required: ['exId', 'change', 'reason'], properties: { exId: { type: 'string' }, name: { type: 'string' }, change: { type: 'string', description: 'Prescription concrète pour la prochaine fois, ex. « 4 × 6-8 à 125 kg (RIR 2) »' }, reason: { type: 'string' }, load: { type: 'number' } } } },
-    nextFocus: { type: 'string', description: 'Une phrase : priorité de la prochaine séance de ce type.' }
+    title: { type: 'string', description: 'Ex. « Push A · S1 »' },
+    verdict: { type: 'string', description: 'Verdict de la séance en 2 à 3 phrases courtes : calibrage global, ce que dit la note de l\'athlète confrontée aux chiffres, signal de fatigue ou de douleur s\'il y en a. Conclusion finale uniquement, jamais de raisonnement à voix haute ni de correction en cours de phrase.' },
+    exercises: { type: 'array', description: 'Une entrée par exercice réalisé, dans l\'ordre de la séance.', items: { type: 'object', required: ['exId', 'name', 'done', 'read'], properties: { exId: { type: 'string' }, name: { type: 'string' }, done: { type: 'string', description: 'Réalisé, compact : « 4×5 à 80 kg · RIR 3/2/1/4 »' }, read: { type: 'string', description: 'Lecture en une phrase : où on se situe dans la fourchette, cohérence charge/RIR, ce qu\'on en déduit.' }, status: { type: 'string', enum: ['ok', 'up', 'hold', 'warn'], description: 'ok = conforme ; up = progression à faire ; hold = même charge, viser plus de reps ; warn = incohérence, douleur ou charge à revoir' } } } },
+    adjustments: { type: 'array', items: { type: 'object', required: ['exId', 'change', 'reason'], properties: { exId: { type: 'string' }, name: { type: 'string' }, change: { type: 'string', description: 'Prescription concrète pour la prochaine fois, ex. « 4 × 5-6 à 82,5 kg (RIR 3) »' }, reason: { type: 'string', description: 'Justification en une phrase.' }, load: { type: 'number' } } } },
+    nextFocus: { type: 'string', description: 'Une phrase : la priorité de la prochaine séance de ce type.' }
   }
 };
 
@@ -225,10 +226,11 @@ exports.coach = onCall({ region: 'europe-west1', secrets: [ANTHROPIC_API_KEY], t
     if (!snap.exists) throw new HttpsError('not-found', 'Séance introuvable.');
     const log = snap.data();
     const sessionName = (prog.sessions.find(s => s.id === log.session) || {}).name || log.session;
-    const guide = `Consignes d'analyse : compare chaque exercice à sa prescription et à la dernière référence (charge, reps, RIR). Si l'athlète écrit que c'était facile, ou si les reps dépassent le haut de fourchette au RIR prescrit, tu augmentes la charge (règle : +2,5 % quand le haut de fourchette est atteint partout, +5 % si la note dit "facile" et que les RIR déclarés sont ≥ 3) et tu le dis exercice par exercice. Si une charge manque, tu le signales et tu demandes de la noter. Tu ne fais pas de généralités : chaque phrase s'appuie sur une donnée de la séance ou de l'historique. Propose un ajustement pour chaque exercice où les données le justifient.`;
+    const guide = `Consignes d'analyse : compare chaque exercice à sa prescription et à la dernière référence (charge, reps, RIR). Si l'athlète écrit que c'était facile, ou si les reps dépassent le haut de fourchette au RIR prescrit, tu augmentes la charge (règle : +2,5 % quand le haut de fourchette est atteint partout, +5 % si la note dit "facile" et que les RIR déclarés sont ≥ 3) et tu le dis exercice par exercice. Si une charge manque, tu le signales et tu demandes de la noter. Tu ne fais pas de généralités : chaque phrase s'appuie sur une donnée de la séance ou de l'historique. Tu livres des conclusions, pas ton raisonnement : pas de « attention », « en fait », « donc » en cascade, pas d'auto-correction. Attention aux fourchettes : 12 reps sur 12-15 est le bas de la fourchette. Propose un ajustement pour chaque exercice où les données le justifient.`;
     const user = `Programme :\n${programSummary}\n\n${context}\n\n## Séance à analyser\n${log.date} · ${sessionName} · S${log.week}${log.done ? '' : ' (non terminée)'}\n${fmtLog(log, idx)}${log.notes ? '\nNote de l\'athlète : ' + log.notes : ''}\n\n${guide}`;
     const parsed = await claudeJSON(apiKey, model, SYSTEM, [{ role: 'user', content: user }], ANALYSIS_SCHEMA, 2500);
-    if (!parsed.analysis || !String(parsed.analysis).trim()) parsed.analysis = 'Analyse vide renvoyée par le modèle. Relance l\'analyse.';
+    parsed.exercises = (parsed.exercises || []).filter(e => e && idx[e.exId]).map(e => ({ exId: e.exId, name: idx[e.exId].name, done: String(e.done || ''), read: String(e.read || ''), status: ['ok', 'up', 'hold', 'warn'].includes(e.status) ? e.status : 'ok' }));
+    parsed.analysis = String(parsed.verdict || '');
     parsed.title = parsed.title || `${sessionName} · ${log.date}`;
     parsed.adjustments = (parsed.adjustments || []).filter(a => a && idx[a.exId]).map(a => ({ exId: a.exId, name: idx[a.exId].name, change: String(a.change || ''), reason: String(a.reason || ''), load: typeof a.load === 'number' ? a.load : null }));
     const doc = { ...parsed, logKey, session: log.session, createdAt: Date.now(), applied: false, model };
