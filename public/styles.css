@@ -248,3 +248,16 @@ details.cyc summary::-webkit-details-marker{display:none}
 details.cyc summary::after{content:" +";color:var(--accent)}
 details.cyc[open] summary::after{content:" –"}
 .tabs button{font-size:11px}
+
+/* auth */
+.form.auth{gap:10px;max-width:420px}
+.form.auth .btn{margin-top:4px;font-size:17px;padding:12px}
+.or{display:flex;align-items:center;gap:10px;color:var(--muted);font-size:12px;max-width:420px}
+.or::before,.or::after{content:"";flex:1;height:1px;background:var(--line)}
+.gate .btn{align-self:stretch;max-width:420px}
+.gate .feats{margin:0 0 4px}
+.gate{gap:14px;min-height:0;padding:20px 4px 40px}
+.link{cursor:pointer}
+
+.err{color:var(--accent-ink);margin:0;min-height:0}
+.err:empty{display:none}
