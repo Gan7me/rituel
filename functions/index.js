@@ -10,7 +10,19 @@ const program = require('./program.json');
 admin.initializeApp();
 const db = admin.firestore();
 const ANTHROPIC_API_KEY = defineSecret('ANTHROPIC_API_KEY');
-const MODEL = defineString('COACH_MODEL', { default: 'claude-sonnet-4-5' });
+const MODEL = defineString('COACH_MODEL', { default: 'auto' });
+let resolvedModel = null;
+// 'auto' : choisit le Sonnet le plus récent disponible sur le compte (bon rapport qualité/coût pour ce coach).
+async function resolveModel(apiKey, wanted) {
+  if (wanted && wanted !== 'auto') return wanted;
+  if (resolvedModel) return resolvedModel;
+  const r = await fetch('https://api.anthropic.com/v1/models?limit=100', { headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' } });
+  if (!r.ok) throw new HttpsError('internal', 'Impossible de lister les modèles Anthropic (' + r.status + ').');
+  const ids = ((await r.json()).data || []).map(m => m.id);
+  const pick = ids.find(i => /sonnet/.test(i)) || ids.find(i => /opus/.test(i)) || ids[0];
+  if (!pick) throw new HttpsError('internal', 'Aucun modèle disponible sur ce compte.');
+  resolvedModel = pick; return pick;
+}
 
 const SYSTEM = `Tu es le préparateur physique de l'utilisateur : 15 ans de terrain en force athlétique, hypertrophie et préparation physique de sportifs opérationnels (pompiers, militaires, calisthénie). Tu le suis comme un athlète confirmé.
 
@@ -73,7 +85,7 @@ async function claude(apiKey, model, system, messages, maxTokens = 1500) {
 exports.coach = onCall({ region: 'europe-west1', secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 120, memory: '512MiB' }, async (req) => {
   if (!req.auth) throw new HttpsError('unauthenticated', 'Connexion requise.');
   const uid = req.auth.uid; const { mode } = req.data || {};
-  const apiKey = ANTHROPIC_API_KEY.value(); const model = MODEL.value();
+  const apiKey = ANTHROPIC_API_KEY.value(); const model = await resolveModel(apiKey, MODEL.value());
   const context = await loadContext(uid);
   const idx = exerciseIndex();
   const programSummary = program.sessions.map(s => `${s.name} (${s.id}) : ` + s.exercises.map(e => `${e.id} ${e.name} ${e.setsText || ''}`).join(' ; ')).join('\n');

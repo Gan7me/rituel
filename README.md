@@ -18,7 +18,7 @@ firebase functions:secrets:set ANTHROPIC_API_KEY     # colle la clé quand elle 
 firebase deploy
 ```
 
-Le plan Blaze est requis pour la fonction (appel sortant vers Anthropic). Modèle par défaut `claude-sonnet-4-5`, modifiable via le paramètre `COACH_MODEL` (`firebase functions:config` ou `.env` dans `functions/`).
+Le plan Blaze est requis pour la fonction (appel sortant vers Anthropic). Modèle : `COACH_MODEL=auto` choisit le Sonnet le plus récent du compte ; un identifiant précis peut être fixé via le paramètre `COACH_MODEL` (`firebase functions:config` ou `.env` dans `functions/`).
 
 URL après déploiement : https://rituel-6b365.web.app
 
