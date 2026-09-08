@@ -1,0 +1,15 @@
+{
+  "appId": "fr.rituel.app",
+  "appName": "Rituel",
+  "webDir": "public",
+  "server": {
+    "url": "https://rituel-6b365.web.app",
+    "cleartext": false
+  },
+  "ios": { "contentInset": "always", "backgroundColor": "#F3F4F1" },
+  "android": { "backgroundColor": "#F3F4F1" },
+  "plugins": {
+    "SplashScreen": { "launchShowDuration": 600, "backgroundColor": "#161C24", "showSpinner": false },
+    "StatusBar": { "style": "DEFAULT" }
+  }
+}

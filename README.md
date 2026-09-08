@@ -25,3 +25,15 @@ URL après déploiement : https://rituel-6b365.web.app
 ## Programme par défaut
 
 `public/program.json` et `public/cycle.html` sont le programme « Fondations » proposé à l'import lors de l'onboarding (athlète confirmé, ON AIR Lyon). Chaque utilisateur peut à la place générer son propre cycle avec le coach, puis en regénérer un depuis l'onglet Programme. Incrémenter `VERSION` dans `public/sw.js` à chaque déploiement.
+
+## Applications natives (Capacitor + Codemagic)
+
+`capacitor.config.json` enveloppe l'app web dans une coquille native (`fr.rituel.app`) qui charge `https://rituel-6b365.web.app` : une seule base de code, mises à jour instantanées côté web, accès aux notifications push et à la connexion Apple native. Les dossiers `ios/` et `android/` sont générés à la volée par le pipeline (`npx cap add …`), ils ne sont pas versionnés.
+
+`codemagic.yaml` décrit deux workflows : iOS vers TestFlight (signature via l'intégration App Store Connect) et Android vers un `.aab`. Pré-requis côté Codemagic : connecter le dépôt Git, créer l'intégration App Store Connect nommée `rituel_asc`, ajouter un keystore Android nommé `rituel_keystore`, renseigner la variable `APP_STORE_APPLE_ID`.
+
+Alternative Android immédiate : PWABuilder (pwabuilder.com) sur l'URL de production, puis `.well-known/assetlinks.json` avec l'empreinte SHA-256 fournie.
+
+## Quotas et suppression de compte
+
+La fonction `coach` plafonne par compte et par mois : 4 programmes, 60 analyses, 300 messages (`QUOTAS` dans `functions/index.js`). La fonction `deleteAccount` efface tout le sous-arbre `users/{uid}` puis le compte Auth, depuis Réglages.

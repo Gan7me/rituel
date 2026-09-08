@@ -139,9 +139,32 @@ function normalizeProgram(p, startISO) {
 }
 function nextMonday() { const d = new Date(); const day = d.getDay(); const diff = day === 1 ? 0 : (8 - day) % 7; d.setDate(d.getDate() + diff); return d.toISOString().slice(0, 10); }
 
+const QUOTAS = { program: 4, analyse: 60, chat: 300 }; // par mois et par compte : plafonne le coût IA
+async function checkQuota(uid, mode) {
+  const month = new Date().toISOString().slice(0, 7);
+  const ref = db.collection('users').doc(uid).collection('meta').doc('usage');
+  return db.runTransaction(async tx => {
+    const snap = await tx.get(ref); const d = snap.exists ? snap.data() : {};
+    const cur = d.month === month ? d : { month, program: 0, analyse: 0, chat: 0 };
+    if ((cur[mode] || 0) >= QUOTAS[mode]) throw new HttpsError('resource-exhausted', `Quota mensuel atteint pour « ${mode} » (${QUOTAS[mode]}). Il se renouvelle le 1er du mois.`);
+    cur[mode] = (cur[mode] || 0) + 1; cur.updatedAt = Date.now();
+    tx.set(ref, cur); return cur;
+  });
+}
+
+exports.deleteAccount = onCall({ region: 'europe-west1' }, async (req) => {
+  if (!req.auth) throw new HttpsError('unauthenticated', 'Connexion requise.');
+  const uid = req.auth.uid;
+  await db.recursiveDelete(db.collection('users').doc(uid));
+  await admin.auth().deleteUser(uid);
+  return { ok: true };
+});
+
 exports.coach = onCall({ region: 'europe-west1', secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 540, memory: '1GiB' }, async (req) => {
   if (!req.auth) throw new HttpsError('unauthenticated', 'Connexion requise.');
   const uid = req.auth.uid; const { mode } = req.data || {};
+  if (!QUOTAS[mode]) throw new HttpsError('invalid-argument', 'mode inconnu');
+  await checkQuota(uid, mode);
   const apiKey = ANTHROPIC_API_KEY.value(); const model = await resolveModel(apiKey, MODEL.value());
   const meta = await loadMeta(uid);
   if (!meta.profile) throw new HttpsError('failed-precondition', 'Profil manquant.');
@@ -184,7 +207,7 @@ exports.coach = onCall({ region: 'europe-west1', secrets: [ANTHROPIC_API_KEY], t
   }
 
   if (mode === 'chat') {
-    const msgs = (req.data.messages || []).filter(m => m && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string').slice(-12);
+    const msgs = (req.data.messages || []).filter(m => m && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string').slice(-12).map(m => ({ role: m.role, content: m.content.slice(0, 4000) }));
     if (!msgs.length || msgs[msgs.length - 1].role !== 'user') throw new HttpsError('invalid-argument', 'Message manquant.');
     const sys = `${SYSTEM}\n\nProgramme :\n${programSummary}\n\n${context}\n\nSemaine en cours : S${req.data.week || '?'}. Réponds en moins de 200 mots sauf si la question demande un plan détaillé.`;
     const text = await claude(apiKey, model, sys, msgs, 900);
