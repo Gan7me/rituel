@@ -6,8 +6,8 @@ Application d'entraînement installable (PWA) avec coach IA. Programme du jour, 
 
 - `public/` — l'application (HTML/CSS/JS, sans build). Servie par Firebase Hosting, installable sur iOS/Android, fonctionne hors ligne (service worker).
 - Firebase **Authentication** (Google) — un compte par utilisateur.
-- **Firestore** — `users/{uid}/logs`, `bw`, `tests`, `coach`, `overrides`. Persistance hors ligne native : les séries saisies sans réseau partent seules au retour de la connexion. Règles : chaque utilisateur ne lit et n'écrit que son sous-arbre.
-- **Cloud Functions** (`functions/index.js`, région europe-west1) — `coach` : reçoit une demande authentifiée, lit le journal de l'utilisateur, appelle l'API Anthropic avec la clé stockée en secret, renvoie et enregistre l'analyse. La clé ne quitte jamais le serveur.
+- **Firestore** — `users/{uid}/meta/profile` (profil saisi à la première connexion), `users/{uid}/meta/program` (programme généré par le coach ou importé), `users/{uid}/logs`, `bw`, `tests`, `coach`, `overrides`. Persistance hors ligne native : les séries saisies sans réseau partent seules au retour de la connexion. Règles : chaque utilisateur ne lit et n'écrit que son sous-arbre.
+- **Cloud Functions** (`functions/index.js`, région europe-west1) — `coach`, trois modes : `program` (génère un mésocycle de 4 semaines à partir du profil et du matériel), `analyse` (analyse une séance terminée, propose des ajustements), `chat` (question libre avec le journal en contexte). Appelle l'API Anthropic avec la clé stockée en secret ; la clé ne quitte jamais le serveur. Sans compte, l'application n'affiche que l'écran de connexion.
 
 ## Déploiement
 
@@ -22,6 +22,6 @@ Le plan Blaze est requis pour la fonction (appel sortant vers Anthropic). Modèl
 
 URL après déploiement : https://rituel-6b365.web.app
 
-## Mettre à jour le programme
+## Programme par défaut
 
-`public/program.json` (prescriptions, semaines, échauffement) et `public/cycle.html` (lecture du cycle). Copier aussi `program.json` dans `functions/` pour que le coach connaisse les exercices. Incrémenter `VERSION` dans `public/sw.js`, puis `firebase deploy --only hosting,functions`.
+`public/program.json` et `public/cycle.html` sont le programme « Fondations » proposé à l'import lors de l'onboarding (athlète confirmé, ON AIR Lyon). Chaque utilisateur peut à la place générer son propre cycle avec le coach, puis en regénérer un depuis l'onglet Programme. Incrémenter `VERSION` dans `public/sw.js` à chaque déploiement.

@@ -206,3 +206,21 @@ main{padding-top:10px}
 .tag.ok{color:var(--ok);border-color:var(--ok)}
 .coachline{font-size:13px;background:var(--accent-soft);border-radius:6px;padding:6px 10px;margin:0 0 8px}
 .coachline b{color:var(--accent);margin-right:4px}
+
+/* palier 2 : accueil, onboarding, profil */
+.gate{min-height:80vh;display:flex;flex-direction:column;justify-content:center;gap:16px;padding:24px 4px}
+.gate .brand.big{font-size:56px;line-height:1}
+.gate .lede{font-size:16px;max-width:36ch}
+.gate .btn{align-self:flex-start;font-size:18px;padding:12px 18px}
+.onb{padding:8px 0 40px}
+.onb h2{margin-top:10px}
+.form label{display:grid;gap:4px;font-family:var(--mono);font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.form input,.form select,.form textarea{padding:9px 10px;font-family:var(--sans);font-size:16px;text-transform:none;letter-spacing:0;border-radius:6px;width:100%}
+.form textarea{resize:vertical}
+.form fieldset{border:1px solid var(--line);border-radius:6px;padding:8px 10px;margin:0}
+.form legend{font-family:var(--mono);font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);padding:0 4px}
+.chks{display:grid;grid-template-columns:1fr 1fr;gap:6px 10px}
+.chk{display:flex;align-items:center;gap:6px;font-family:var(--sans);font-size:14px;text-transform:none;letter-spacing:0;color:var(--ink)}
+.chk input{width:18px;height:18px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+@media (max-width:380px){.chks,.grid2{grid-template-columns:1fr}}

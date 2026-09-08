@@ -1,5 +1,5 @@
 
-const APP_VERSION='2.0.0';
+const APP_VERSION='2.1.0';
 let PROGRAM={sessions:[]};
 let WEEKS = [
   {n:1,label:'S1 calibrage',from:'2026-09-07',to:'2026-09-13',rirNote:'RIR 3 · établir les références, tout noter'},
@@ -83,8 +83,8 @@ function col(name){ return fbDb.collection('users').doc(USER.uid).collection(nam
 
 async function onAuth(){
   unsubs.forEach(u=>u()); unsubs=[];
-  if(!USER){ syncStatusIdle(); renderReglages(); return; }
-  setSync('pend','connexion…');
+  if(!USER){ PROGRAM_LOADED=false; showGate(); syncStatusIdle(); return; }
+  restoreShell(); setSync('pend','connexion…'); listenMeta();
   // 1. pousser le local vers Firestore (fusion par updatedAt, jamais d'écrasement du plus récent)
   await pushLocalToRemote();
   // 2. écouter Firestore : la source de vérité devient le cloud (copie locale gérée par Firestore)
@@ -98,7 +98,7 @@ async function onAuth(){
   }, err=>{ console.warn(name,err); setSync('pend','sync erreur'); }));
   listen('logs','logs'); listen('bw','bw'); listen('tests','tests');
   unsubs.push(col('coach').orderBy('createdAt','desc').limit(30).onSnapshot(snap=>{ COACH.items=snap.docs.map(d=>({id:d.id,...d.data()})); renderCoach(); }));
-  unsubs.push(col('overrides').onSnapshot(snap=>{ S.overrides={}; snap.docs.forEach(d=>S.overrides[d.id]=d.data()); save(); renderSeance(); }));
+  unsubs.push(col('overrides').onSnapshot(snap=>{ S.overrides={}; snap.docs.forEach(d=>S.overrides[d.id]=d.data()); save(); if(PROGRAM_LOADED) renderSeance(); }));
   renderReglages();
 }
 async function pushLocalToRemote(){
@@ -123,11 +123,13 @@ $('#syncChip').onclick=()=>{ if(!USER) signIn(); };
 
 /* ---------- réglages ---------- */
 function renderReglages(){
-  const el=$('#tab-reglages');
+  const el=$('#tab-reglages'); if(!el) return;
   el.innerHTML=`<h2>Réglages</h2>
   <h3>Compte</h3>
   ${USER?`<p>Connecté : <b>${esc(USER.displayName||'')}</b> <span class="muted small">${esc(USER.email||'')}</span></p><p class="small muted">Tes séances sont synchronisées sur tous tes appareils. Hors ligne, tout est conservé sur le téléphone puis envoyé au retour du réseau.</p><div class="row2"><button class="btn" id="signOut">Se déconnecter</button></div>`
         :`<p class="small muted">Sans compte, les données restent sur cet appareil. Connecte-toi pour la synchronisation multi-appareils et le Coach.</p><div class="row2"><button class="btn fill" id="signIn">Se connecter avec Google</button></div>`}
+  <h3>Profil</h3>
+  <details class="more" id="profDet"><summary>Modifier mon profil</summary>${USER?profileForm(PROFILE||{}):''}</details>
   <h3>Sauvegarde</h3>
   <div class="row2"><button class="btn" id="expBtn">Exporter le journal (JSON)</button><label class="btn" for="impFile">Importer</label><input id="impFile" type="file" accept="application/json" hidden></div>
   <h3>Appareil</h3>
@@ -135,6 +137,7 @@ function renderReglages(){
   <div class="row2"><button class="btn" id="notifBtn">Autoriser les notifications</button><span class="small muted" id="notifMsg">${window.Notification?('état : '+Notification.permission):'non supporté'}</span></div>
   <p class="small muted">Version ${APP_VERSION}. <button class="link" id="reloadBtn">Recharger l'application</button></p>`;
   const si=$('#signIn'); if(si) si.onclick=signIn; const so=$('#signOut'); if(so) so.onclick=signOut;
+  if($('#profForm')) bindProfileForm(()=>{ $('#profDet').open=false; alert('Profil enregistré. Le coach en tient compte dès la prochaine analyse.'); });
   $('#expBtn').onclick=()=>{ const blob=new Blob([JSON.stringify(snapshot(),null,1)],{type:'application/json'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='rituel-journal-'+todayISO()+'.json'; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),2000); };
   $('#impFile').onchange=e=>{ const f=e.target.files[0]; if(!f) return; const rd=new FileReader(); rd.onload=()=>{ try{ const d=JSON.parse(rd.result); mergeInto(S,d); save(); render(); alert('Import fusionné.'); }catch(err){ alert('Fichier invalide.'); } }; rd.readAsText(f); };
   $('#wakeOpt').onchange=e=>{ S.wake=e.target.checked; save(); if(!S.wake) releaseWake(); };
@@ -170,7 +173,7 @@ function applyOverride(item){
   col('coach').doc(item.id).set({applied:true},{merge:true});
 }
 function renderCoach(){
-  const el=$('#tab-coach'); if(!el) return;
+  const el=$('#tab-coach'); if(!el||!PROGRAM_LOADED||!PROGRAM.sessions.length) return;
   let h=`<h2>Coach</h2>`;
   if(!USER){ h+=`<p class="small muted">Connecte-toi (Réglages) pour activer le Coach : analyse de chaque séance, ajustement des charges, réponses sur ta progression.</p>`; el.innerHTML=h; return; }
   const date=todayISO(), ses=curSession(), log=S.logs[logKey(date,ses.id)];
@@ -191,12 +194,114 @@ function renderCoach(){
   el.querySelectorAll('[data-apply]').forEach(b=>b.onclick=()=>applyOverride(COACH.items.find(i=>i.id===b.dataset.apply)));
 }
 
+/* ---------- Palier 2 : profil et programme par utilisateur ----------
+   users/{uid}/meta/profile  — qui est l'athlète (saisi à la première connexion, modifiable dans Réglages)
+   users/{uid}/meta/program  — son programme, généré par le coach à partir du profil (ou importé)
+   Sans compte : écran d'accueil uniquement. */
+let PROFILE=null, PROGRAM_LOADED=false, DEFAULT_PROGRAM=null, DEFAULT_CYCLE_HTML='';
+const GOALS=[['force','Force maximale'],['masse','Prise de muscle'],['seche','Sécher, se dessiner'],['endurance','Endurance musculaire'],['puissance','Puissance, vitesse'],['tractions','Tractions (nombre)'],['jambes','Rattraper les jambes'],['bras','Bras et pectoraux'],['sante','Santé, mobilité, dos'],['perf','Performance sportive / opérationnelle']];
+const LEVELS=[['debutant','Débutant (moins d’un an)'],['intermediaire','Intermédiaire (1 à 3 ans)'],['confirme','Confirmé (3 ans et plus)'],['avance','Avancé, entraînement quotidien']];
+
+function showGate(){
+  document.querySelector('.tabs').hidden=true; document.querySelector('.top').hidden=true;
+  const m=document.querySelector('main'); m.innerHTML=`<section class="gate">
+    <div class="gateh"><div class="brand big">Rituel</div><p class="lede">Ton programme, ton coach, ta séance du jour. Tout se synchronise sur tes appareils, la séance marche sans réseau.</p></div>
+    <button class="btn fill" id="gateIn">Continuer avec Google</button>
+    <p class="small muted">Un compte par personne. Chacun ne voit que ses propres données.</p></section>`;
+  $('#gateIn').onclick=signIn;
+}
+function restoreShell(){
+  const m=document.querySelector('main');
+  if(!$('#tab-seance')) m.innerHTML=`<section id="tab-seance"></section><section id="tab-coach" hidden></section><section id="tab-programme" hidden></section><section id="tab-suivi" hidden></section><section id="tab-cycle" hidden class="doc"></section><section id="tab-reglages" hidden></section>`;
+  document.querySelector('.tabs').hidden=false; document.querySelector('.top').hidden=false;
+}
+function showOnboarding(step){
+  restoreShell(); document.querySelector('.tabs').hidden=true;
+  const m=document.querySelector('main');
+  if(step==='profile'||!PROFILE){ m.innerHTML=`<section class="onb"><h2>Ton profil</h2><p class="small muted">Le coach construit ton programme et ses analyses à partir de ces réponses. Modifiable ensuite dans Réglages.</p>${profileForm(PROFILE||{})}</section>`; bindProfileForm(()=>showOnboarding('program')); return; }
+  m.innerHTML=`<section class="onb"><h2>Ton programme</h2>
+    <p>Le coach va construire un mésocycle de 4 semaines à partir de ton profil, de ton matériel et de tes objectifs : séances, exercices, séries, RIR, tempo, repos, avec pour chaque exercice pourquoi il est là et comment l'exécuter.</p>
+    <div class="row2"><button class="btn fill" id="genBtn">Générer mon programme</button></div>
+    <p class="small muted" id="genMsg"></p>
+    ${DEFAULT_PROGRAM?`<details class="more"><summary>Autre option</summary><p class="small">Importer le programme « ${esc(DEFAULT_PROGRAM.cycleName||'Fondations')} » tel quel (prévu pour un athlète confirmé, 6 séances par semaine, parc ON AIR Lyon).</p><button class="btn sm" id="importBtn">Importer ce programme</button></details>`:''}
+  </section>`;
+  $('#genBtn').onclick=()=>generateProgram();
+  const ib=$('#importBtn'); if(ib) ib.onclick=()=>saveProgram(DEFAULT_PROGRAM, DEFAULT_CYCLE_HTML);
+}
+function profileForm(p){
+  const chk=(arr,sel)=>arr.map(([v,l])=>`<label class="chk"><input type="checkbox" name="goals" value="${v}" ${(sel||[]).includes(v)?'checked':''}> ${l}</label>`).join('');
+  return `<form class="form" id="profForm">
+    <label>Prénom<input name="name" value="${esc(p.name||(USER&&USER.displayName?USER.displayName.split(' ')[0]:''))}" required></label>
+    <div class="grid2"><label>Âge<input name="age" type="number" inputmode="numeric" min="14" max="90" value="${p.age||''}" required></label>
+    <label>Sexe<select name="sex"><option value="h" ${p.sex==='h'?'selected':''}>Homme</option><option value="f" ${p.sex==='f'?'selected':''}>Femme</option></select></label></div>
+    <div class="grid2"><label>Taille (cm)<input name="height" type="number" inputmode="numeric" value="${p.height||''}" required></label>
+    <label>Poids (kg)<input name="weight" type="number" inputmode="decimal" step="0.1" value="${p.weight||''}" required></label></div>
+    <label>Niveau<select name="level">${LEVELS.map(([v,l])=>`<option value="${v}" ${p.level===v?'selected':''}>${l}</option>`).join('')}</select></label>
+    <fieldset><legend>Objectifs (2 à 4, par ordre d'importance en cochant)</legend><div class="chks">${chk(GOALS,p.goals)}</div></fieldset>
+    <label>Précision sur tes objectifs<textarea name="goalsText" rows="2" placeholder="Ex. : passer de 35 à 70 tractions, rattraper des jambes faibles, rester à 69 kg">${esc(p.goalsText||'')}</textarea></label>
+    <div class="grid2"><label>Séances par semaine<select name="days">${[2,3,4,5,6].map(n=>`<option ${String(p.days||4)===String(n)?'selected':''}>${n}</option>`).join('')}</select></label>
+    <label>Durée par séance (min)<select name="minutes">${[45,60,75,90].map(n=>`<option ${String(p.minutes||60)===String(n)?'selected':''}>${n}</option>`).join('')}</select></label></div>
+    <label>Salle et matériel<textarea name="equipment" rows="3" placeholder="Ex. : ON AIR Lyon, parc complet Technogym / Hammer Strength / Panatta, cages, presse, poulies. Ou : garage, barre, haltères jusqu'à 30 kg, barre de traction." required>${esc(p.equipment||'')}</textarea></label>
+    <label>Contraintes, blessures, métier<textarea name="constraints" rows="2" placeholder="Ex. : gardes de 24 h, épaule droite sensible, pas de squat lourd, entraînement le matin">${esc(p.constraints||'')}</textarea></label>
+    <label>Expérience et repères actuels<textarea name="experience" rows="2" placeholder="Ex. : squat 100 kg × 5, 35 tractions, développé couché 80 kg, 3 ans de PPL">${esc(p.experience||'')}</textarea></label>
+    <div class="row2"><button class="btn fill" type="submit">Enregistrer</button></div></form>`;
+}
+function bindProfileForm(after){
+  $('#profForm').onsubmit=async e=>{ e.preventDefault(); const f=new FormData(e.target); const p={}; for(const [k,v] of f.entries()){ if(k==='goals') (p.goals=p.goals||[]).push(v); else p[k]=String(v).trim(); }
+    ['age','height','weight','days','minutes'].forEach(k=>p[k]=Number(p[k])); p.updatedAt=Date.now(); if(!PROFILE||!PROFILE.createdAt) p.createdAt=Date.now(); else p.createdAt=PROFILE.createdAt;
+    PROFILE=p; try{ await fbDb.collection('users').doc(USER.uid).collection('meta').doc('profile').set(p); }catch(err){ alert('Enregistrement impossible : '+err.message); return; }
+    after&&after(); };
+}
+async function generateProgram(){
+  const msg=$('#genMsg'), btn=$('#genBtn'); if(btn){ btn.disabled=true; btn.textContent='Génération en cours…'; }
+  if(msg) msg.textContent='Le coach rédige ton mésocycle, compte une à deux minutes.';
+  try{ const fn=fbFn.httpsCallable('coach',{timeout:540000}); await fn({mode:'program'}); }
+  catch(e){ if(msg) msg.textContent='Échec : '+(e.message||e); if(btn){ btn.disabled=false; btn.textContent='Réessayer'; } }
+}
+async function saveProgram(prog, cycleHtml){
+  const doc=JSON.parse(JSON.stringify(prog)); doc.cycleHtml=cycleHtml||doc.cycleHtml||''; doc.savedAt=Date.now();
+  await fbDb.collection('users').doc(USER.uid).collection('meta').doc('program').set(doc);
+}
+function applyProgram(p){
+  PROGRAM=p; if(p.weeks&&p.weeks.length) WEEKS=p.weeks; PROGRAM_LOADED=true;
+  const sm=document.querySelector('.brand small'); if(sm) sm.textContent=p.cycleName||'';
+  restoreShell(); renderCycle(); render();
+}
+function renderCycle(){
+  const el=$('#tab-cycle'); if(!el) return;
+  if(PROGRAM.cycleHtml){ el.innerHTML=PROGRAM.cycleHtml; return; }
+  let h=`<h2>${esc(PROGRAM.cycleName||'Cycle')}</h2>`;
+  if(PROGRAM.rationale) h+=mdToHtml(PROGRAM.rationale);
+  if(PROGRAM.weeks) h+=`<h3>Semaines</h3><div class="tw"><table><thead><tr><th>Semaine</th><th>Dates</th><th>Consigne</th></tr></thead><tbody>${PROGRAM.weeks.map(w=>`<tr><td>${esc(w.label)}</td><td class="num">${fmtD(w.from)}–${fmtD(w.to)}</td><td>${esc(w.rirNote||'')}</td></tr>`).join('')}</tbody></table></div>`;
+  if(PROGRAM.nutrition) h+=`<h3>Nutrition</h3>${mdToHtml(PROGRAM.nutrition)}`;
+  h+=`<p class="small muted">Programme généré ${PROGRAM.generatedAt?'le '+new Date(PROGRAM.generatedAt).toLocaleDateString('fr-FR'):''}${PROGRAM.model?' · '+esc(PROGRAM.model):''}.</p>`;
+  el.innerHTML=h;
+}
+function mdToHtml(md){ return String(md||'').split(/\n{2,}/).map(par=>{ par=par.trim(); if(!par) return ''; if(/^#+\s/.test(par)) return `<h3>${esc(par.replace(/^#+\s*/,''))}</h3>`; if(/^[-*]\s/m.test(par)) return `<ul>${par.split(/\n/).map(l=>`<li>${inline(l.replace(/^[-*]\s*/,''))}</li>`).join('')}</ul>`; return `<p>${inline(par).replace(/\n/g,'<br>')}</p>`; }).join(''); function inline(s){ return esc(s).replace(/\*\*(.+?)\*\*/g,'<b>$1</b>'); } }
+
+/* écoute du profil et du programme après connexion */
+function listenMeta(){
+  unsubs.push(fbDb.collection('users').doc(USER.uid).collection('meta').onSnapshot(snap=>{
+    let prof=null, prog=null; snap.docs.forEach(d=>{ if(d.id==='profile') prof=d.data(); if(d.id==='program') prog=d.data(); });
+    PROFILE=prof;
+    if(prog&&prog.sessions&&prog.sessions.length){ applyProgram(prog); }
+    else if(snap.metadata.fromCache&&!snap.docs.length){ /* première ouverture hors ligne : attendre le serveur */ }
+    else { PROGRAM_LOADED=false; showOnboarding(prof?'program':'profile'); }
+  }, err=>console.warn('meta',err)));
+}
+async function regenerateProgram(){
+  if(!confirm('Générer un nouveau mésocycle ? Le programme actuel est remplacé, ton journal est conservé.')) return;
+  const el=$('#tab-programme'); el.insertAdjacentHTML('afterbegin','<div class="banner info" id="regenMsg">Le coach rédige le nouveau cycle, une à deux minutes…</div>');
+  try{ const fn=fbFn.httpsCallable('coach',{timeout:540000}); await fn({mode:'program'}); }
+  catch(e){ const m=$('#regenMsg'); if(m) m.textContent='Échec : '+(e.message||e); }
+}
+
 /* ---------- wake lock ---------- */
 let wakeLock=null;
 async function requestWake(){ if(S.wake===false) return; try{ if('wakeLock' in navigator && !wakeLock){ wakeLock=await navigator.wakeLock.request('screen'); wakeLock.addEventListener('release',()=>{wakeLock=null;}); } }catch(e){} }
 function releaseWake(){ try{ wakeLock&&wakeLock.release(); }catch(e){} wakeLock=null; }
 document.addEventListener('visibilitychange',()=>{ if(!document.hidden&&sessionActive()) requestWake(); });
-function sessionActive(){ const l=S.logs[logKey(todayISO(),curSession().id)]; return !!(l&&!l.done&&Object.keys(l.sets).length); }
+function sessionActive(){ if(!PROGRAM.sessions.length) return false; const l=S.logs[logKey(todayISO(),curSession().id)]; return !!(l&&!l.done&&Object.keys(l.sets).length); }
 
 /* ---------- timer ---------- */
 let T={end:0,total:0,raf:0,label:'',fired:false};
@@ -219,9 +324,10 @@ $('#tStop').onclick=stopTimer; $('#tPlus').onclick=()=>{T.end+=30000;T.total+=30
 document.addEventListener('visibilitychange',()=>{ if(!document.hidden&&$('#timer').classList.contains('on')) tick(); });
 
 /* ---------- render: séance ---------- */
-function render(){ if(!PROGRAM.sessions.length) return; renderSeance(); renderProgramme(); renderSuivi(); renderReglages(); renderCoach(); const w=WEEKS[curWeek()-1]; $('#weekChip').textContent=`S${w.n}`; }
+function render(){ if(!PROGRAM.sessions.length||!PROGRAM_LOADED||!$('#tab-seance')) return; renderSeance(); renderProgramme(); renderSuivi(); renderReglages(); renderCoach(); const w=WEEKS[curWeek()-1]; $('#weekChip').textContent=`S${w.n}`; }
 
 function renderSeance(){
+  if(!$('#tab-seance')||!PROGRAM.sessions.length) return;
   const wk=curWeek(), W=WEEKS[wk-1], date=todayISO(), ses=curSession(), log=getLog(date,ses.id);
   const el=$('#tab-seance'); let h='';
   h+=`<div class="days">`+PROGRAM.sessions.map(s=>{ const done=Object.values(S.logs).some(l=>l.session===s.id&&l.week===wk&&l.done); return `<button data-s="${s.id}" aria-pressed="${s.id===ses.id}" class="${done?'done':''}"><b>${esc(s.dayName.slice(0,3))}</b><span>${esc(s.name.split(' ')[0])}</span></button>`; }).join('')+`<button data-s="rest" aria-pressed="false"><b>Dim</b><span>Repos</span></button></div>`;
@@ -312,19 +418,21 @@ function updateElapsed(log){
 }
 /* ---------- render: programme ---------- */
 function renderProgramme(){
-  const wk=curWeek(); let h=`<h2>Programme · S${wk}</h2><p class="small muted">Prescriptions de la semaine affichée. Change de semaine avec la puce en haut.</p>`;
+  if(!$('#tab-programme')) return;
+  const wk=curWeek(); let h=`<h2>Programme · S${wk}</h2><p class="small muted">${esc(PROGRAM.cycleName||'')} · prescriptions de la semaine affichée. Change de semaine avec la puce en haut.</p><div class="row2"><button class="btn sm" id="regenBtn">Nouveau cycle avec le coach</button></div>`;
   PROGRAM.sessions.forEach(s=>{
     h+=`<h3>${esc(s.dayName)} — ${esc(s.name)} <span class="muted small">(${esc(s.sub)})</span></h3><div class="pcard">`;
     s.exercises.forEach(ex=>{ const p=rx(ex,wk); h+=`<div class="prow"><span class="n">${ex.n}</span><span class="nm">${esc(ex.name)}${ex.star?' <span style="color:var(--accent)">★</span>':''}</span><span class="rx2">${p.sets}×${esc(p.reps)}${p.rir!=null?' · RIR '+p.rir:''}</span><span class="mc">${esc(ex.machine)} · ${esc(ex.tempo)} · repos ${esc(p.restText)}</span></div>`; });
     h+=`</div>`;
   });
   $('#tab-programme').innerHTML=h;
+  const rb=$('#regenBtn'); if(rb) rb.onclick=regenerateProgram;
 }
 
 /* ---------- render: suivi ---------- */
 let suiviEx=null;
 function renderSuivi(){
-  const el=$('#tab-suivi'); const date=todayISO();
+  const el=$('#tab-suivi'); if(!el) return; const date=todayISO();
   const bws=Object.values(S.bw).sort((a,b)=>a.date<b.date?1:-1); const tests=Object.values(S.tests).sort((a,b)=>a.date<b.date?1:-1);
   const doneCount=Object.values(S.logs).filter(l=>l.done).length;
   const emom=Object.values(S.logs).filter(l=>l.session==='pullB'&&l.sets['pullB-1']).map(l=>({date:l.date,total:l.sets['pullB-1'].filter(s=>s&&s.done).reduce((a,s)=>a+(s.r||0),0)})).sort((a,b)=>a.date<b.date?1:-1);
@@ -371,9 +479,10 @@ async function boot(){
   if(!Object.keys(S.logs).length){ const j=await idbGet(); if(j){ try{ const d=JSON.parse(j); if(Object.keys(d.logs||{}).length) S=Object.assign(S,d); }catch(e){} } }
   try{
     const [p,c]=await Promise.all([fetch('program.json').then(r=>r.json()), fetch('cycle.html').then(r=>r.text())]);
-    PROGRAM=p; if(p.weeks&&p.weeks.length) WEEKS=p.weeks; $('#tab-cycle').innerHTML=c; document.querySelector('.brand small').textContent=p.cycleName||'';
-  }catch(e){ $('#tab-seance').innerHTML='<p>Impossible de charger le programme. Recharge la page avec du réseau une première fois.</p>'; return; }
-  render(); initFirebase();
+    DEFAULT_PROGRAM=p; DEFAULT_CYCLE_HTML=c;
+  }catch(e){ DEFAULT_PROGRAM=null; }
+  if(!window.firebase){ $('#tab-seance').innerHTML='<p>Connexion au service impossible. Ouvre l\'application avec du réseau une première fois.</p>'; return; }
+  showGate(); initFirebase();
   if('serviceWorker' in navigator){ navigator.serviceWorker.register('sw.js').then(r=>{ r.addEventListener('updatefound',()=>{ const w=r.installing; w&&w.addEventListener('statechange',()=>{ if(w.state==='installed'&&navigator.serviceWorker.controller) setSync('pend','mise à jour dispo · recharge'); }); }); }).catch(()=>{}); }
 }
 boot();
