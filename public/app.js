@@ -1,5 +1,5 @@
 
-const APP_VERSION='3.0.0';
+const APP_VERSION='3.1.0';
 let PROGRAM={sessions:[]};
 let WEEKS = [
   {n:1,label:'S1 calibrage',from:'2026-09-07',to:'2026-09-13',rirNote:'RIR 3 · établir les références, tout noter'},
@@ -206,7 +206,7 @@ function showGate(mode){
   mode=mode||'login';
   document.querySelector('.tabs').hidden=true; document.querySelector('.top').hidden=true;
   const m=document.querySelector('main');
-  const head=`<div class="gateh"><div class="mark"><svg viewBox="0 0 24 24"><path d="M4 9v6M20 9v6M7 7v10M17 7v10M7 12h10" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round"/></svg></div><div class="brand big">Rituel</div><p class="lede">Ton programme, ton coach, ta séance du jour.</p></div>`;
+  const head=`<div class="gateh"><div class="logo" role="img" aria-label="Rituel"></div><p class="lede">Ton programme, ton coach, ta séance du jour.</p></div>`;
   const feats=`<div class="feats"><div><b>01</b><span>Un mésocycle construit sur ton profil, ton matériel, tes objectifs.</span></div><div><b>02</b><span>La séance guidée : charges, RIR, tempo, chrono de repos automatique. Sans réseau.</span></div><div><b>03</b><span>Après chaque séance, le coach analyse et ajuste la suivante.</span></div></div>`;
   let form='';
   if(mode==='login') form=`<form class="form auth" id="authForm"><label>E-mail<input name="email" type="email" autocomplete="email" inputmode="email" required></label><label>Mot de passe<input name="password" type="password" autocomplete="current-password" required minlength="8"></label><p class="small err" id="authMsg"></p><button class="btn fill" type="submit">Se connecter</button><p class="small"><button type="button" class="link" data-mode="reset">Mot de passe oublié</button></p></form><button type="button" class="btn" data-mode="signup">Créer un compte</button>`;

@@ -56,7 +56,7 @@ p{margin:0 0 10px;max-width:66ch}
 .top{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--bg) 86%,transparent);-webkit-backdrop-filter:saturate(180%) blur(18px);backdrop-filter:saturate(180%) blur(18px);padding-top:env(safe-area-inset-top)}
 .top .wrap{display:flex;align-items:center;gap:8px;padding:10px 16px 8px;min-width:0}
 .brand{font-family:var(--disp);font-weight:800;font-size:18px;letter-spacing:-.02em;flex:1 1 0;min-width:0;display:flex;align-items:center;gap:8px}
-.brand::before{content:"";width:22px;height:22px;border-radius:7px;background:var(--accent);background-image:linear-gradient(135deg,#FF7A5C,var(--accent) 60%,#B4241B);flex:0 0 auto}
+.brand .mark{display:block;width:24px;height:26px;flex:0 0 auto;background:var(--ink);-webkit-mask:url(icons/mark-mask.png) center/contain no-repeat;mask:url(icons/mark-mask.png) center/contain no-repeat}
 .brand small{display:none}
 .spacer{display:none}
 .chip{flex:0 0 auto;font-size:12px;font-weight:600;letter-spacing:.02em;background:var(--surface);color:var(--ink2);padding:6px 11px;border-radius:999px;white-space:nowrap;box-shadow:var(--shadow)}
@@ -267,10 +267,7 @@ details.cyc[open] summary::after{content:" –"}
 /* ---------- gate ---------- */
 .gate{min-height:calc(100vh - 140px);display:flex;flex-direction:column;justify-content:center;gap:16px;padding:16px 4px 40px}
 .gateh{display:flex;flex-direction:column;align-items:flex-start;gap:10px;margin-bottom:6px}
-.gate .mark{width:64px;height:64px;border-radius:20px;background:var(--accent);background-image:linear-gradient(135deg,#FF7A5C,var(--accent) 60%,#B4241B);display:grid;place-items:center;box-shadow:0 12px 30px -10px color-mix(in srgb,var(--accent) 60%,transparent)}
-.gate .mark svg{width:38px;height:38px}
-.gate .brand.big{font-size:44px;line-height:1;letter-spacing:-.03em}
-.gate .brand.big::before{display:none}
+.gate .logo{width:200px;height:170px;background:var(--ink);-webkit-mask:url(icons/logo-mask.png) center/contain no-repeat;mask:url(icons/logo-mask.png) center/contain no-repeat;margin:0 0 6px}
 .gate .lede{font-size:17px;color:var(--ink2);max-width:32ch;margin:0}
 .gate .feats{display:grid;gap:10px;margin:0 0 6px}
 .gate .feats div{display:flex;gap:12px;align-items:flex-start;font-size:14.5px;color:var(--ink2);line-height:1.4}
