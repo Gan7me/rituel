@@ -1,5 +1,5 @@
 
-const APP_VERSION='2.4.0';
+const APP_VERSION='2.4.1';
 let PROGRAM={sessions:[]};
 let WEEKS = [
   {n:1,label:'S1 calibrage',from:'2026-09-07',to:'2026-09-13',rirNote:'RIR 3 · établir les références, tout noter'},
@@ -73,11 +73,6 @@ function initFirebase(){
   }catch(e){ console.warn('firebase init',e); setSync('off','local'); }
 }
 function isStandalone(){ return window.matchMedia('(display-mode: standalone)').matches || navigator.standalone===true; }
-async function signIn(){
-  const p=new firebase.auth.GoogleAuthProvider();
-  try{ if(isStandalone()||/iPhone|iPad|Android/i.test(navigator.userAgent)) await fbAuth.signInWithRedirect(p); else await fbAuth.signInWithPopup(p); }
-  catch(e){ alert('Connexion impossible : '+e.message); }
-}
 async function signOut(){ unsubs.forEach(u=>u()); unsubs=[]; await fbAuth.signOut(); }
 function col(name){ return fbDb.collection('users').doc(USER.uid).collection(name); }
 
@@ -119,7 +114,7 @@ function markDirty(){ save(); }
 function mergeInto(local, remote){ let changed=false; for(const c of ['logs','bw','tests']){ const L=local[c]||(local[c]={}), R=(remote&&remote[c])||{}; for(const k in R){ if(!L[k]||(R[k].updatedAt||0)>(L[k].updatedAt||0)){ L[k]=R[k]; changed=true; writeDoc(c,k,R[k]); } } } return changed; }
 function snapshot(){ return {version:1, exportedAt:new Date().toISOString(), logs:S.logs, bw:S.bw, tests:S.tests}; }
 window.addEventListener('online',syncStatusIdle); window.addEventListener('offline',syncStatusIdle);
-$('#syncChip').onclick=()=>{ if(!USER) signIn(); };
+$('#syncChip').onclick=()=>{};
 
 /* ---------- réglages ---------- */
 function renderReglages(){
@@ -127,7 +122,7 @@ function renderReglages(){
   el.innerHTML=`<h2>Réglages</h2>
   <h3>Compte</h3>
   ${USER?`<p>Connecté : <b>${esc(USER.displayName||'')}</b> <span class="muted small">${esc(USER.email||'')}</span>${USER.providerData&&USER.providerData.some(p=>p.providerId==='password')&&!USER.emailVerified?' <button class="link" id="verifBtn">e-mail non vérifié · renvoyer le lien</button>':''}</p><p class="small muted">Tes séances sont synchronisées sur tous tes appareils. Hors ligne, tout est conservé sur le téléphone puis envoyé au retour du réseau.</p><div class="row2"><button class="btn" id="signOut">Se déconnecter</button></div>`
-        :`<p class="small muted">Sans compte, les données restent sur cet appareil. Connecte-toi pour la synchronisation multi-appareils et le Coach.</p><div class="row2"><button class="btn fill" id="signIn">Se connecter avec Google</button></div>`}
+        :''}
   <h3>Profil</h3>
   <details class="more" id="profDet"><summary>Modifier mon profil</summary>${USER?profileForm(PROFILE||{}):''}</details>
   <h3>Sauvegarde</h3>
@@ -139,7 +134,7 @@ function renderReglages(){
   <p class="small muted">Tes données (profil, séances, analyses) sont stockées en Europe sur Firebase et transmises à l'API Anthropic uniquement pour les analyses du coach. <a href="confidentialite.html" target="_blank" rel="noopener">Politique de confidentialité</a>.</p>
   ${USER?`<div class="row2"><button class="btn sm" id="delBtn">Supprimer mon compte et mes données</button></div>`:''}
   <p class="small muted">Version ${APP_VERSION}. <button class="link" id="reloadBtn">Recharger l'application</button></p>`;
-  const si=$('#signIn'); if(si) si.onclick=signIn; const so=$('#signOut'); if(so) so.onclick=signOut;
+  const so=$('#signOut'); if(so) so.onclick=signOut;
   const db_=$('#delBtn'); if(db_) db_.onclick=async()=>{ if(!confirm('Supprimer définitivement ton compte, ton programme et tout ton journal ? Cette action est irréversible.')) return; if(prompt('Tape SUPPRIMER pour confirmer')!=='SUPPRIMER') return; try{ const fn=fbFn.httpsCallable('deleteAccount'); await fn({}); try{ localStorage.clear(); }catch(e){} alert('Compte supprimé.'); location.reload(); }catch(e){ alert('Échec : '+(e.message||e)+'. Si le message parle de connexion récente, déconnecte-toi, reconnecte-toi puis réessaie.'); } };
   const vb=$('#verifBtn'); if(vb) vb.onclick=async()=>{ try{ await USER.sendEmailVerification(); vb.textContent='lien envoyé'; }catch(e){ vb.textContent='échec : '+e.message; } };
   if($('#profForm')) bindProfileForm(()=>{ $('#profDet').open=false; alert('Profil enregistré. Le coach en tient compte dès la prochaine analyse.'); });
@@ -214,12 +209,11 @@ function showGate(mode){
   const head=`<div class="gateh"><div class="mark"><svg viewBox="0 0 24 24"><path d="M4 9v6M20 9v6M7 7v10M17 7v10M7 12h10" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round"/></svg></div><div class="brand big">Rituel</div><p class="lede">Ton programme, ton coach, ta séance du jour.</p></div>`;
   const feats=`<div class="feats"><div><b>01</b><span>Un mésocycle construit sur ton profil, ton matériel, tes objectifs.</span></div><div><b>02</b><span>La séance guidée : charges, RIR, tempo, chrono de repos automatique. Sans réseau.</span></div><div><b>03</b><span>Après chaque séance, le coach analyse et ajuste la suivante.</span></div></div>`;
   let form='';
-  if(mode==='login') form=`<form class="form auth" id="authForm"><label>E-mail<input name="email" type="email" autocomplete="email" inputmode="email" required></label><label>Mot de passe<input name="password" type="password" autocomplete="current-password" required minlength="8"></label><p class="small err" id="authMsg"></p><button class="btn fill" type="submit">Se connecter</button><p class="small"><button type="button" class="link" data-mode="reset">Mot de passe oublié</button></p></form><div class="or"><span>ou</span></div><button class="btn" id="gateGoogle">Continuer avec Google</button><p class="small muted">Pas encore de compte ? <button type="button" class="link" data-mode="signup">Créer un compte</button></p>`;
+  if(mode==='login') form=`<form class="form auth" id="authForm"><label>E-mail<input name="email" type="email" autocomplete="email" inputmode="email" required></label><label>Mot de passe<input name="password" type="password" autocomplete="current-password" required minlength="8"></label><p class="small err" id="authMsg"></p><button class="btn fill" type="submit">Se connecter</button><p class="small"><button type="button" class="link" data-mode="reset">Mot de passe oublié</button></p></form><p class="small muted">Pas encore de compte ? <button type="button" class="link" data-mode="signup">Créer un compte</button></p>`;
   if(mode==='signup') form=`<form class="form auth" id="authForm"><label>Prénom<input name="name" autocomplete="given-name" required></label><label>E-mail<input name="email" type="email" autocomplete="email" inputmode="email" required></label><label>Mot de passe (8 caractères minimum)<input name="password" type="password" autocomplete="new-password" required minlength="8"></label><p class="small err" id="authMsg"></p><p class="small muted">En créant un compte tu acceptes que tes données d'entraînement soient stockées sur Firebase (Europe) et analysées par l'API Anthropic pour le coach. <a href="confidentialite.html" target="_blank" rel="noopener">Politique de confidentialité</a>.</p><button class="btn fill" type="submit">Créer mon compte</button></form><p class="small muted">Déjà un compte ? <button type="button" class="link" data-mode="login">Se connecter</button></p>`;
   if(mode==='reset') form=`<form class="form auth" id="authForm"><label>E-mail<input name="email" type="email" autocomplete="email" inputmode="email" required></label><p class="small err" id="authMsg"></p><button class="btn fill" type="submit">Envoyer le lien de réinitialisation</button></form><p class="small muted"><button type="button" class="link" data-mode="login">Retour</button></p>`;
   m.innerHTML=`<section class="gate">${head}${mode==='login'?feats:''}${form}<p class="small muted">Un compte par personne. Chacun ne voit que ses propres données.</p></section>`;
   m.querySelectorAll('[data-mode]').forEach(b=>b.onclick=()=>showGate(b.dataset.mode));
-  const g=$('#gateGoogle'); if(g) g.onclick=signIn;
   const msg=$('#authMsg');
   $('#authForm').onsubmit=async e=>{ e.preventDefault(); const f=new FormData(e.target); const email=String(f.get('email')||'').trim(), pw=String(f.get('password')||''); const btn=e.target.querySelector('button[type=submit]'); btn.disabled=true; msg.textContent='';
     try{
@@ -425,7 +419,6 @@ function renderSeance(){
   });
   $('#notes').onchange=e=>{ log.notes=e.target.value; touch(log); };
   updateElapsed(log);
-  if(!USER&&Object.keys(log.sets).length) el.insertAdjacentHTML('afterbegin','<div class="banner">Pas connecté : tes séries ne sont que sur ce téléphone. Réglages → Se connecter avec Google.</div>');
   $('#endBtn').onclick=()=>{ log.done=!log.done; touch(log); stopTimer(); if(log.done){ releaseWake(); if(USER&&navigator.onLine){ analyseSession(logKey(log.date,log.session)); document.querySelector('.tabs button[data-tab="coach"]').click(); } } renderSeance(); if(log.done) window.scrollTo({top:0}); };
 }
 
