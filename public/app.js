@@ -1,5 +1,5 @@
 
-const APP_VERSION='3.2.0';
+const APP_VERSION='3.2.1';
 let PROGRAM={sessions:[]};
 let WEEKS = [
   {n:1,label:'S1 calibrage',from:'2026-09-07',to:'2026-09-13',rirNote:'RIR 3 · établir les références, tout noter'},
@@ -125,6 +125,8 @@ function renderReglages(){
         :''}
   <h3>Profil</h3>
   <details class="more" id="profDet"><summary>Modifier mon profil</summary>${USER?profileForm(PROFILE||{}):''}</details>
+  <h3>Coach ce mois-ci</h3>
+  ${USAGE?`<div class="kv"><div><div class="k">${(USAGE.analyse||0)+(USAGE.chat||0)+(USAGE.program||0)}</div><div class="l">appels au coach · ${USAGE.analyse||0} analyses, ${USAGE.chat||0} questions, ${USAGE.program||0} programmes</div></div><div><div class="k">${((USAGE.costUsd||0)*0.92).toFixed(2).replace('.',',')} €</div><div class="l">coût IA estimé (${Math.round(((USAGE.tokensIn||0)+(USAGE.tokensOut||0))/1000)} k tokens)</div></div></div><p class="small muted">Plafonds : 60 analyses, 300 questions, 4 programmes par mois.</p>`:'<p class="small muted">Aucun appel ce mois-ci.</p>'}
   <h3>Sauvegarde</h3>
   <div class="row2"><button class="btn" id="expBtn">Exporter le journal (JSON)</button><label class="btn" for="impFile">Importer</label><input id="impFile" type="file" accept="application/json" hidden></div>
   <h3>Appareil</h3>
@@ -184,8 +186,17 @@ function renderCoach(){
   h+=`<h3>Analyses</h3>`;
   if(!COACH.items.length) h+=`<p class="small muted">Aucune analyse. Termine une séance puis lance l'analyse.</p>`;
   COACH.items.forEach(it=>{
-    h+=`<div class="ana"><div class="anah"><b>${esc(it.title||it.logKey||'')}</b><span class="small muted">${it.createdAt?new Date(it.createdAt).toLocaleDateString('fr-FR'):''}</span></div><div class="anab">${esc(it.analysis||'').replace(/\n/g,'<br>')}</div>${it.exercises&&it.exercises.length?`<div class="exl">${it.exercises.map(e=>`<div class="exr s-${esc(e.status||'ok')}"><i></i><div><b>${esc(e.name)}</b> <span class="done">${esc(e.done)}</span><div class="read">${esc(e.read)}</div></div></div>`).join('')}</div>`:''}${it.nextFocus?`<p class="coachline"><b>Prochaine fois</b> ${esc(it.nextFocus)}</p>`:''}`;
-    if(it.adjustments&&it.adjustments.length){ h+=`<div class="adj"><b class="small">Ajustements proposés pour la prochaine séance</b><ul>${it.adjustments.map(a=>`<li><b>${esc(a.name||a.exId)}</b> : ${esc(a.change)}${a.reason?' <span class="muted">— '+esc(a.reason)+'</span>':''}</li>`).join('')}</ul>${it.applied?'<span class="tag ok">appliqué</span>':`<button class="btn sm acc" data-apply="${it.id}">Appliquer</button>`}</div>`; }
+    const adjBy={}; (it.adjustments||[]).forEach(a=>adjBy[a.exId]=a);
+    const exs=(it.exercises&&it.exercises.length)?it.exercises:(it.adjustments||[]).map(a=>({exId:a.exId,name:a.name,done:'',read:a.reason,status:'up'}));
+    const lbl={ok:'OK',up:'Charger',hold:'Plus de reps',warn:'À revoir'};
+    h+=`<div class="ana"><div class="anah"><b>${esc(it.title||it.logKey||'')}</b><span class="small muted">${it.createdAt?new Date(it.createdAt).toLocaleDateString('fr-FR'):''}</span></div>`;
+    if(it.analysis) h+=`<div class="anab">${esc(it.analysis).replace(/\n/g,'<br>')}</div>`;
+    if(exs.length){
+      h+=`<div class="exl2">`+exs.map(e=>{ const a=adjBy[e.exId]; return `<div class="exc"><div class="l1"><b>${esc(e.name)}</b><span class="st s-${esc(e.status||'ok')}">${lbl[e.status]||'OK'}</span></div><div class="l2"><span class="done">${esc(e.done||'—')}</span>${a?`<span class="arrow">→</span><span class="next">${esc(a.change)}</span>`:''}</div></div>`; }).join('')+`</div>`;
+      h+=`<details class="more"><summary>Le détail du coach</summary><div class="exl">${exs.map(e=>{ const a=adjBy[e.exId]; return `<div class="exr s-${esc(e.status||'ok')}"><i></i><div><b>${esc(e.name)}</b><div class="read">${esc(e.read||'')}${a&&a.reason?' <span class="muted">— '+esc(a.reason)+'</span>':''}</div></div></div>`; }).join('')}</div></details>`;
+    }
+    if(it.nextFocus) h+=`<p class="coachline"><b>Prochaine fois</b> ${esc(it.nextFocus)}</p>`;
+    if(it.adjustments&&it.adjustments.length){ h+=`<div class="adj">${it.applied?'<span class="tag ok">appliqué à la prochaine séance</span>':`<button class="btn sm acc" data-apply="${it.id}">Appliquer ces charges à la prochaine séance</button>`}</div>`; }
     h+=`</div>`;
   });
   el.innerHTML=h;
@@ -198,7 +209,7 @@ function renderCoach(){
    users/{uid}/meta/profile  — qui est l'athlète (saisi à la première connexion, modifiable dans Réglages)
    users/{uid}/meta/program  — son programme, généré par le coach à partir du profil (ou importé)
    Sans compte : écran d'accueil uniquement. */
-let PROFILE=null, PROGRAM_LOADED=false, DEFAULT_PROGRAM=null, DEFAULT_CYCLE_HTML='';
+let PROFILE=null, USAGE=null, PROGRAM_LOADED=false, DEFAULT_PROGRAM=null, DEFAULT_CYCLE_HTML='';
 const GOALS=[['force','Force maximale'],['masse','Prise de muscle'],['seche','Sécher, se dessiner'],['endurance','Endurance musculaire'],['puissance','Puissance, vitesse'],['tractions','Tractions (nombre)'],['jambes','Rattraper les jambes'],['bras','Bras et pectoraux'],['sante','Santé, mobilité, dos'],['perf','Performance sportive / opérationnelle']];
 const LEVELS=[['debutant','Débutant (moins d’un an)'],['intermediaire','Intermédiaire (1 à 3 ans)'],['confirme','Confirmé (3 ans et plus)'],['avance','Avancé, entraînement quotidien']];
 
@@ -296,7 +307,7 @@ function mdToHtml(md){ return String(md||'').split(/\n{2,}/).map(par=>{ par=par.
 /* écoute du profil et du programme après connexion */
 function listenMeta(){
   unsubs.push(fbDb.collection('users').doc(USER.uid).collection('meta').onSnapshot(snap=>{
-    let prof=null, prog=null; snap.docs.forEach(d=>{ if(d.id==='profile') prof=d.data(); if(d.id==='program') prog=d.data(); });
+    let prof=null, prog=null; snap.docs.forEach(d=>{ if(d.id==='profile') prof=d.data(); if(d.id==='program') prog=d.data(); if(d.id==='usage') USAGE=d.data(); });
     PROFILE=prof;
     if(prog&&prog.sessions&&prog.sessions.length){ applyProgram(prog); }
     else if(snap.metadata.fromCache&&!snap.docs.length){ /* première ouverture hors ligne : attendre le serveur */ }

@@ -88,6 +88,16 @@ async function loadContext(uid, prog, limit = 14) {
 }
 
 // Sortie structurée garantie : on force un appel d'outil dont le schéma est le JSON attendu.
+let LAST_USAGE = null;
+// Tarif indicatif USD par million de tokens (entrée, sortie) selon la famille de modèle.
+function priceFor(model) { if (/opus/.test(model)) return [15, 75]; if (/haiku/.test(model)) return [0.8, 4]; return [3, 15]; }
+function costUsd(model, usage) { const [i, o] = priceFor(model); const u = usage || {}; return ((u.input_tokens || 0) * i + (u.output_tokens || 0) * o) / 1e6; }
+async function recordUsage(uid, mode, model) {
+  const u = LAST_USAGE || {}; const cost = costUsd(model, u);
+  const ref = db.collection('users').doc(uid).collection('meta').doc('usage');
+  await ref.set({ tokensIn: admin.firestore.FieldValue.increment(u.input_tokens || 0), tokensOut: admin.firestore.FieldValue.increment(u.output_tokens || 0), costUsd: admin.firestore.FieldValue.increment(cost), lastCostUsd: cost, lastMode: mode, lastModel: model }, { merge: true });
+  return cost;
+}
 async function claudeJSON(apiKey, model, system, messages, schema, maxTokens = 2500) {
   const tool = { name: 'reponse', description: 'Réponse structurée du coach.', input_schema: schema };
   const r = await fetch('https://api.anthropic.com/v1/messages', {
@@ -96,7 +106,7 @@ async function claudeJSON(apiKey, model, system, messages, schema, maxTokens = 2
     body: JSON.stringify({ model, max_tokens: maxTokens, system, messages, tools: [tool], tool_choice: { type: 'tool', name: 'reponse' } })
   });
   if (!r.ok) { const t = await r.text(); throw new HttpsError('internal', `Anthropic ${r.status}: ${t.slice(0, 300)}`); }
-  const j = await r.json();
+  const j = await r.json(); LAST_USAGE = j.usage || null;
   const use = (j.content || []).find(c => c.type === 'tool_use');
   if (!use || !use.input) throw new HttpsError('internal', 'Le coach n\'a pas renvoyé de réponse structurée.');
   return use.input;
@@ -121,7 +131,7 @@ async function claude(apiKey, model, system, messages, maxTokens = 1500) {
     body: JSON.stringify({ model, max_tokens: maxTokens, system, messages })
   });
   if (!r.ok) { const t = await r.text(); throw new HttpsError('internal', `Anthropic ${r.status}: ${t.slice(0, 300)}`); }
-  const j = await r.json();
+  const j = await r.json(); LAST_USAGE = j.usage || null;
   return (j.content || []).filter(c => c.type === 'text').map(c => c.text).join('');
 }
 
@@ -173,7 +183,7 @@ async function checkQuota(uid, mode) {
   const ref = db.collection('users').doc(uid).collection('meta').doc('usage');
   return db.runTransaction(async tx => {
     const snap = await tx.get(ref); const d = snap.exists ? snap.data() : {};
-    const cur = d.month === month ? d : { month, program: 0, analyse: 0, chat: 0 };
+    const cur = d.month === month ? d : { month, program: 0, analyse: 0, chat: 0, tokensIn: 0, tokensOut: 0, costUsd: 0 };
     if ((cur[mode] || 0) >= QUOTAS[mode]) throw new HttpsError('resource-exhausted', `Quota mensuel atteint pour « ${mode} » (${QUOTAS[mode]}). Il se renouvelle le 1er du mois.`);
     cur[mode] = (cur[mode] || 0) + 1; cur.updatedAt = Date.now();
     tx.set(ref, cur); return cur;
@@ -211,6 +221,7 @@ exports.coach = onCall({ region: 'europe-west1', secrets: [ANTHROPIC_API_KEY], t
     if (!prog.sessions.length) throw new HttpsError('internal', 'Programme vide, relance la génération.');
     prog.generatedAt = Date.now(); prog.model = model; prog.profileSnapshot = meta.profile;
     await db.collection('users').doc(uid).collection('meta').doc('program').set(prog);
+    await recordUsage(uid, 'program', model);
     return { ok: true, sessions: prog.sessions.length };
   }
 
@@ -233,7 +244,8 @@ exports.coach = onCall({ region: 'europe-west1', secrets: [ANTHROPIC_API_KEY], t
     parsed.analysis = String(parsed.verdict || '');
     parsed.title = parsed.title || `${sessionName} · ${log.date}`;
     parsed.adjustments = (parsed.adjustments || []).filter(a => a && idx[a.exId]).map(a => ({ exId: a.exId, name: idx[a.exId].name, change: String(a.change || ''), reason: String(a.reason || ''), load: typeof a.load === 'number' ? a.load : null }));
-    const doc = { ...parsed, logKey, session: log.session, createdAt: Date.now(), applied: false, model };
+    const cost = await recordUsage(uid, 'analyse', model);
+    const doc = { ...parsed, logKey, session: log.session, createdAt: Date.now(), applied: false, model, costUsd: cost };
     await db.collection('users').doc(uid).collection('coach').doc(logKey).set(doc);
     return doc;
   }
@@ -243,7 +255,8 @@ exports.coach = onCall({ region: 'europe-west1', secrets: [ANTHROPIC_API_KEY], t
     if (!msgs.length || msgs[msgs.length - 1].role !== 'user') throw new HttpsError('invalid-argument', 'Message manquant.');
     const sys = `${SYSTEM}\n\nProgramme :\n${programSummary}\n\n${context}\n\nSemaine en cours : S${req.data.week || '?'}. Réponds en moins de 200 mots sauf si la question demande un plan détaillé.`;
     const text = await claude(apiKey, model, sys, msgs, 900);
-    return { text };
+    const cost = await recordUsage(uid, 'chat', model);
+    return { text, costUsd: cost };
   }
   throw new HttpsError('invalid-argument', 'mode inconnu');
 });
