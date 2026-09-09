@@ -1,5 +1,5 @@
 
-const APP_VERSION='3.2.1';
+const APP_VERSION='3.2.2';
 let PROGRAM={sessions:[]};
 let WEEKS = [
   {n:1,label:'S1 calibrage',from:'2026-09-07',to:'2026-09-13',rirNote:'RIR 3 · établir les références, tout noter'},
@@ -190,7 +190,7 @@ function renderCoach(){
     const exs=(it.exercises&&it.exercises.length)?it.exercises:(it.adjustments||[]).map(a=>({exId:a.exId,name:a.name,done:'',read:a.reason,status:'up'}));
     const lbl={ok:'OK',up:'Charger',hold:'Plus de reps',warn:'À revoir'};
     h+=`<div class="ana"><div class="anah"><b>${esc(it.title||it.logKey||'')}</b><span class="small muted">${it.createdAt?new Date(it.createdAt).toLocaleDateString('fr-FR'):''}</span></div>`;
-    if(it.analysis) h+=`<div class="anab">${esc(it.analysis).replace(/\n/g,'<br>')}</div>`;
+    if(it.analysis){ const long=it.analysis.length>260; h+=`<div class="anab ${long?'clamp':''}" data-clamp>${esc(it.analysis).replace(/\n/g,'<br>')}</div>${long?'<button class="link" data-unclamp>Lire la suite</button>':''}`; }
     if(exs.length){
       h+=`<div class="exl2">`+exs.map(e=>{ const a=adjBy[e.exId]; return `<div class="exc"><div class="l1"><b>${esc(e.name)}</b><span class="st s-${esc(e.status||'ok')}">${lbl[e.status]||'OK'}</span></div><div class="l2"><span class="done">${esc(e.done||'—')}</span>${a?`<span class="arrow">→</span><span class="next">${esc(a.change)}</span>`:''}</div></div>`; }).join('')+`</div>`;
       h+=`<details class="more"><summary>Le détail du coach</summary><div class="exl">${exs.map(e=>{ const a=adjBy[e.exId]; return `<div class="exr s-${esc(e.status||'ok')}"><i></i><div><b>${esc(e.name)}</b><div class="read">${esc(e.read||'')}${a&&a.reason?' <span class="muted">— '+esc(a.reason)+'</span>':''}</div></div></div>`; }).join('')}</div></details>`;
@@ -200,6 +200,7 @@ function renderCoach(){
     h+=`</div>`;
   });
   el.innerHTML=h;
+  el.querySelectorAll('[data-unclamp]').forEach(b=>b.onclick=()=>{ b.previousElementSibling.classList.remove('clamp'); b.remove(); });
   const ab=$('#anaBtn'); if(ab) ab.onclick=()=>analyseSession(logKey(date,ses.id));
   $('#askForm').onsubmit=e=>{ e.preventDefault(); const v=$('#askInput').value; $('#askInput').value=''; askCoach(v); };
   el.querySelectorAll('[data-apply]').forEach(b=>b.onclick=()=>applyOverride(COACH.items.find(i=>i.id===b.dataset.apply)));

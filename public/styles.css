@@ -237,6 +237,7 @@ details.cyc[open] summary::after{content:" –"}
 .anah{display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:6px}
 .anah b{font-family:var(--disp);font-weight:700;font-size:16px}
 .anab{font-size:14.5px;line-height:1.5;color:var(--ink2)}
+.anab.clamp{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
 .exl{display:grid;gap:8px;margin:12px 0 4px}
 .exr{display:grid;grid-template-columns:8px 1fr;gap:10px;align-items:start;font-size:13.5px;line-height:1.4}
 .exr i{width:8px;height:8px;border-radius:50%;background:var(--muted);margin-top:6px}
