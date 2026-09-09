@@ -1,5 +1,5 @@
 
-const APP_VERSION='3.4.0';
+const APP_VERSION='3.5.0';
 let PROGRAM={sessions:[]};
 let WEEKS = [
   {n:1,label:'S1 calibrage',from:'2026-09-07',to:'2026-09-13',rirNote:'RIR 3 · établir les références, tout noter'},
@@ -11,6 +11,16 @@ const $ = (s,el=document)=>el.querySelector(s);
 const esc = s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const todayISO = ()=>{const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');};
 const fmtD = iso=>{const [y,m,d]=iso.split('-');return `${d}/${m}`;};
+/* Pont natif (coquille Expo) : présent uniquement dans l'app iOS/Android. */
+const NATIVE = !!(window.ReactNativeWebView);
+function native(msg){ if(!NATIVE) return; try{ window.ReactNativeWebView.postMessage(JSON.stringify(msg)); }catch(e){} }
+function onNativeMessage(ev){ let m; try{ m=JSON.parse(ev.data); }catch(e){ return; } if(!m||!m.type) return;
+  if(m.type==='pushToken'&&m.token){ PUSH_TOKEN=m.token; PUSH_PLATFORM=m.platform||''; savePushToken(); }
+  if(m.type==='notificationOpened'){ const b=document.querySelector('.tabs button[data-tab="coach"]'); if(b&&!b.hidden) b.click(); }
+  if(m.type==='resume'&&$('#timer')&&$('#timer').classList.contains('on')) tick(); }
+let PUSH_TOKEN=null, PUSH_PLATFORM='';
+function savePushToken(){ if(!PUSH_TOKEN||!USER||!fbDb) return; try{ const FV=firebase.firestore.FieldValue; col('meta').doc('push').set({expo:FV&&FV.arrayUnion?FV.arrayUnion(PUSH_TOKEN):[PUSH_TOKEN],platform:PUSH_PLATFORM,updatedAt:Date.now()},{merge:true}).catch(()=>{}); }catch(e){} }
+window.addEventListener('message',onNativeMessage); document.addEventListener('message',onNativeMessage);
 
 /* ---------- state ---------- */
 const KEY='rituel.v1';
@@ -87,7 +97,7 @@ function col(name){ return fbDb.collection('users').doc(USER.uid).collection(nam
 async function onAuth(){
   unsubs.forEach(u=>u()); unsubs=[];
   if(!USER){ PROGRAM_LOADED=false; showGate(); syncStatusIdle(); return; }
-  restoreShell(); setSync('pend','connexion…'); listenMeta();
+  restoreShell(); setSync('pend','connexion…'); listenMeta(); savePushToken();
   // 1. pousser le local vers Firestore (fusion par updatedAt, jamais d'écrasement du plus récent)
   await pushLocalToRemote();
   // 2. écouter Firestore : la source de vérité devient le cloud (copie locale gérée par Firestore)
@@ -142,7 +152,7 @@ function renderReglages(){
   </div>
   <div class="grp"><div class="grp-t">Séance</div>
     <label class="row"><span>Écran allumé pendant la séance</span><input type="checkbox" class="sw" id="wakeOpt" ${S.wake!==false?'checked':''}></label>
-    <button class="row" id="notifBtn"><span>Notifications de fin de repos</span><span class="muted">${notifState}</span><i></i></button>
+    ${NATIVE?`<div class="row"><span>Notifications</span><span class="muted">${PUSH_TOKEN?'activées':'gérées par le téléphone'}</span></div>`:`<button class="row" id="notifBtn"><span>Notifications de fin de repos</span><span class="muted">${notifState}</span><i></i></button>`}
   </div>
   <div class="grp"><div class="grp-t">Données</div>
     <button class="row" id="expBtn"><span>Exporter mon journal (JSON)</span><i></i></button>
@@ -164,7 +174,7 @@ function renderReglages(){
   $('#expBtn').onclick=()=>{ const blob=new Blob([JSON.stringify(snapshot(),null,1)],{type:'application/json'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='rituel-journal-'+todayISO()+'.json'; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),2000); };
   $('#impFile').onchange=e=>{ const f=e.target.files[0]; if(!f) return; const rd=new FileReader(); rd.onload=()=>{ try{ const d=JSON.parse(rd.result); mergeInto(S,d); save(); render(); toast('Journal importé','ok'); }catch(err){ alert('Fichier invalide.'); } }; rd.readAsText(f); };
   $('#wakeOpt').onchange=e=>{ S.wake=e.target.checked; save(); if(!S.wake) releaseWake(); };
-  $('#notifBtn').onclick=async()=>{ if(!window.Notification) return; await Notification.requestPermission(); renderReglages(); };
+  const nb=$('#notifBtn'); if(nb) nb.onclick=async()=>{ if(!window.Notification) return; await Notification.requestPermission(); renderReglages(); };
   $('#reloadBtn').onclick=async()=>{ if(navigator.serviceWorker){ const r=await navigator.serviceWorker.getRegistration(); if(r){ await r.update(); } } location.reload(); };
 }
 
@@ -395,8 +405,8 @@ async function regenerateProgram(){
 
 /* ---------- wake lock ---------- */
 let wakeLock=null;
-async function requestWake(){ if(S.wake===false) return; try{ if('wakeLock' in navigator && !wakeLock){ wakeLock=await navigator.wakeLock.request('screen'); wakeLock.addEventListener('release',()=>{wakeLock=null;}); } }catch(e){} }
-function releaseWake(){ try{ wakeLock&&wakeLock.release(); }catch(e){} wakeLock=null; }
+async function requestWake(){ if(S.wake===false) return; native({type:'keepAwake',on:true}); try{ if('wakeLock' in navigator && !wakeLock){ wakeLock=await navigator.wakeLock.request('screen'); wakeLock.addEventListener('release',()=>{wakeLock=null;}); } }catch(e){} }
+function releaseWake(){ native({type:'keepAwake',on:false}); try{ wakeLock&&wakeLock.release(); }catch(e){} wakeLock=null; }
 document.addEventListener('visibilitychange',()=>{ if(!document.hidden&&sessionActive()) requestWake(); });
 function sessionActive(){ if(!PROGRAM.sessions.length) return false; const l=S.logs[logKey(todayISO(),curSession().id)]; return !!(l&&!l.done&&Object.keys(l.sets).length); }
 
@@ -405,19 +415,19 @@ let T={end:0,total:0,raf:0,label:'',fired:false};
 let audioCtx=null;
 function unlockAudio(){ try{ if(!audioCtx){ audioCtx=new (window.AudioContext||window.webkitAudioContext)(); } if(audioCtx.state==='suspended') audioCtx.resume(); }catch(e){} }
 function beep(n=3){ try{ if(!audioCtx) return; let t=audioCtx.currentTime; for(let i=0;i<n;i++){ const o=audioCtx.createOscillator(), g=audioCtx.createGain(); o.type='square'; o.frequency.value=880; g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(0.4,t+0.01); g.gain.exponentialRampToValueAtTime(0.0001,t+0.22); o.connect(g).connect(audioCtx.destination); o.start(t); o.stop(t+0.25); t+=0.32; } }catch(e){} }
-function startTimer(sec,l1,l2){ unlockAudio(); T.end=Date.now()+sec*1000; T.total=sec; T.fired=false; $('#tL1').textContent=l1; $('#tL2').textContent=l2||''; $('#timer').classList.add('on'); cancelAnimationFrame(T.raf); tick(); }
-function stopTimer(){ cancelAnimationFrame(T.raf); $('#timer').classList.remove('on'); document.title='Rituel'; }
+function startTimer(sec,l1,l2){ unlockAudio(); T.end=Date.now()+sec*1000; T.total=sec; T.fired=false; native({type:'restTimer',seconds:sec,title:'Repos terminé',body:(l2||l1||'Série suivante')}); $('#tL1').textContent=l1; $('#tL2').textContent=l2||''; $('#timer').classList.add('on'); cancelAnimationFrame(T.raf); tick(); }
+function stopTimer(){ native({type:'cancelTimer'}); cancelAnimationFrame(T.raf); $('#timer').classList.remove('on'); document.title='Rituel'; }
 function tick(){
   const left=Math.round((T.end-Date.now())/1000); const a=Math.abs(left);
   $('#tT').textContent=(left<0?'+':'')+Math.floor(a/60)+':'+String(a%60).padStart(2,'0');
   $('#tT').classList.toggle('over',left<0);
   $('#tBar').style.width=Math.max(0,Math.min(100,100*(1-left/T.total)))+'%';
   document.title=(left<=0?'GO · ':Math.floor(a/60)+':'+String(a%60).padStart(2,'0')+' · ')+'Rituel';
-  if(left<=0&&!T.fired){ T.fired=true; beep(3); try{navigator.vibrate&&navigator.vibrate([200,100,200,100,400]);}catch(e){} if(document.hidden&&window.Notification&&Notification.permission==='granted'){ try{ new Notification('Repos terminé',{body:T.label||'Série suivante'}); }catch(e){} } }
+  if(left<=0&&!T.fired){ T.fired=true; native({type:'haptic',kind:'success'}); beep(3); try{navigator.vibrate&&navigator.vibrate([200,100,200,100,400]);}catch(e){} if(document.hidden&&window.Notification&&Notification.permission==='granted'){ try{ new Notification('Repos terminé',{body:T.label||'Série suivante'}); }catch(e){} } }
   if(left<=-60){ stopTimer(); return; }
   T.raf=requestAnimationFrame(()=>setTimeout(tick,250));
 }
-$('#tStop').onclick=stopTimer; $('#tPlus').onclick=()=>{T.end+=30000;T.total+=30;}; $('#tMinus').onclick=()=>{T.end-=15000;};
+$('#tStop').onclick=stopTimer; $('#tPlus').onclick=()=>{T.end+=30000;T.total+=30; native({type:'restTimer',seconds:Math.max(1,Math.round((T.end-Date.now())/1000)),title:'Repos terminé'});}; $('#tMinus').onclick=()=>{T.end-=15000; native({type:'restTimer',seconds:Math.max(1,Math.round((T.end-Date.now())/1000)),title:'Repos terminé'});};
 document.addEventListener('visibilitychange',()=>{ if(!document.hidden&&$('#timer').classList.contains('on')) tick(); });
 
 /* ---------- render: séance ---------- */
@@ -517,7 +527,7 @@ function renderSeance(){
       if(a[i].rir==null&&p.rir!=null) a[i].rir=p.rir;
       if(a[i].done){ a[i].done=false; touch(log); renderSeance(); return; }
       a[i].done=true; a[i].t=Date.now(); touch(log);
-      try{ navigator.vibrate&&navigator.vibrate(15); }catch(e){}
+      native({type:'haptic'}); try{ navigator.vibrate&&navigator.vibrate(15); }catch(e){}
       const last=i>=p.sets-1;
       if(!last){ startTimer(p.rest,`Repos · ${ex.name}`,`Série ${i+2}/${p.sets} · ${p.reps}${p.rir!=null?' @RIR '+p.rir:''}`); toast(`Série ${i+1} validée`); }
       else { const nx=ses.exercises[ex.n]; S.openEx=null; save(); if(nx) startTimer(Math.min(p.rest,120),`Suivant · ${nx.name}`,`${rx(nx,wk).sets} × ${rx(nx,wk).reps} · ${nx.machine}`); toast(`${ex.name} terminé`,'ok'); }
@@ -529,7 +539,7 @@ function renderSeance(){
       const sheet=showSheet(`<h3>${esc(ex.name)}</h3><p class="small muted">${esc(ex.machine)}${ex.alt?' · alternative : '+esc(ex.alt):''}</p>
         <div class="menu">
           <button data-act="explain">Pourquoi cet exercice, comment l'exécuter</button>
-          ${ex.url?`<a href="${esc(ex.url)}" target="_blank" rel="noopener">Voir la machine ↗</a>`:''}
+          ${ex.url?`<a href="${esc(ex.url)}" target="_blank" rel="noopener" data-ext>Voir la machine ↗</a>`:''}
           <button data-act="alt">${flags.alt?'✓ Alternative utilisée (annuler)':'Machine absente, j\'utilise l\'alternative'}</button>
           <button data-act="skip">${flags.skip?'✓ Exercice sauté (annuler)':'Sauter cet exercice aujourd\'hui'}</button>
           <div class="row2"><span class="small muted">Chrono</span><button class="btn sm" data-rest="60">1:00</button><button class="btn sm" data-rest="120">2:00</button><button class="btn sm" data-rest="180">3:00</button></div>
@@ -621,7 +631,7 @@ async function boot(){
     DEFAULT_PROGRAM=p; DEFAULT_CYCLE_HTML=c;
   }catch(e){ DEFAULT_PROGRAM=null; }
   if(!window.firebase){ $('#tab-seance').innerHTML='<p>Connexion au service impossible. Ouvre l\'application avec du réseau une première fois.</p>'; return; }
-  showGate(); initFirebase();
+  showGate(); initFirebase(); native({type:'ready'});
   if('serviceWorker' in navigator){
     // Mise à jour automatique : quand un nouveau service worker prend la main, on recharge (sauf chrono en cours, on attend la fin de la séance).
     let refreshing=false;

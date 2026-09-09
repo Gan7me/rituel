@@ -291,6 +291,19 @@ const WEEK_SCHEMA = {
     alerts: { type: 'array', items: { type: 'string' }, description: 'Signaux à ne pas ignorer : fatigue, douleur notée, écart de récupération, séance manquée récurrente. Vide si rien.' }
   }
 };
+// Push via le service Expo (gratuit, pas de FCM/APNs à configurer) : jetons enregistrés par l'app native dans meta/push.
+async function sendPush(uid, title, body, data) {
+  try {
+    const snap = await db.collection('users').doc(uid).collection('meta').doc('push').get();
+    const tokens = (snap.exists && Array.isArray(snap.data().expo)) ? snap.data().expo.filter(t => /^ExponentPushToken\[/.test(t)) : [];
+    if (!tokens.length) return 0;
+    const r = await fetch('https://exp.host/--/api/v2/push/send', { method: 'POST', headers: { 'content-type': 'application/json', 'accept': 'application/json' }, body: JSON.stringify(tokens.map(to => ({ to, title, body, sound: 'default', data: data || {}, channelId: 'rituel' }))) });
+    const j = await r.json().catch(() => ({}));
+    const bad = tokens.filter((t, i) => j.data && j.data[i] && j.data[i].status === 'error' && /DeviceNotRegistered/.test(JSON.stringify(j.data[i])));
+    if (bad.length) await snap.ref.set({ expo: admin.firestore.FieldValue.arrayRemove(...bad) }, { merge: true });
+    return tokens.length - bad.length;
+  } catch (e) { console.warn('push', uid, e.message || e); return 0; }
+}
 function isoDaysAgo(n) { const d = new Date(); d.setDate(d.getDate() - n); return d.toISOString().slice(0, 10); }
 async function activeUsers() {
   const refs = await db.collection('users').listDocuments();
@@ -319,6 +332,7 @@ exports.weeklyReview = onSchedule({ schedule: '0 19 * * 0', timeZone: 'Europe/Pa
       const done = logs.docs.map(d => d.data()).filter(l => l.done);
       if (!done.length) {
         await coachRef.doc(weekId).set({ type: 'nudge', title: 'Semaine sans séance', analysis: 'Aucune séance validée cette semaine. Le cycle n\'avance pas tant que tu ne reprends pas : il t\'attend à la semaine où tu l\'as laissé. Reprends par la séance du jour, à charges égales, sans chercher à rattraper.', createdAt: Date.now(), applied: true, model: 'none', costUsd: 0 });
+        await sendPush(uid, 'Semaine sans séance', 'Le cycle t\'attend où tu l\'as laissé. On reprend demain ?', { tab: 'coach' });
         continue;
       }
       const weeksDone = await weekIndexDone(uid, prog);
@@ -330,6 +344,7 @@ exports.weeklyReview = onSchedule({ schedule: '0 19 * * 0', timeZone: 'Europe/Pa
       const cost = await recordUsage(uid, 'analyse', model);
       const cycleEnd = weeksDone >= ((prog.weeks || []).length || 4);
       await coachRef.doc(weekId).set({ type: cycleEnd ? 'cycleEnd' : 'bilan', title: parsed.title, analysis: parsed.verdict, highlights: parsed.highlights || [], nextWeek: parsed.nextWeek || '', alerts: parsed.alerts || [], createdAt: Date.now(), applied: true, model, costUsd: cost });
+      await sendPush(uid, cycleEnd ? 'Cycle terminé' : (parsed.title || 'Bilan de la semaine'), String(parsed.verdict || '').slice(0, 140), { tab: 'coach' });
     } catch (e) { console.error('weeklyReview', uid, e.message || e); }
   }
 });
@@ -344,6 +359,7 @@ exports.dailyNudge = onSchedule({ schedule: '0 18 * * *', timeZone: 'Europe/Pari
       if (recent.docs.some(d => d.data().type === 'nudge')) continue;
       const id = 'nudge-' + new Date().toISOString().slice(0, 10);
       await base.collection('coach').doc(id).set({ type: 'nudge', title: 'Trois jours sans séance', analysis: 'Trois jours sans séance validée. Rien de grave si c\'est une garde ou une récupération choisie ; si c\'est un décrochage, reprends aujourd\'hui par la séance prévue, mêmes charges que la dernière fois, et note comment tu te sens. Le coach ajustera.', createdAt: Date.now(), applied: true, model: 'none', costUsd: 0 });
+      await sendPush(uid, 'Trois jours sans séance', 'La séance du jour t\'attend. Mêmes charges que la dernière fois.', { tab: 'seance' });
     } catch (e) { console.error('dailyNudge', uid, e.message || e); }
   }
 });

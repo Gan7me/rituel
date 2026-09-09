@@ -47,3 +47,20 @@ La fonction `coach` plafonne par compte et par mois : 4 programmes, 60 analyses,
 
 - `weeklyReview` : dimanche 19 h (Europe/Paris), bilan de semaine par athlète actif (1 appel IA), relance si aucune séance, proposition de cycle suivant en fin de mésocycle.
 - `dailyNudge` : 18 h, relance sans IA après 3 jours sans séance.
+
+
+## Application native (iOS / Android) — dossier `native/`
+
+Coquille Expo autour de la web app hébergée : WebView plein écran + notification locale de fin de repos (téléphone verrouillé), push du coach (service Expo), haptique, écran maintenu allumé. Se compile et se publie avec EAS comme n'importe quelle app Expo.
+
+```bash
+cd native
+npm install
+eas init                                   # une fois : lie le projet à ton compte Expo (owner + projectId)
+eas build --platform ios --profile production
+eas submit --platform ios --latest         # → TestFlight
+eas build --platform android --profile production
+eas submit --platform android --latest     # → Play Console (test interne)
+```
+
+L'interface se met à jour via `firebase deploy` sans nouveau build ; un build n'est nécessaire que pour changer la coquille (`native/`).
