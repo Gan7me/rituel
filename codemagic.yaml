@@ -11,10 +11,12 @@ workflows:
       ios_signing:
         distribution_type: app_store
         bundle_identifier: fr.rituel.app
+      groups:
+        - rituel                         # groupe de variables Codemagic : APP_STORE_APPLE_ID (identifiant numérique de l'app dans App Store Connect)
       vars:
         XCODE_WORKSPACE: "ios/App/App.xcworkspace"
         XCODE_SCHEME: "App"
-      node: 20
+      node: 22
       xcode: latest
       cocoapods: default
     scripts:
@@ -23,6 +25,7 @@ workflows:
       - name: Plateforme iOS
         script: |
           [ -d ios ] || npx cap add ios
+          npx @capacitor/assets generate --ios --iconBackgroundColor '#0F1216' --iconBackgroundColorDark '#0F1216' --splashBackgroundColor '#0F1216' --splashBackgroundColorDark '#0B0D10'
           npx cap sync ios
       - name: Signature
         script: xcode-project use-profiles
@@ -43,7 +46,7 @@ workflows:
     environment:
       android_signing:
         - rituel_keystore                # keystore ajouté dans Codemagic
-      node: 20
+      node: 22
       java: 17
     scripts:
       - name: Dépendances
@@ -51,6 +54,7 @@ workflows:
       - name: Plateforme Android
         script: |
           [ -d android ] || npx cap add android
+          npx @capacitor/assets generate --android --iconBackgroundColor '#0F1216' --iconBackgroundColorDark '#0F1216' --splashBackgroundColor '#0F1216' --splashBackgroundColorDark '#0B0D10'
           npx cap sync android
       - name: Build
         script: cd android && ./gradlew bundleRelease

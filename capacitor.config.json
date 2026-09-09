@@ -6,10 +6,24 @@
     "url": "https://rituel-6b365.web.app",
     "cleartext": false
   },
-  "ios": { "contentInset": "always", "backgroundColor": "#F3F4F1" },
-  "android": { "backgroundColor": "#F3F4F1" },
+  "ios": {
+    "contentInset": "never",
+    "backgroundColor": "#0F1216",
+    "scheme": "Rituel"
+  },
+  "android": {
+    "backgroundColor": "#0F1216"
+  },
   "plugins": {
-    "SplashScreen": { "launchShowDuration": 600, "backgroundColor": "#161C24", "showSpinner": false },
-    "StatusBar": { "style": "DEFAULT" }
+    "SplashScreen": {
+      "launchShowDuration": 800,
+      "launchAutoHide": true,
+      "backgroundColor": "#0F1216",
+      "showSpinner": false
+    },
+    "StatusBar": {
+      "style": "DARK",
+      "backgroundColor": "#0F1216"
+    }
   }
 }
