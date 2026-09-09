@@ -3,6 +3,7 @@
    appelle Claude et enregistre l'analyse. Deux modes : "analyse" (après une séance)
    et "chat" (question libre). L'utilisateur doit être authentifié. */
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
+const { onSchedule } = require('firebase-functions/v2/scheduler');
 const { defineSecret, defineString } = require('firebase-functions/params');
 const admin = require('firebase-admin');
 const program = require('./program.json');
@@ -175,6 +176,19 @@ function normalizeProgram(p, startISO) {
   }
   return out;
 }
+// Garde-fous par niveau : bornes de volume, RIR minimum, alertes. Appliqués après normalisation, avant enregistrement.
+const LEVEL_CAPS = { debutant: { setsPerSession: 16, exPerSession: 6, minRir: 2, maxSetsPerEx: 4 }, intermediaire: { setsPerSession: 22, exPerSession: 8, minRir: 1, maxSetsPerEx: 5 }, confirme: { setsPerSession: 28, exPerSession: 9, minRir: 0, maxSetsPerEx: 6 }, avance: { setsPerSession: 32, exPerSession: 10, minRir: 0, maxSetsPerEx: 8 } };
+function applyGuardrails(prog, profile) {
+  const lvl = LEVEL_CAPS[(profile || {}).level] || LEVEL_CAPS.intermediaire; const notes = [];
+  prog.sessions.forEach(s => {
+    if (s.exercises.length > lvl.exPerSession) { notes.push(`${s.name} : ${s.exercises.length} exercices ramenés à ${lvl.exPerSession}`); s.exercises = s.exercises.slice(0, lvl.exPerSession); }
+    s.exercises.forEach((e, j) => { e.n = j + 1; e.id = s.id + '-' + e.n; if (e.sets > lvl.maxSetsPerEx) { notes.push(`${e.name} : ${e.sets} séries → ${lvl.maxSetsPerEx}`); e.sets = lvl.maxSetsPerEx; } e.rir = e.rir.map(r => Math.max(lvl.minRir, r)); });
+    let total = s.exercises.reduce((a, e) => a + e.sets, 0);
+    while (total > lvl.setsPerSession) { const big = s.exercises.reduce((m, e) => e.sets > m.sets ? e : m, s.exercises[0]); if (big.sets <= 2) break; big.sets -= 1; total -= 1; notes.push(`${s.name} : volume ramené à ${lvl.setsPerSession} séries (−1 sur ${big.name})`); }
+  });
+  if (notes.length) prog.guardrails = notes;
+  return prog;
+}
 function nextMonday() { const d = new Date(); const day = d.getDay(); const diff = day === 1 ? 0 : (8 - day) % 7; d.setDate(d.getDate() + diff); return d.toISOString().slice(0, 10); }
 
 const QUOTAS = { program: 4, analyse: 60, chat: 300 }; // par mois et par compte : plafonne le coût IA
@@ -212,12 +226,14 @@ exports.coach = onCall({ region: 'europe-west1', secrets: [ANTHROPIC_API_KEY], t
 
   if (mode === 'program') {
     const sys = systemFor(meta.profile, null);
-    const user = `Construis le mésocycle de 4 semaines de cet athlète (départ le ${nextMonday()}). Sois concret et exigeant au niveau déclaré. ${PROGRAM_SCHEMA}`;
+    const safety = { debutant: 'Débutant : 3 séances max, 4 à 6 exercices par séance, 12 à 16 séries, RIR jamais sous 2, pas de techniques d\'intensification, machines guidées et mouvements simples, échauffement détaillé, aucune charge suggérée en kg.', intermediaire: 'Intermédiaire : 16 à 22 séries par séance, RIR 3 → 1, une seule technique d\'intensification en S3.', confirme: 'Confirmé : 22 à 28 séries, RIR jusqu\'à 0 sur les isolations en S3, intensification ciblée.', avance: 'Avancé : volume et intensité d\'athlète, techniques d\'intensification justifiées.' }[(meta.profile || {}).level] || '';
+    const constraints = (meta.profile || {}).constraints ? `Respecte strictement les contraintes déclarées (blessures, douleurs, métier) : exclus tout exercice qui les sollicite et propose une alternative. ` : '';
+    const user = `Construis le mésocycle de 4 semaines de cet athlète (départ le ${nextMonday()}). Sois concret et exigeant au niveau déclaré. ${safety} ${constraints}${PROGRAM_SCHEMA}`;
     const text = await claude(apiKey, model, sys, [{ role: 'user', content: user }], 16000);
     let parsed;
     try { parsed = JSON.parse(text.slice(text.indexOf('{'), text.lastIndexOf('}') + 1)); }
     catch (e) { throw new HttpsError('internal', 'Le coach a renvoyé un programme illisible, relance la génération.'); }
-    const prog = normalizeProgram(parsed, nextMonday());
+    const prog = applyGuardrails(normalizeProgram(parsed, nextMonday()), meta.profile);
     if (!prog.sessions.length) throw new HttpsError('internal', 'Programme vide, relance la génération.');
     prog.generatedAt = Date.now(); prog.model = model; prog.profileSnapshot = meta.profile;
     await db.collection('users').doc(uid).collection('meta').doc('program').set(prog);
@@ -259,4 +275,75 @@ exports.coach = onCall({ region: 'europe-west1', secrets: [ANTHROPIC_API_KEY], t
     return { text, costUsd: cost };
   }
   throw new HttpsError('invalid-argument', 'mode inconnu');
+});
+
+
+/* ---------- Coach permanent : fonctions planifiées ----------
+   weeklyReview : dimanche 19 h (Paris) — bilan de la semaine pour chaque athlète actif, relance sinon, cycle suivant en fin de mésocycle.
+   dailyNudge   : chaque jour 18 h — relance après 3 jours sans séance (sans IA, pas de coût). */
+const WEEK_SCHEMA = {
+  type: 'object', required: ['title', 'verdict', 'highlights', 'nextWeek', 'alerts'],
+  properties: {
+    title: { type: 'string', description: 'Ex. « Bilan S2 · 8–14 septembre »' },
+    verdict: { type: 'string', maxLength: 320, description: 'Bilan de la semaine en 2 à 3 phrases : assiduité (séances faites vs prévues), tendance des charges, cohérence RIR, poids de corps si suivi.' },
+    highlights: { type: 'array', items: { type: 'object', required: ['label', 'value'], properties: { label: { type: 'string', description: 'Ex. « Séances », « Progression pendulum », « Poids moyen »' }, value: { type: 'string', description: 'Chiffre ou fait court : « 3/4 », « 120 → 125 kg », « 69,4 kg (−0,3) »' }, status: { type: 'string', enum: ['ok', 'up', 'hold', 'warn'] } } }, description: '3 à 5 repères chiffrés de la semaine.' },
+    nextWeek: { type: 'string', maxLength: 400, description: 'Consigne pour la semaine qui vient, en 2 à 4 phrases : intention (RIR, volume), un ou deux points concrets par séance clé.' },
+    alerts: { type: 'array', items: { type: 'string' }, description: 'Signaux à ne pas ignorer : fatigue, douleur notée, écart de récupération, séance manquée récurrente. Vide si rien.' }
+  }
+};
+function isoDaysAgo(n) { const d = new Date(); d.setDate(d.getDate() - n); return d.toISOString().slice(0, 10); }
+async function activeUsers() {
+  const refs = await db.collection('users').listDocuments();
+  const out = [];
+  for (const ref of refs) { const pg = await ref.collection('meta').doc('program').get(); if (pg.exists && pg.data().sessions) out.push(ref.id); }
+  return out;
+}
+async function weekIndexDone(uid, prog) {
+  // semaines calendaires (depuis le départ du programme) contenant au moins une séance validée
+  const start = (prog.weeks && prog.weeks[0] && prog.weeks[0].from) || isoDaysAgo(28);
+  const logs = await db.collection('users').doc(uid).collection('logs').where('date', '>=', start).get();
+  const weeks = new Set();
+  logs.docs.map(d => d.data()).filter(l => l.done).forEach(l => { const days = Math.round((new Date(l.date + 'T12:00:00') - new Date(start + 'T12:00:00')) / 86400000); weeks.add(Math.floor(days / 7)); });
+  return weeks.size;
+}
+exports.weeklyReview = onSchedule({ schedule: '0 19 * * 0', timeZone: 'Europe/Paris', region: 'europe-west1', secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 540, memory: '1GiB' }, async () => {
+  const apiKey = String(ANTHROPIC_API_KEY.value() || '').replace(/[^\x21-\x7E]/g, '');
+  const model = await resolveModel(apiKey, MODEL.value());
+  const since = isoDaysAgo(7); const weekId = 'week-' + new Date().toISOString().slice(0, 10);
+  for (const uid of await activeUsers()) {
+    try {
+      const meta = await loadMeta(uid); const prog = meta.program; if (!prog) continue;
+      const coachRef = db.collection('users').doc(uid).collection('coach');
+      if ((await coachRef.doc(weekId).get()).exists) continue;
+      const logs = await db.collection('users').doc(uid).collection('logs').where('date', '>=', since).get();
+      const done = logs.docs.map(d => d.data()).filter(l => l.done);
+      if (!done.length) {
+        await coachRef.doc(weekId).set({ type: 'nudge', title: 'Semaine sans séance', analysis: 'Aucune séance validée cette semaine. Le cycle n\'avance pas tant que tu ne reprends pas : il t\'attend à la semaine où tu l\'as laissé. Reprends par la séance du jour, à charges égales, sans chercher à rattraper.', createdAt: Date.now(), applied: true, model: 'none', costUsd: 0 });
+        continue;
+      }
+      const weeksDone = await weekIndexDone(uid, prog);
+      const context = await loadContext(uid, prog, 12);
+      const SYSTEM = systemFor(meta.profile, prog);
+      const programSummary = prog.sessions.map(s => `${s.name} (${s.id}) : ` + s.exercises.map(e => `${e.id} ${e.name}`).join(' ; ')).join('\n');
+      const user = `Programme :\n${programSummary}\n\n${context}\n\n## Bilan de la semaine écoulée (${since} → aujourd'hui)\nSéances validées cette semaine : ${done.length} sur ${prog.sessions.length} prévues. Semaines effectuées depuis le début du cycle : ${weeksDone} sur ${(prog.weeks || []).length || 4}.\nRédige le bilan hebdomadaire : conclusions seulement, chiffres à l'appui, pas de généralités. ${weeksDone >= ((prog.weeks || []).length || 4) ? 'Le mésocycle est terminé : dis-le clairement et annonce que le cycle suivant peut être généré.' : ''}`;
+      const parsed = await claudeJSON(apiKey, model, SYSTEM, [{ role: 'user', content: user }], WEEK_SCHEMA, 1800);
+      const cost = await recordUsage(uid, 'analyse', model);
+      const cycleEnd = weeksDone >= ((prog.weeks || []).length || 4);
+      await coachRef.doc(weekId).set({ type: cycleEnd ? 'cycleEnd' : 'bilan', title: parsed.title, analysis: parsed.verdict, highlights: parsed.highlights || [], nextWeek: parsed.nextWeek || '', alerts: parsed.alerts || [], createdAt: Date.now(), applied: true, model, costUsd: cost });
+    } catch (e) { console.error('weeklyReview', uid, e.message || e); }
+  }
+});
+exports.dailyNudge = onSchedule({ schedule: '0 18 * * *', timeZone: 'Europe/Paris', region: 'europe-west1' }, async () => {
+  const cutoff = isoDaysAgo(3);
+  for (const uid of await activeUsers()) {
+    try {
+      const base = db.collection('users').doc(uid);
+      const last = await base.collection('logs').where('date', '>=', cutoff).get();
+      if (last.docs.some(d => d.data().done || Object.keys(d.data().sets || {}).length)) continue;
+      const recent = await base.collection('coach').where('createdAt', '>=', Date.now() - 3 * 86400000).get();
+      if (recent.docs.some(d => d.data().type === 'nudge')) continue;
+      const id = 'nudge-' + new Date().toISOString().slice(0, 10);
+      await base.collection('coach').doc(id).set({ type: 'nudge', title: 'Trois jours sans séance', analysis: 'Trois jours sans séance validée. Rien de grave si c\'est une garde ou une récupération choisie ; si c\'est un décrochage, reprends aujourd\'hui par la séance prévue, mêmes charges que la dernière fois, et note comment tu te sens. Le coach ajustera.', createdAt: Date.now(), applied: true, model: 'none', costUsd: 0 });
+    } catch (e) { console.error('dailyNudge', uid, e.message || e); }
+  }
 });

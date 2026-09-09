@@ -1,6 +1,6 @@
 /* Service worker — app shell en cache, fonctionnement hors ligne complet.
    Incrémente VERSION à chaque déploiement pour forcer la mise à jour. */
-const VERSION = 'rituel-v3.2.2';
+const VERSION = 'rituel-v3.4.0';
 const SHELL = [
   './',
   './index.html',
@@ -17,6 +17,7 @@ const SHELL = [
   './icons/favicon.png',
   './icons/logo-mask.png',
   './icons/mark-mask.png',
+  './apple-touch-icon.png',
   'https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js',
   'https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js',
   'https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js',

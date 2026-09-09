@@ -37,3 +37,13 @@ Alternative Android immédiate : PWABuilder (pwabuilder.com) sur l'URL de produc
 ## Quotas et suppression de compte
 
 La fonction `coach` plafonne par compte et par mois : 4 programmes, 60 analyses, 300 messages (`QUOTAS` dans `functions/index.js`). La fonction `deleteAccount` efface tout le sous-arbre `users/{uid}` puis le compte Auth, depuis Réglages.
+
+
+## Tests
+
+`node tests/e2e.js` lance l'app dans Chromium sans tête avec un Firebase simulé (aucun réseau, aucun coût) et parcourt les parcours critiques : accueil, création de compte, onboarding en 4 étapes, séance (saisie, validation, chrono, menu, lexique), coach (analyse, bilan, relance, application des charges, chat), suivi, programme, réglages, thème sombre. Dépendances : `npm i -D puppeteer-core` et un Chromium (`CHROME=/chemin/vers/chrome`). À lancer avant chaque `firebase deploy`.
+
+## Fonctions planifiées
+
+- `weeklyReview` : dimanche 19 h (Europe/Paris), bilan de semaine par athlète actif (1 appel IA), relance si aucune séance, proposition de cycle suivant en fin de mésocycle.
+- `dailyNudge` : 18 h, relance sans IA après 3 jours sans séance.
