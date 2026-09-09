@@ -1,5 +1,5 @@
 
-const APP_VERSION='3.5.0';
+const APP_VERSION='3.5.1';
 let PROGRAM={sessions:[]};
 let WEEKS = [
   {n:1,label:'S1 calibrage',from:'2026-09-07',to:'2026-09-13',rirNote:'RIR 3 · établir les références, tout noter'},
@@ -576,6 +576,23 @@ function renderProgramme(){
   const rb=$('#regenBtn'); if(rb) rb.onclick=regenerateProgram;
 }
 
+
+/* ---------- suivi enrichi : groupes musculaires, assiduité, records ---------- */
+const MUSCLE_RULES=[['Quadriceps',/quadri|vaste|droit fémoral/i],['Ischios',/ischio|biceps fémoral|semi/i],['Fessiers',/fessier|glute/i],['Mollets',/mollet|soléaire|gastroc/i],['Pectoraux',/pector|pec|grand pectoral/i],['Épaules',/deltoïde|épaule|deltoid/i],['Dos',/dorsal|grand dorsal|trapèze|rhombo|dos\b/i],['Biceps',/biceps(?! fémoral)|brachial/i],['Triceps',/triceps/i],['Abdos',/abdo|gainage|obliques|transverse/i],['Avant-bras',/avant-bras|préhension|grip/i]];
+function muscleOf(ex){ const t=(ex.target||'')+' '+(ex.name||''); for(const [m,re] of MUSCLE_RULES){ if(re.test(t)) return m; } return null; }
+function weekBounds(k){ const start=WEEKS[0].from; return [addDays(start,k*7),addDays(start,k*7+6)]; }
+function suiviStats(){
+  const today=todayISO(); const start=WEEKS[0].from;
+  const curK=Math.floor(Math.round((new Date(today+'T12:00:00')-new Date(start+'T12:00:00'))/86400000)/7); const nWeeks=Math.max(WEEKS.length,Math.min(8,curK+1));
+  const idx={}; PROGRAM.sessions.forEach(s=>s.exercises.forEach(e=>idx[e.id]=e));
+  const weeks=[]; for(let k=0;k<nWeeks;k++){ const [a,b]=weekBounds(k); const logs=Object.values(S.logs).filter(l=>l.date>=a&&l.date<=b); const done=logs.filter(l=>l.done).length; const sets={}; let total=0,tonnage=0; logs.forEach(l=>Object.entries(l.sets||{}).forEach(([exId,arr])=>{ const ex=idx[exId]; const m=ex?muscleOf(ex)||'Autre':'Autre'; (arr||[]).forEach(st=>{ if(st&&st.done){ sets[m]=(sets[m]||0)+1; total++; tonnage+=(st.w||0)*(st.r||0); } }); })); weeks.push({k,a,b,done,planned:PROGRAM.sessions.length,sets,total,tonnage,future:a>today}); }
+  // records : meilleure e1RM par exercice, et date du record
+  const prs=[]; const best={};
+  Object.values(S.logs).sort((x,y)=>x.date<y.date?-1:1).forEach(l=>Object.entries(l.sets||{}).forEach(([exId,arr])=>{ const ex=idx[exId]; if(!ex||ex.mode==='emom') return; (arr||[]).forEach(st=>{ if(!st||!st.done||!st.w||!st.r) return; const v=e1rm(st.w,st.r); if(!best[exId]||v>best[exId].v+0.01){ const isNew=!!best[exId]; best[exId]={v,date:l.date,w:st.w,r:st.r}; if(isNew) prs.push({exId,name:ex.name,date:l.date,w:st.w,r:st.r,v:Math.round(v*10)/10}); } }); }));
+  const byDay={}; prs.forEach(p=>{ const k=p.exId+'_'+p.date; if(!byDay[k]||p.v>byDay[k].v) byDay[k]=p; });
+  return {weeks,prs:Object.values(byDay).sort((a,b)=>a.date<b.date?1:-1).slice(0,6),best};
+}
+
 /* ---------- render: suivi ---------- */
 let suiviEx=null;
 function renderSuivi(){
@@ -590,6 +607,11 @@ function renderSuivi(){
     <div><div class="k">${tests[0]?tests[0].reps:'—'}</div><div class="l">tractions max${tests[0]?' · '+fmtD(tests[0].date):''}</div></div>
     ${hasEmom?`<div><div class="k">${emom[0]?emom[0].total:'—'}</div><div class="l">reps EMOM dernière séance</div></div>`:`<div><div class="k">${weekDone}/${PROGRAM.sessions.length}</div><div class="l">séances cette semaine</div></div>`}
     <div><div class="k">${doneCount}</div><div class="l">séances validées</div></div></div>`;
+  const st=suiviStats(); const last=st.weeks.filter(w=>!w.future).slice(-1)[0]||st.weeks[0]; const maxSets=Math.max(1,...st.weeks.map(w=>w.total));
+  h+=`<h3>Assiduité et volume</h3><div class="wkbars">${st.weeks.map(w=>`<div class="wkb ${w===last?'cur':''} ${w.future?'fut':''}"><div class="bar"><i style="height:${Math.round(100*w.total/maxSets)}%"></i></div><b>${w.future?'·':w.done+'/'+w.planned}</b><span>S${w.k+1}</span></div>`).join('')}</div><p class="small muted">Séances faites sur prévues par semaine, hauteur = séries validées${last.tonnage?` · cette semaine ${Math.round(last.tonnage/1000*10)/10} t soulevées`:''}.</p>`;
+  const groups=Object.entries(last.sets).sort((a,b)=>b[1]-a[1]);
+  if(groups.length){ const mx=groups[0][1]; h+=`<div class="mus">${groups.map(([m,n])=>`<div class="musr"><span>${esc(m)}</span><div class="bar"><i style="width:${Math.round(100*n/mx)}%"></i></div><b>${n}</b></div>`).join('')}</div><p class="small muted">Séries par groupe musculaire cette semaine. Repère : 10 à 20 séries par groupe et par semaine pour progresser.</p>`; }
+  if(st.prs.length) h+=`<h3>Records récents</h3><div class="prs">${st.prs.map(p=>`<div class="pr"><b>${esc(p.name)}</b><span>${p.w} kg × ${p.r} · e1RM ${p.v} kg</span><i>${fmtD(p.date)}</i></div>`).join('')}</div>`;
   h+=`<h3>Poids de corps</h3><p class="small muted">Deux pesées par semaine, à jeun. La moyenne compte, pas la valeur isolée.</p><div class="inline"><input type="date" id="bwDate" value="${date}"><input type="number" step="0.1" inputmode="decimal" id="bwKg" placeholder="kg"><button class="btn sm acc" id="bwAdd">Enregistrer</button></div>`;
   if(bws.length){ const avg7=bws.filter(b=>b.date>=addDays(date,-7)); h+=`<p class="small">Moyenne 7 j : <b>${avg7.length?(avg7.reduce((a,b)=>a+b.kg,0)/avg7.length).toFixed(1):'—'} kg</b> · ${bws.slice(0,8).map(b=>fmtD(b.date)+' '+b.kg.toFixed(1)).join(' · ')}</p>`; }
   h+=`<h3>Test tractions</h3><div class="inline"><input type="date" id="tDate" value="${date}"><input type="number" inputmode="numeric" id="tReps" placeholder="reps"><button class="btn sm acc" id="tAdd">Enregistrer</button></div>`;
