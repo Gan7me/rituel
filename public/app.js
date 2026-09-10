@@ -1,5 +1,5 @@
 
-const APP_VERSION='3.5.1';
+const APP_VERSION='3.5.2';
 let PROGRAM={sessions:[]};
 let WEEKS = [
   {n:1,label:'S1 calibrage',from:'2026-09-07',to:'2026-09-13',rirNote:'RIR 3 · établir les références, tout noter'},
@@ -86,7 +86,6 @@ function initFirebase(){
     fbDb.settings({ignoreUndefinedProperties:true});
     fbDb.enablePersistence({synchronizeTabs:true}).catch(()=>{});
     fbAuth.useDeviceLanguage();
-    fbAuth.getRedirectResult().catch(e=>console.warn('redirect',e));
     fbAuth.onAuthStateChanged(u=>{ USER=u||null; onAuth(); });
   }catch(e){ console.warn('firebase init',e); setSync('off','local'); }
 }

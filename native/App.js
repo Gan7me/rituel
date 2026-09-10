@@ -91,8 +91,16 @@ function Shell() {
     }
   }, [send]);
 
+  // Seules les navigations de premier niveau vers un autre site sortent vers Safari ; les iframes et les domaines
+  // techniques (Firebase Auth, Google APIs) restent dans la WebView, sinon la connexion ouvrait une page web.
+  const ALLOWED = /(^|\.)(rituel-6b365\.web\.app|rituel-6b365\.firebaseapp\.com|firebaseapp\.com|googleapis\.com|gstatic\.com|google\.com|firebase\.com)$/i;
   const onShouldStart = useCallback((req) => {
-    try { const u = new URL(req.url); if (u.host === HOST || u.protocol === 'about:') return true; Linking.openURL(req.url).catch(() => {}); return false; } catch (e) { return true; }
+    try {
+      if (req.isTopFrame === false) return true;
+      const u = new URL(req.url);
+      if (u.protocol === 'about:' || u.host === HOST || ALLOWED.test(u.host)) return true;
+      Linking.openURL(req.url).catch(() => {}); return false;
+    } catch (e) { return true; }
   }, []);
 
   const injected = `window.__RITUEL_NATIVE__={platform:'${Platform.OS}',version:'${Constants.expoConfig ? Constants.expoConfig.version : ''}'}; true;`;

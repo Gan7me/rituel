@@ -2,7 +2,7 @@
   "expo": {
     "name": "Rituel",
     "slug": "rituel",
-    "version": "3.4.0",
+    "version": "3.5.2",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "scheme": "rituel",
@@ -16,9 +16,7 @@
         "CFBundleDisplayName": "Rituel",
         "CFBundleDevelopmentRegion": "fr",
         "ITSAppUsesNonExemptEncryption": false,
-        "UIBackgroundModes": [
-          "remote-notification"
-        ]
+        "UIBackgroundModes": ["remote-notification"]
       }
     },
     "android": {
@@ -30,40 +28,15 @@
         "backgroundImage": "./assets/adaptive-background.png",
         "monochromeImage": "./assets/adaptive-monochrome.png"
       },
-      "permissions": [
-        "VIBRATE",
-        "POST_NOTIFICATIONS",
-        "WAKE_LOCK"
-      ]
+      "permissions": ["VIBRATE", "POST_NOTIFICATIONS", "WAKE_LOCK"]
     },
     "plugins": [
-      [
-        "expo-splash-screen",
-        {
-          "image": "./assets/splash-icon.png",
-          "imageWidth": 160,
-          "resizeMode": "contain",
-          "backgroundColor": "#0F1216",
-          "dark": {
-            "backgroundColor": "#0B0D10"
-          }
-        }
-      ],
-      [
-        "expo-notifications",
-        {
-          "icon": "./assets/adaptive-monochrome.png",
-          "color": "#D8382B",
-          "defaultChannel": "rituel"
-        }
-      ]
+      ["expo-splash-screen", { "image": "./assets/splash-icon.png", "imageWidth": 160, "resizeMode": "contain", "backgroundColor": "#0F1216", "dark": { "backgroundColor": "#0B0D10" } }],
+      ["expo-notifications", { "icon": "./assets/adaptive-monochrome.png", "color": "#D8382B", "defaultChannel": "rituel" }]
     ],
     "extra": {
       "webUrl": "https://rituel-6b365.web.app",
-      "eas": {
-        "projectId": "3e1b316a-757c-4229-a194-762584bda052"
-      }
-    },
-    "owner": "ganeme2"
+      "eas": {}
+    }
   }
 }
