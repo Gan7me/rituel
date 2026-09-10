@@ -60,8 +60,7 @@ p{margin:0 0 10px;max-width:66ch}
 .brand small{display:none}
 .spacer{display:none}
 .chip{flex:0 0 auto;font-size:12px;font-weight:600;letter-spacing:.02em;background:var(--surface);color:var(--ink2);padding:6px 11px;border-radius:999px;white-space:nowrap;box-shadow:var(--shadow)}
-.chip.week{color:var(--accent-on);background:var(--ink)}
-:root[data-theme="dark"] .chip.week{color:var(--bg)}
+.chip.week{color:#fff;background:var(--accent)}
 .chip.sync{color:var(--muted);background:transparent;box-shadow:none;padding:6px 4px;display:flex;align-items:center;gap:6px}
 .chip.sync::before{content:"";width:8px;height:8px;border-radius:50%;background:currentColor;opacity:.7}
 .chip.sync.on{color:var(--ok)}
@@ -407,3 +406,9 @@ details.cyc[open] summary::after{content:" –"}
 
 .splash{min-height:80vh;display:grid;place-items:center}
 .splash .logo{width:150px;height:130px;background:var(--ink);-webkit-mask:url(icons/logo-mask.png) center/contain no-repeat;mask:url(icons/logo-mask.png) center/contain no-repeat;opacity:.9}
+
+.lx{background:none;padding:0;font:inherit;color:inherit;text-decoration:underline dotted;text-decoration-color:var(--accent);text-underline-offset:3px;cursor:pointer;border-radius:0}
+.lx:active{transform:none;background:var(--accent-soft)}
+.prog .wk{background:var(--accent-soft);color:var(--accent-ink);box-shadow:none}
+.nogym{margin:0 0 12px}
+#sheet details.more{border-top:1px solid var(--line)}#sheet details.more summary{font-size:14px;letter-spacing:0;text-transform:none;font-weight:600;color:var(--ink);padding:11px 0}#sheet details.more p{margin:0 0 10px;color:var(--ink2)}

@@ -142,7 +142,8 @@ const PROGRAM_SCHEMA = `Réponds UNIQUEMENT avec un objet JSON valide (pas de te
  "rationale":"texte en markdown léger (paragraphes, ## titres, listes -) : lecture du cycle, arbitrages, structure hebdomadaire, progression semaine par semaine, gestion des contraintes, prévention. 300 à 600 mots.",
  "nutrition":"cibles concrètes en 100 à 200 mots (calories, protéines, glucides, lipides, timing), adaptées au profil et à l'objectif. Si le profil ne permet pas d'estimer, dis-le.",
  "warmup":{"common":"...","<groupe>":"...","ramp":"..."},
- "weeks":[{"n":1,"label":"S1 …","from":"AAAA-MM-JJ","to":"AAAA-MM-JJ","rirNote":"..."}, … 4 semaines, la 4e en décharge],
+ "durationWeeks":4, "cycleReason":"une phrase : pourquoi cette durée (3 = reprise ou débutant à recalibrer vite, 4 = standard, 5-6 = athlète confirmé en accumulation longue)",
+ "weeks":[{"n":1,"label":"S1 …","from":"AAAA-MM-JJ","to":"AAAA-MM-JJ","rirNote":"..."}, … autant que durationWeeks (3 à 6), la dernière toujours en décharge ; "rir" de chaque exercice a autant de valeurs que de semaines],
  "sessions":[{"id":"s1","day":1,"dayName":"Lundi","name":"<nom court, ex. Jambes A>","sub":"<dominante>","duration":"60 min","place":"","gtg":false,"note":"",
    "exercises":[{"n":1,"name":"...","machine":"<nom exact marque + modèle si connu, sinon description>","alt":"<alternative si la machine est absente>","star":true,
      "sets":4,"reps":"6-8","per":"","rir":[3,2,1,4],"tempo":"3-1-X-0","restSec":180,"restText":"3 min","mode":"normal",
@@ -159,18 +160,24 @@ function normalizeProgram(p, startISO) {
     const ses = { id, day, dayName: dn[day], name: String(s.name || 'Séance ' + (i + 1)), sub: String(s.sub || ''), duration: String(s.duration || ''), place: String(s.place || ''), gtg: !!s.gtg, note: String(s.note || ''), exercises: [] };
     (Array.isArray(s.exercises) ? s.exercises : []).forEach((e, j) => {
       const n = j + 1; const sets = Math.max(1, Math.min(8, parseInt(e.sets) || 3));
-      let rir = Array.isArray(e.rir) ? e.rir.map(x => parseInt(x)).filter(x => !isNaN(x)) : null; if (rir && rir.length < 4) rir = null;
+      let rir = Array.isArray(e.rir) ? e.rir.map(x => parseInt(x)).filter(x => !isNaN(x)) : null; if (rir && rir.length < 3) rir = null;
       const restSec = Math.max(20, Math.min(600, parseInt(e.restSec) || 90));
-      ses.exercises.push({ id: id + '-' + n, n, name: String(e.name || 'Exercice'), machine: String(e.machine || ''), alt: String(e.alt || ''), star: !!e.star, sets, reps: String(e.reps || '8-12'), per: String(e.per || ''), rir: rir ? rir.slice(0, 4) : [3, 2, 1, 4], tempo: String(e.tempo || '2-0-1-0'), restSec, restText: String(e.restText || (restSec >= 60 ? Math.round(restSec / 60) + ' min' : restSec + ' s')), mode: ['normal', 'max', 'emom'].includes(e.mode) ? e.mode : 'normal', setsText: `${sets} × ${e.reps || ''}`, chargeNote: rir ? `RIR ${rir[0]} → ${rir[1]} → ${rir[2]}` : '', reco: String(e.reco || ''), why: String(e.why || ''), target: String(e.target || ''), exec: String(e.exec || ''), seek: String(e.seek || ''), url: /^https:\/\/www\.google\.com\/search/.test(String(e.url || '')) ? e.url : 'https://www.google.com/search?tbm=isch&q=' + encodeURIComponent(String(e.machine || e.name || '')) });
+      ses.exercises.push({ id: id + '-' + n, n, name: String(e.name || 'Exercice'), machine: String(e.machine || ''), alt: String(e.alt || ''), star: !!e.star, sets, reps: String(e.reps || '8-12'), per: String(e.per || ''), rir: rir || [3, 2, 1, 4], tempo: String(e.tempo || '2-0-1-0'), restSec, restText: String(e.restText || (restSec >= 60 ? Math.round(restSec / 60) + ' min' : restSec + ' s')), mode: ['normal', 'max', 'emom'].includes(e.mode) ? e.mode : 'normal', setsText: `${sets} × ${e.reps || ''}`, chargeNote: rir ? `RIR ${rir[0]} → ${rir[1]} → ${rir[2]}` : '', reco: String(e.reco || ''), why: String(e.why || ''), target: String(e.target || ''), exec: String(e.exec || ''), seek: String(e.seek || ''), url: /^https:\/\/www\.google\.com\/search/.test(String(e.url || '')) ? e.url : 'https://www.google.com/search?tbm=isch&q=' + encodeURIComponent(String(e.machine || e.name || '')) });
       if (e.mode === 'emom' && Array.isArray(e.weeks)) ses.exercises[ses.exercises.length - 1].weeks = e.weeks;
     });
     if (ses.exercises.length) out.sessions.push(ses);
   });
-  // semaines : 4, à partir du lundi de départ
+  // semaines : 3 à 6 (choisies par le coach), la dernière en décharge, à partir du lundi de départ
+  const N = Math.max(3, Math.min(6, (Array.isArray(p.weeks) && p.weeks.length) || parseInt(p.durationWeeks) || 4));
+  const plan = { 3: [['S1 calibrage', 'RIR 3 · établir les références, tout noter'], ['S2 intensification', 'RIR 1 · +2,5 à 5 %'], ['S3 décharge', 'RIR 4 · séries −40 % · charges −10 %']],
+    4: [['S1 calibrage', 'RIR 3 · établir les références, tout noter'], ['S2 accumulation', 'RIR 2 · +1 série sur les ★ · +2,5 % ou +1 rep'], ['S3 intensification', 'RIR 1 · +2,5 à 5 % · techniques d\'intensification'], ['S4 décharge', 'RIR 4 · séries −40 % · charges S2 −10 %']],
+    5: [['S1 calibrage', 'RIR 3 · établir les références'], ['S2 accumulation', 'RIR 2 · +1 série sur les ★'], ['S3 accumulation 2', 'RIR 2 · +2,5 % ou +1 rep'], ['S4 intensification', 'RIR 1 · +2,5 à 5 % · intensification'], ['S5 décharge', 'RIR 4 · séries −40 % · charges −10 %']],
+    6: [['S1 calibrage', 'RIR 3 · établir les références'], ['S2 accumulation', 'RIR 2 · +1 série sur les ★'], ['S3 accumulation 2', 'RIR 2 · +2,5 % ou +1 rep'], ['S4 intensification', 'RIR 1 · +2,5 à 5 %'], ['S5 intensification 2', 'RIR 0-1 · techniques d\'intensification'], ['S6 décharge', 'RIR 4 · séries −40 % · charges −10 %']] }[N];
+  const labels = plan.map(x => x[0]), notes = plan.map(x => x[1]);
+  out.durationWeeks = N; out.cycleReason = String(p.cycleReason || '');
+  out.sessions.forEach(se => se.exercises.forEach(e => { const r = e.rir.slice(); const deload = r[r.length - 1]; const body = r.slice(0, -1); while (body.length < N - 1) body.push(body[body.length - 1] ?? 2); e.rir = body.slice(0, N - 1).concat([deload]); }));
   const start = new Date(startISO + 'T12:00:00');
-  const labels = ['S1 calibrage', 'S2 accumulation', 'S3 intensification', 'S4 décharge'];
-  const notes = ['RIR 3 · établir les références, tout noter', 'RIR 2 · +1 série sur les ★ · +2,5 % ou +1 rep', 'RIR 1 · +2,5 à 5 % · techniques d\'intensification', 'RIR 4 · séries −40 % · charges S2 −10 %'];
-  for (let i = 0; i < 4; i++) {
+  for (let i = 0; i < N; i++) {
     const f = new Date(start); f.setDate(start.getDate() + 7 * i); const t = new Date(f); t.setDate(f.getDate() + 6);
     const src = Array.isArray(p.weeks) && p.weeks[i] ? p.weeks[i] : {};
     out.weeks.push({ n: i + 1, label: String(src.label || labels[i]), from: f.toISOString().slice(0, 10), to: t.toISOString().slice(0, 10), rirNote: String(src.rirNote || notes[i]) });
@@ -192,13 +199,13 @@ function applyGuardrails(prog, profile) {
 }
 function nextMonday() { const d = new Date(); const day = d.getDay(); const diff = day === 1 ? 0 : (8 - day) % 7; d.setDate(d.getDate() + diff); return d.toISOString().slice(0, 10); }
 
-const QUOTAS = { program: 4, analyse: 60, chat: 300 }; // par mois et par compte : plafonne le coût IA
+const QUOTAS = { program: 4, analyse: 60, chat: 300, substitute: 12 }; // par mois et par compte : plafonne le coût IA
 async function checkQuota(uid, mode) {
   const month = new Date().toISOString().slice(0, 7);
   const ref = db.collection('users').doc(uid).collection('meta').doc('usage');
   return db.runTransaction(async tx => {
     const snap = await tx.get(ref); const d = snap.exists ? snap.data() : {};
-    const cur = d.month === month ? d : { month, program: 0, analyse: 0, chat: 0, tokensIn: 0, tokensOut: 0, costUsd: 0 };
+    const cur = d.month === month ? d : { month, program: 0, analyse: 0, chat: 0, substitute: 0, tokensIn: 0, tokensOut: 0, costUsd: 0 };
     if ((cur[mode] || 0) >= QUOTAS[mode]) throw new HttpsError('resource-exhausted', `Quota mensuel atteint pour « ${mode} » (${QUOTAS[mode]}). Il se renouvelle le 1er du mois.`);
     cur[mode] = (cur[mode] || 0) + 1; cur.updatedAt = Date.now();
     tx.set(ref, cur); return cur;
@@ -265,6 +272,23 @@ exports.coach = onCall({ region: 'europe-west1', secrets: [ANTHROPIC_API_KEY], t
     const doc = { ...parsed, logKey, session: log.session, createdAt: Date.now(), applied: false, model, costUsd: cost };
     await db.collection('users').doc(uid).collection('coach').doc(logKey).set(doc);
     return doc;
+  }
+
+  if (mode === 'substitute') {
+    // Séance de remplacement du jour sans la salle : mêmes intentions, autre matériel. Enregistrée dans overrides/{sessionId}.substitute.
+    const sid = String(req.data.sessionId || ''); const ses = prog.sessions.find(s => s.id === sid);
+    if (!ses) throw new HttpsError('not-found', 'Séance inconnue.');
+    const gear = (Array.isArray(req.data.gear) ? req.data.gear : []).map(String).slice(0, 10); const note = String(req.data.note || '').slice(0, 300);
+    const week = Math.max(1, parseInt(req.data.week) || 1); const W = (prog.weeks || [])[week - 1] || {};
+    const SUB_SCHEMA = { type: 'object', required: ['name', 'intro', 'exercises'], properties: { name: { type: 'string', description: 'Nom court, ex. « Jambes A · maison »' }, intro: { type: 'string', maxLength: 300, description: '2 phrases : ce qu\'on garde de la séance prévue, ce qu\'on change, et l\'intention (RIR, tempo) de la semaine.' }, exercises: { type: 'array', minItems: 3, maxItems: 8, items: { type: 'object', required: ['name', 'machine', 'sets', 'reps', 'rir', 'tempo', 'restSec', 'why', 'exec'], properties: { name: { type: 'string' }, machine: { type: 'string', description: 'Matériel utilisé (ex. « élastique fort », « haltères », « poids du corps »)' }, replaces: { type: 'string', description: 'Exercice de la séance prévue qu\'il remplace' }, sets: { type: 'integer' }, reps: { type: 'string' }, rir: { type: 'integer' }, tempo: { type: 'string' }, restSec: { type: 'integer' }, why: { type: 'string' }, target: { type: 'string' }, exec: { type: 'string' }, seek: { type: 'string' } } } } } };
+    const user = `Séance prévue aujourd'hui : ${ses.name} (${ses.sub}) — semaine ${W.label || week} : ${W.rirNote || ''}\nExercices prévus :\n${ses.exercises.map(e => `- ${e.name} · ${e.machine} · ${e.sets}×${e.reps} · RIR ${(e.rir || [])[week - 1] ?? ''} · tempo ${e.tempo} · cible ${e.target || ''}`).join('\n')}\n\nL'athlète n'a pas accès à sa salle aujourd'hui. Matériel disponible : ${gear.join(', ') || 'poids du corps uniquement'}. ${note ? 'Précision : ' + note : ''}\nConstruis la séance de remplacement : mêmes groupes musculaires et même intention (RIR, tempo, volume approché), uniquement avec ce matériel, techniques adaptées (tempo lent, pauses, unilatéral, partielles, séries longues) pour compenser la charge limitée. Chaque exercice remplace explicitement un exercice prévu. Exécution précise, erreurs à éviter.`;
+    const parsed = await claudeJSON(apiKey, model, SYSTEM, [{ role: 'user', content: user }], SUB_SCHEMA, 3000);
+    const exercises = (parsed.exercises || []).map((e, j) => { const restSec = Math.max(20, Math.min(300, parseInt(e.restSec) || 60)); const sets = Math.max(1, Math.min(6, parseInt(e.sets) || 3)); const rir = Math.max(0, Math.min(4, parseInt(e.rir) || 2)); return { id: `${sid}-sub${j + 1}`, n: j + 1, name: String(e.name || 'Exercice'), machine: String(e.machine || ''), alt: '', star: false, sets, reps: String(e.reps || '10-15'), per: '', rir: Array(6).fill(rir), tempo: String(e.tempo || '2-1-1-0'), restSec, restText: restSec >= 60 ? Math.round(restSec / 60) + ' min' : restSec + ' s', mode: 'normal', replaces: String(e.replaces || ''), why: String(e.why || ''), target: String(e.target || ''), exec: String(e.exec || ''), seek: String(e.seek || ''), reco: '' }; });
+    if (exercises.length < 3) throw new HttpsError('internal', 'Séance de remplacement incomplète, relance.');
+    const cost = await recordUsage(uid, 'substitute', model);
+    const substitute = { name: String(parsed.name || ses.name + ' · sans salle'), intro: String(parsed.intro || ''), gear, exercises, date: new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Paris' }), createdAt: Date.now(), model, costUsd: cost };
+    await db.collection('users').doc(uid).collection('overrides').doc(sid).set({ substitute, updatedAt: Date.now() }, { merge: true });
+    return substitute;
   }
 
   if (mode === 'chat') {
