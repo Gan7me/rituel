@@ -404,3 +404,6 @@ details.cyc[open] summary::after{content:" –"}
 .pr{background:var(--surface);border-radius:var(--r-sm);padding:10px 14px;box-shadow:var(--shadow);display:grid;grid-template-columns:1fr auto;gap:2px 10px;align-items:baseline;border-left:3px solid var(--ok)}
 .pr b{font-weight:600;font-size:14px;grid-column:1;grid-row:1}.pr span{grid-column:1/3;grid-row:2;font-size:12.5px;color:var(--muted)}.pr i{grid-column:2;grid-row:1;font-style:normal;font-size:12px;color:var(--muted)}
 .wkb.fut .bar i{background:transparent}.wkb.fut b{color:var(--muted)}
+
+.splash{min-height:80vh;display:grid;place-items:center}
+.splash .logo{width:150px;height:130px;background:var(--ink);-webkit-mask:url(icons/logo-mask.png) center/contain no-repeat;mask:url(icons/logo-mask.png) center/contain no-repeat;opacity:.9}

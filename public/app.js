@@ -1,5 +1,5 @@
 
-const APP_VERSION='3.5.2';
+const APP_VERSION='3.6.0';
 let PROGRAM={sessions:[]};
 let WEEKS = [
   {n:1,label:'S1 calibrage',from:'2026-09-07',to:'2026-09-13',rirNote:'RIR 3 · établir les références, tout noter'},
@@ -93,8 +93,11 @@ function isStandalone(){ return window.matchMedia('(display-mode: standalone)').
 async function signOut(){ unsubs.forEach(u=>u()); unsubs=[]; await fbAuth.signOut(); }
 function col(name){ return fbDb.collection('users').doc(USER.uid).collection(name); }
 
+function showSplash(){ document.querySelector('.tabs').hidden=true; document.querySelector('.top').hidden=true; document.querySelector('main').innerHTML='<section class="splash"><div class="logo" role="img" aria-label="Rituel"></div></section>'; }
 async function onAuth(){
   unsubs.forEach(u=>u()); unsubs=[];
+  try{ localStorage.setItem('rituel.hadUser',USER?'1':'0'); }catch(e){}
+  native({type:'ready'});
   if(!USER){ PROGRAM_LOADED=false; showGate(); syncStatusIdle(); return; }
   restoreShell(); setSync('pend','connexion…'); listenMeta(); savePushToken();
   // 1. pousser le local vers Firestore (fusion par updatedAt, jamais d'écrasement du plus récent)
@@ -257,6 +260,7 @@ function updateCoachBadge(){ const t=document.querySelector('.tabs button[data-t
    Sans compte : écran d'accueil uniquement. */
 let PROFILE=null, USAGE=null, PROGRAM_LOADED=false, DEFAULT_PROGRAM=null, DEFAULT_CYCLE_HTML='';
 const GOALS=[['force','Force maximale'],['masse','Prise de muscle'],['seche','Sécher, se dessiner'],['endurance','Endurance musculaire'],['puissance','Puissance, vitesse'],['tractions','Tractions (nombre)'],['jambes','Rattraper les jambes'],['bras','Bras et pectoraux'],['sante','Santé, mobilité, dos'],['perf','Performance sportive / opérationnelle']];
+const GEAR=[['salle','Salle complète (machines, barres, poulies)'],['halteres','Haltères'],['barre','Barre olympique et disques'],['kettlebell','Kettlebells'],['elastiques','Élastiques'],['traction','Barre de traction'],['trx','TRX / sangles'],['corps','Poids du corps uniquement'],['cardio','Cardio (vélo, rameur, tapis)']];
 const LEVELS=[['debutant','Débutant (moins d’un an)'],['intermediaire','Intermédiaire (1 à 3 ans)'],['confirme','Confirmé (3 ans et plus)'],['avance','Avancé, entraînement quotidien']];
 
 function showGate(mode){
@@ -313,7 +317,9 @@ function onbStep(i){
     {t:'Tes objectifs',s:'Coche 2 à 4 objectifs, le premier coché compte le plus.',f:`<fieldset><div class="chks">${GOALS.map(([v,l])=>`<label class="chk"><input type="checkbox" name="goals" value="${v}" ${(p.goals||[]).includes(v)?'checked':''}> ${l}</label>`).join('')}</div></fieldset>
       <label>En une phrase, ce que tu veux vraiment<textarea name="goalsText" rows="2" placeholder="Ex. : passer de 35 à 70 tractions, rattraper des jambes faibles, rester sec">${esc(p.goalsText||'')}</textarea></label>`},
     {t:'Ton cadre',s:'Où, combien de fois, combien de temps.',f:`<div class="grid2"><label>Séances par semaine<select name="days">${[2,3,4,5,6].map(n=>`<option ${String(p.days||4)===String(n)?'selected':''}>${n}</option>`).join('')}</select></label><label>Durée (min)<select name="minutes">${[45,60,75,90].map(n=>`<option ${String(p.minutes||60)===String(n)?'selected':''}>${n}</option>`).join('')}</select></label></div>
-      <label>Salle et matériel<textarea name="equipment" rows="3" placeholder="Ex. : salle complète avec machines guidées, presse, poulies. Ou : garage, barre, haltères jusqu'à 30 kg, barre de traction." required>${esc(p.equipment||'')}</textarea></label>`},
+      <fieldset><legend>Matériel disponible</legend><div class="chks">${GEAR.map(([v,l])=>`<label class="chk"><input type="checkbox" name="gear" value="${v}" ${(p.gear||[]).includes(v)?'checked':''}> ${l}</label>`).join('')}</div></fieldset>
+      <label>Précisions sur ta salle ou ton matériel<textarea name="equipment" rows="2" placeholder="Ex. : ON AIR Lyon, parc Technogym et Hammer Strength. Ou : garage, haltères jusqu'à 30 kg, élastiques 15-40 kg.">${esc(p.equipment||'')}</textarea></label>
+      <label>Autres pratiques à intégrer<textarea name="sports" rows="2" placeholder="Ex. : course à pied 2 fois par semaine, escalade, rugby le samedi, yoga, rééducation du genou">${esc(p.sports||'')}</textarea></label>`},
     {t:'Ce que le coach doit savoir',s:'Blessures, contraintes, repères. Plus c\'est précis, plus le programme est juste.',f:`<label>Contraintes, douleurs, métier<textarea name="constraints" rows="2" placeholder="Ex. : gardes de 24 h, épaule droite sensible, pas de squat lourd">${esc(p.constraints||'')}</textarea></label>
       <label>Repères actuels<textarea name="experience" rows="3" placeholder="Ex. : squat 100 kg × 5, 35 tractions, développé couché 80 kg, 3 ans d'entraînement">${esc(p.experience||'')}</textarea></label>
       <p class="small muted">Rituel ne remplace pas un avis médical. En cas de douleur, de pathologie ou de reprise après blessure, valide ton programme avec un professionnel de santé.</p>`},
@@ -323,9 +329,10 @@ function onbStep(i){
     <form class="form" id="onbForm">${st.f}<div class="row2 onb-nav">${i>0?'<button type="button" class="btn" id="onbBack">Retour</button>':''}<button class="btn fill" type="submit">${i<steps.length-1?'Continuer':'Terminer'}</button></div></form></section>`;
   window.scrollTo({top:0});
   const back=$('#onbBack'); if(back) back.onclick=()=>{ collect(); onbStep(i-1); };
-  function collect(){ const f=new FormData($('#onbForm')); const d={}; for(const [k,v] of f.entries()){ if(k==='goals') (d.goals=d.goals||[]).push(v); else d[k]=String(v).trim(); } if($('#onbForm input[name=goals]')&&!d.goals) d.goals=[]; Object.assign(ONB_DRAFT,d); }
+  function collect(){ const f=new FormData($('#onbForm')); const d={}; for(const [k,v] of f.entries()){ if(k==='goals'||k==='gear') (d[k]=d[k]||[]).push(v); else d[k]=String(v).trim(); } if($('#onbForm input[name=goals]')&&!d.goals) d.goals=[]; if($('#onbForm input[name=gear]')&&!d.gear) d.gear=[]; Object.assign(ONB_DRAFT,d); }
   $('#onbForm').onsubmit=async e=>{ e.preventDefault(); collect();
     if(i===1&&(ONB_DRAFT.goals||[]).length<1){ toast('Coche au moins un objectif'); return; }
+    if(i===2&&(ONB_DRAFT.gear||[]).length<1){ toast('Coche ton matériel'); return; }
     if(i<steps.length-1){ onbStep(i+1); return; }
     const out=Object.assign({},PROFILE||{},ONB_DRAFT); ['age','height','weight','days','minutes'].forEach(k=>out[k]=Number(out[k])); out.updatedAt=Date.now(); out.createdAt=(PROFILE&&PROFILE.createdAt)||Date.now();
     PROFILE=out; try{ await fbDb.collection('users').doc(USER.uid).collection('meta').doc('profile').set(out); }catch(err){ alert('Enregistrement impossible : '+err.message); return; }
@@ -345,13 +352,15 @@ function profileForm(p){
     <label>Précision sur tes objectifs<textarea name="goalsText" rows="2" placeholder="Ex. : passer de 35 à 70 tractions, rattraper des jambes faibles, rester à 69 kg">${esc(p.goalsText||'')}</textarea></label>
     <div class="grid2"><label>Séances par semaine<select name="days">${[2,3,4,5,6].map(n=>`<option ${String(p.days||4)===String(n)?'selected':''}>${n}</option>`).join('')}</select></label>
     <label>Durée par séance (min)<select name="minutes">${[45,60,75,90].map(n=>`<option ${String(p.minutes||60)===String(n)?'selected':''}>${n}</option>`).join('')}</select></label></div>
-    <label>Salle et matériel<textarea name="equipment" rows="3" placeholder="Ex. : ON AIR Lyon, parc complet Technogym / Hammer Strength / Panatta, cages, presse, poulies. Ou : garage, barre, haltères jusqu'à 30 kg, barre de traction." required>${esc(p.equipment||'')}</textarea></label>
+    <fieldset><legend>Matériel disponible</legend><div class="chks">${GEAR.map(([v,l])=>`<label class="chk"><input type="checkbox" name="gear" value="${v}" ${(p.gear||[]).includes(v)?'checked':''}> ${l}</label>`).join('')}</div></fieldset>
+    <label>Précisions sur ta salle ou ton matériel<textarea name="equipment" rows="2">${esc(p.equipment||'')}</textarea></label>
+    <label>Autres pratiques à intégrer<textarea name="sports" rows="2" placeholder="Ex. : course à pied, escalade, sport collectif, rééducation">${esc(p.sports||'')}</textarea></label>
     <label>Contraintes, blessures, métier<textarea name="constraints" rows="2" placeholder="Ex. : gardes de 24 h, épaule droite sensible, pas de squat lourd, entraînement le matin">${esc(p.constraints||'')}</textarea></label>
     <label>Expérience et repères actuels<textarea name="experience" rows="2" placeholder="Ex. : squat 100 kg × 5, 35 tractions, développé couché 80 kg, 3 ans de PPL">${esc(p.experience||'')}</textarea></label>
     <div class="row2"><button class="btn fill" type="submit">Enregistrer</button></div></form>`;
 }
 function bindProfileForm(after,root){
-  $('#profForm',root||document).onsubmit=async e=>{ e.preventDefault(); const f=new FormData(e.target); const p={}; for(const [k,v] of f.entries()){ if(k==='goals') (p.goals=p.goals||[]).push(v); else p[k]=String(v).trim(); }
+  $('#profForm',root||document).onsubmit=async e=>{ e.preventDefault(); const f=new FormData(e.target); const p={}; for(const [k,v] of f.entries()){ if(k==='goals'||k==='gear') (p[k]=p[k]||[]).push(v); else p[k]=String(v).trim(); } if(!p.gear) p.gear=[];
     ['age','height','weight','days','minutes'].forEach(k=>p[k]=Number(p[k])); p.updatedAt=Date.now(); if(!PROFILE||!PROFILE.createdAt) p.createdAt=Date.now(); else p.createdAt=PROFILE.createdAt;
     PROFILE=p; try{ await fbDb.collection('users').doc(USER.uid).collection('meta').doc('profile').set(p); }catch(err){ alert('Enregistrement impossible : '+err.message); return; }
     after&&after(); };
@@ -652,7 +661,9 @@ async function boot(){
     DEFAULT_PROGRAM=p; DEFAULT_CYCLE_HTML=c;
   }catch(e){ DEFAULT_PROGRAM=null; }
   if(!window.firebase){ $('#tab-seance').innerHTML='<p>Connexion au service impossible. Ouvre l\'application avec du réseau une première fois.</p>'; return; }
-  showGate(); initFirebase(); native({type:'ready'});
+  let hadUser=false; try{ hadUser=localStorage.getItem('rituel.hadUser')==='1'; }catch(e){}
+  if(hadUser) showSplash(); else showGate();
+  initFirebase();
   if('serviceWorker' in navigator){
     // Mise à jour automatique : quand un nouveau service worker prend la main, on recharge (sauf chrono en cours, on attend la fin de la séance).
     let refreshing=false;

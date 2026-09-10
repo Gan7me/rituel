@@ -70,7 +70,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   assert(await p.$('.chk'), 'objectif obligatoire : reste à l\'étape 2');
   await p.evaluate(() => document.querySelector('.chk input[value=masse]').click());
   await p.click('#onbForm button[type=submit]'); await sleep(150);
-  await p.type('textarea[name=equipment]', 'Salle'); await p.click('#onbForm button[type=submit]'); await sleep(150);
+  await p.evaluate(() => document.querySelector('.chk input[value=salle]').click()); await p.type('textarea[name=equipment]', 'Salle'); await p.click('#onbForm button[type=submit]'); await sleep(150);
   await p.click('#onbForm button[type=submit]'); await sleep(300);
   const profWrite = await p.evaluate(() => window.__writes.find(w => w.name === 'meta' && w.id === 'profile'));
   if (!profWrite) console.log('   writes:', JSON.stringify(await p.evaluate(() => window.__writes)).slice(0, 300));
