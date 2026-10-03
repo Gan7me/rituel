@@ -2,7 +2,7 @@
   "expo": {
     "name": "Rituel",
     "slug": "rituel",
-    "version": "3.5.2",
+    "version": "3.7.1",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "scheme": "rituel",
@@ -18,6 +18,10 @@
         "ITSAppUsesNonExemptEncryption": false,
         "UIBackgroundModes": [
           "remote-notification"
+        ],
+        "WKAppBoundDomains": [
+          "rituel-6b365.web.app",
+          "rituel-6b365.firebaseapp.com"
         ]
       }
     },
@@ -60,9 +64,7 @@
     ],
     "extra": {
       "webUrl": "https://rituel-6b365.web.app",
-      "eas": {
-        "projectId": "3e1b316a-757c-4229-a194-762584bda052"
-      }
+      "eas": {}
     }
   }
 }

@@ -110,7 +110,7 @@ function Shell() {
         <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} backgroundColor={bg} />
         {failed ? (
           <View style={[styles.center, { backgroundColor: bg }]}>
-            <Text style={[styles.err, { color: scheme === 'dark' ? '#F2F4F6' : '#0F1216' }]}>Rituel n'arrive pas à se charger.{'\n'}Vérifie le réseau et réessaie.</Text>
+            <Text style={[styles.err, { color: scheme === 'dark' ? '#F2F4F6' : '#0F1216' }]}>Rituel n'arrive pas à se charger.{'\n'}Ouvre l'app une première fois avec du réseau, ensuite elle fonctionne hors ligne.</Text>
             <Pressable onPress={() => { setFailed(false); web.current && web.current.reload(); }} style={styles.btn}><Text style={styles.btnT}>Réessayer</Text></Pressable>
           </View>
         ) : null}
@@ -135,6 +135,7 @@ function Shell() {
           sharedCookiesEnabled
           cacheEnabled
           applicationNameForUserAgent="RituelApp"
+          limitsNavigationsToAppBoundDomains
           startInLoadingState
           renderLoading={() => <View style={[styles.center, { backgroundColor: bg }]}><ActivityIndicator color="#D8382B" /></View>}
         />
