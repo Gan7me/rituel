@@ -12,7 +12,7 @@ function humanErr(e){ const c=(e&&e.code)||''; const m=(e&&e.message)||String(e|
   if(/network|Failed to fetch|internet/i.test(m)||!navigator.onLine) return 'Pas de réseau. Le coach a besoin d\'une connexion ; tes séries sont enregistrées et partiront toutes seules.';
   if(/invalid-argument/.test(c)) return 'Le serveur n\'a pas compris la demande (version de l\'app en retard ?). Recharge l\'application depuis Réglages.';
   return m; }
-const APP_VERSION='3.8.0';
+const APP_VERSION='3.9.0';
 let PROGRAM={sessions:[]};
 let WEEKS = [
   {n:1,label:'S1 calibrage',from:'2026-09-07',to:'2026-09-13',rirNote:'RIR 3 · établir les références, tout noter'},
@@ -127,7 +127,7 @@ async function onAuth(){
     setSync(snap.metadata.hasPendingWrites?'pend':'on', snap.metadata.hasPendingWrites?'à sync':'sync ok');
   }, err=>{ console.warn(name,err); logErr('listen '+name,err); setSync('pend','sync erreur'); }));
   listen('logs','logs'); listen('bw','bw'); listen('tests','tests');
-  unsubs.push(col('coach').orderBy('createdAt','desc').limit(30).onSnapshot(snap=>{ COACH.items=snap.docs.map(d=>({id:d.id,...d.data()})); renderCoach(); }));
+  unsubs.push(col('coach').orderBy('createdAt','desc').limit(30).onSnapshot(snap=>{ COACH.items=snap.docs.map(d=>({id:d.id,...d.data()})); renderCoach(); if(PROGRAM_LOADED) renderHome(); }));
   unsubs.push(col('overrides').onSnapshot(snap=>{ S.overrides={}; snap.docs.forEach(d=>S.overrides[d.id]=d.data()); save(); if(PROGRAM_LOADED) renderSeance(); }));
   renderReglages();
 }
@@ -307,8 +307,8 @@ function showGate(mode){
 function authError(e){ const c=(e&&e.code)||''; return ({'auth/invalid-email':'Adresse e-mail invalide.','auth/user-not-found':'Aucun compte avec cet e-mail.','auth/wrong-password':'Mot de passe incorrect.','auth/invalid-credential':'E-mail ou mot de passe incorrect.','auth/email-already-in-use':'Un compte existe déjà avec cet e-mail. Connecte-toi ou utilise « Mot de passe oublié ».','auth/weak-password':'Mot de passe trop court : 8 caractères minimum.','auth/too-many-requests':'Trop de tentatives. Réessaie dans quelques minutes.','auth/network-request-failed':'Pas de réseau.','auth/popup-closed-by-user':'Connexion annulée.'})[c]||('Erreur : '+((e&&e.message)||e)); }
 function restoreShell(){
   const m=document.querySelector('main');
-  if(!$('#tab-seance')) m.innerHTML=`<section id="tab-seance"></section><section id="tab-coach" hidden></section><section id="tab-programme" hidden></section><section id="tab-suivi" hidden></section><section id="tab-reglages" hidden></section>`;
-  document.querySelector('.tabs').hidden=false; document.querySelector('.top').hidden=false;
+  if(!$('#tab-seance')) m.innerHTML=`<section id="tab-home"></section><section id="tab-seance" hidden></section><section id="tab-coach" hidden></section><section id="tab-programme" hidden></section><section id="tab-suivi" hidden></section><section id="tab-reglages" hidden></section>`;
+  document.querySelector('.tabs').hidden=false; document.querySelector('.top').hidden=false; const av=$('#settingsBtn'); if(av&&USER) av.textContent=(USER.displayName||USER.email||'?').slice(0,1).toUpperCase();
 }
 function showOnboarding(step){
   restoreShell(); document.querySelector('.tabs').hidden=true; $('#weekChip').hidden=true;
@@ -458,8 +458,52 @@ function tick(){
 $('#tStop').onclick=stopTimer; $('#tPlus').onclick=()=>{T.end+=30000;T.total+=30; native({type:'restTimer',seconds:Math.max(1,Math.round((T.end-Date.now())/1000)),title:'Repos terminé'});}; $('#tMinus').onclick=()=>{T.end-=15000; native({type:'restTimer',seconds:Math.max(1,Math.round((T.end-Date.now())/1000)),title:'Repos terminé'});};
 document.addEventListener('visibilitychange',()=>{ if(!document.hidden&&$('#timer').classList.contains('on')) tick(); });
 
+
+/* ---------- Aujourd'hui ---------- */
+function renderHome(){
+  const el=$('#tab-home'); if(!el||!PROGRAM.sessions.length) return;
+  const date=todayISO(), wk=curWeek(), W=WEEKS[wk-1]; const ses=curSession(); const log=S.logs[logKey(date,ses.id)];
+  const subDoc=((S.overrides||{})[ses.id]||{}).substitute; const sub=subDoc&&subDoc.date===date?subDoc:null;
+  const exs=sub?sub.exercises:ses.exercises; const nSets=log?Object.values(log.sets||{}).flat().filter(x=>x&&x.done).length:0; const started=nSets>0&&!(log&&log.done); const done=!!(log&&log.done);
+  const nDone=exs.filter(ex=>{ const p=rx(ex,wk); const d=(log&&log.sets[ex.id]||[]).filter(x=>x&&x.done).length; const f=(log&&log.flags||{})[ex.id]||{}; return d>=p.sets||f.skip; }).length;
+  const hour=new Date().getHours(); const hello=hour<5?'Bonne nuit':hour<12?'Bonjour':hour<18?'Bon après-midi':'Bonsoir';
+  const name=(PROFILE&&PROFILE.name)||(USER&&USER.displayName&&USER.displayName.split(' ')[0])||'';
+  const dayLabel=new Date().toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long'});
+  const isRest=!PROGRAM.sessions.find(x=>x.day===new Date().getDay());
+  let h=`<div class="hello"><p class="eyebrow">${esc(dayLabel)}</p><h2>${esc(hello)}${name?' '+esc(name):''}</h2></div>`;
+  // carte séance du jour
+  h+=`<div class="today ${done?'done':''}"><div class="t-top"><span class="eyebrow">${isRest&&!started&&!done?'Pas de séance prévue':'Séance du jour'} · ${esc(W.label)}</span>${sub?'<span class="tag">sans salle</span>':''}</div>
+    <div class="t-name">${esc(sub?sub.name:ses.name)}</div><div class="t-meta">${esc(ses.sub)} · ${exs.length} exercices · ${esc(ses.duration||'')}</div>
+    ${started||done?`<div class="prog"><div class="bar"><i style="width:${Math.round(100*nDone/Math.max(1,exs.length))}%"></i></div><span>${nDone}/${exs.length} exercices · ${nSets} séries</span></div>`:''}
+    <div class="t-actions">${done?`<button class="btn" id="homeOpen">Revoir la séance</button>`:`<button class="btn fill" id="homeStart">${started?'Reprendre':'Démarrer'}</button><button class="btn" id="homeOpen">Voir le plan</button>`}</div>
+    ${!started&&!done?`<button class="link t-nogym" id="homeNogym">Pas de salle aujourd'hui ?</button>`:''}</div>`;
+  // semaine : pastilles
+  const start=addDays(WEEKS[0].from,0); const k=Math.max(0,Math.floor(Math.round((new Date(date+'T12:00:00')-new Date(WEEKS[0].from+'T12:00:00'))/86400000)/7)); const a=addDays(WEEKS[0].from,k*7);
+  const dn=['L','M','M','J','V','S','D']; let dots='';
+  for(let i=0;i<7;i++){ const d=addDays(a,i); const dayIdx=(i+1)%7; const planned=PROGRAM.sessions.find(x=>x.day===dayIdx); const did=Object.values(S.logs).some(l=>l.done&&l.date===d); const cls=did?'ok':d<date?(planned?'miss':'rest'):d===date?'now':(planned?'plan':'rest'); dots+=`<div class="dot ${cls}"><i></i><span>${dn[i]}</span></div>`; }
+  const weekDone=Object.values(S.logs).filter(l=>l.done&&l.date>=a&&l.date<=addDays(a,6)).length;
+  h+=`<div class="card wk"><div class="card-h"><b>Cette semaine</b><span class="muted">${weekDone}/${PROGRAM.sessions.length} séances</span></div><div class="dots">${dots}</div></div>`;
+  // dernier mot du coach
+  const last=COACH.items[0];
+  if(last){ const txt=last.type==='bilan'||last.type==='cycleEnd'?(last.nextWeek||last.analysis):last.type==='nudge'?last.analysis:(last.nextFocus||last.analysis); h+=`<div class="card coachcard" id="homeCoach" role="button" tabindex="0"><div class="card-h"><b>Coach</b><span class="muted">${last.createdAt?new Date(last.createdAt).toLocaleDateString('fr-FR',{day:'numeric',month:'short'}):''}</span></div><p>${lexify(esc(String(txt||'').slice(0,180)))}${String(txt||'').length>180?'…':''}</p>${last.adjustments&&last.adjustments.length&&!last.applied?'<span class="tag">charges à appliquer</span>':''}</div>`; }
+  else h+=`<div class="card"><div class="card-h"><b>Coach</b></div><p class="muted">Après ta première séance terminée, il analyse et fixe les charges suivantes.</p></div>`;
+  // prochaine séance
+  const nextS=[1,2,3,4,5,6,7].map(i=>{ const d=(new Date().getDay()+i)%7; return PROGRAM.sessions.find(x=>x.day===d); }).find(Boolean);
+  if(nextS&&nextS.id!==ses.id) h+=`<p class="small muted center">Prochaine : ${esc(nextS.dayName)} · ${esc(nextS.name)}</p>`;
+  el.innerHTML=h;
+  const go=()=>{ S.session=ses.id; save(); showTab('seance'); };
+  const st=$('#homeStart'); if(st) st.onclick=()=>{ S.session=ses.id; save(); showTab('seance'); enterFocus(); };
+  const op=$('#homeOpen'); if(op) op.onclick=go;
+  const ng=$('#homeNogym'); if(ng) ng.onclick=()=>{ go(); setTimeout(()=>{ const b=$('#subBtn'); if(b) b.click(); },50); };
+  const hc=$('#homeCoach'); if(hc) hc.onclick=()=>showTab('coach');
+}
+/* ---------- mode séance plein écran ---------- */
+let FOCUS=false;
+function enterFocus(){ FOCUS=true; document.body.classList.add('focus'); renderSeance(); window.scrollTo({top:0}); requestWake(); }
+function exitFocus(){ if(!FOCUS) return; FOCUS=false; document.body.classList.remove('focus'); renderSeance(); }
+
 /* ---------- render: séance ---------- */
-function render(){ if(!PROGRAM.sessions.length||!PROGRAM_LOADED||!$('#tab-seance')) return; renderSeance(); renderProgramme(); renderSuivi(); renderReglages(); renderCoach(); const w=WEEKS[curWeek()-1]; $('#weekChip').textContent=`Semaine ${w.n}`; }
+function render(){ if(!PROGRAM.sessions.length||!PROGRAM_LOADED||!$('#tab-seance')) return; renderHome(); renderSeance(); renderProgramme(); renderSuivi(); renderReglages(); renderCoach(); const w=WEEKS[curWeek()-1]; $('#weekChip').textContent=`Semaine ${w.n}`; }
 
 function shortName(n){ n=String(n||''); if(n.length<=9) return n; const w=n.split(/\s+/); return w[0]+(w.length>1&&/^[A-Z]$/.test(w[w.length-1])?' '+w[w.length-1]:''); }
 const LEX={
@@ -508,7 +552,9 @@ function renderSeance(){
   const states=ses.exercises.map(ex=>{ const p=rx(ex,wk); const done=(log.sets[ex.id]||[]).filter(s=>s&&s.done).length; const f=flagsAll[ex.id]||{}; return {ex,p,done,complete:done>=p.sets,skip:!!f.skip,alt:!!f.alt}; });
   const nDone=states.filter(s=>s.complete||s.skip).length, nSets=states.reduce((a,s)=>a+s.done,0);
   let current=states.find(s=>!s.complete&&!s.skip); if(S.openEx){ const o=states.find(s=>s.ex.id===S.openEx); if(o) current=o; }
-  h+=`<div class="sesshead"><h2>${esc(ses.name)}</h2><span class="meta">${esc(ses.sub)} · ${esc(ses.duration)}${ses.place?' · '+esc(ses.place):''} <span id="elapsed"></span></span>
+  const curIdx=current?states.findIndex(s=>s.ex.id===current.ex.id):-1;
+  if(FOCUS){ h+=`<div class="fhead"><button class="fclose" id="fExit" aria-label="Quitter le mode séance">✕</button><div class="ftitle"><b>${esc(ses.name)}</b><span>${curIdx>=0?`Exercice ${curIdx+1} sur ${states.length}`:'Tous les exercices sont faits'} · ${nSets} série${nSets>1?'s':''} <span id="elapsed" class="el"></span></span></div><div class="fprog">${states.map(s=>`<i class="${s.complete?'ok':s.skip?'skip':(current&&current.ex.id===s.ex.id)?'now':''}"></i>`).join('')}</div></div>`; }
+  h+=`<div class="sesshead"><h2>${esc(ses.name)}</h2><span class="meta">${esc(ses.sub)} · ${esc(ses.duration)}${ses.place?' · '+esc(ses.place):''} <span id="${FOCUS?'elapsed2':'elapsed'}"></span></span>
     <div class="prog"><div class="bar"><i style="width:${Math.round(100*nDone/Math.max(1,states.length))}%"></i></div><span>${nDone}/${states.length} exercices · ${nSets} série${nSets>1?'s':''}</span><button class="wk" data-lex="semaine">${esc(W.label)} · ${esc((W.rirNote||'').split('·')[0].replace(/\(.*$/,'').trim())}</button></div></div>`;
   if(sub) h+=`<div class="banner info"><b>Séance sans salle.</b> ${esc(sub.intro)} <button class="link" id="subOff">Revenir à la séance prévue</button></div>`;
   else if(!log.done&&!nSets) h+=`<div class="row2 nogym"><button class="btn sm" id="subBtn">Pas de salle aujourd'hui ?</button></div>`;
@@ -552,15 +598,19 @@ function renderSeance(){
     }
     h+=`</div>`;
     if(ex.mode==='emom') h+=`<div class="row2"><button class="btn sm acc" data-emom="start">Top série</button><span class="small muted">Chrono de ${esc(p.restText)} à chaque départ, coche quand la série est faite.</span></div>`;
+    if(FOCUS){ const prev=states[curIdx-1], next=states[curIdx+1]; h+=`<div class="fnav">${prev?`<button class="btn sm" data-open="${prev.ex.id}">‹ ${esc(shortName(prev.ex.name))}</button>`:'<span></span>'}${next?`<button class="btn sm" data-open="${next.ex.id}">${esc(shortName(next.ex.name))} ›</button>`:(log.done?'':`<button class="btn sm acc" id="fEnd">Terminer la séance</button>`)}</div>`; }
     h+=`</div>`;
   });
-  h+=`<div class="notes"><h3>Notes de séance</h3><textarea id="notes" placeholder="Facile, dur, douleur, machine absente, sommeil, garde…">${esc(log.notes)}</textarea></div>`;
-  h+=`<div class="endrow"><button class="btn ${log.done?'':'fill'}" id="endBtn">${log.done?'Rouvrir la séance':'Séance terminée'}</button><span class="small muted">${nSets?nSets+' série'+(nSets>1?'s':'')+' validée'+(nSets>1?'s':''):'Aucune série validée'}</span></div>`;
+  if(FOCUS&&!current&&!log.done) h+=`<div class="fdone"><div class="big">✓</div><h3>Tous les exercices sont faits</h3><p class="muted">${nSets} série${nSets>1?'s':''} validée${nSets>1?'s':''}. Note ton ressenti puis termine : le coach analyse la séance.</p></div>`;
+  h+=`<div class="notes ${FOCUS&&!current?"fshow":""}"><h3>Notes de séance</h3><textarea id="notes" placeholder="Facile, dur, douleur, machine absente, sommeil, garde…">${esc(log.notes)}</textarea></div>`;
+  h+=`<div class="endrow ${FOCUS&&!current?"fshow":""}"><button class="btn ${log.done?'':'fill'}" id="endBtn">${log.done?'Rouvrir la séance':'Séance terminée'}</button><span class="small muted">${nSets?nSets+' série'+(nSets>1?'s':'')+' validée'+(nSets>1?'s':''):'Aucune série validée'}</span></div>`;
   el.innerHTML=h;
 
   // events
   el.querySelectorAll('.days button').forEach(b=>b.onclick=()=>{ const id=b.dataset.s; if(id==='rest'){ el.innerHTML=`<div class="days">${el.querySelector('.days').innerHTML}</div><h2>Dimanche — repos</h2><p>Marche 30 à 60 min, mobilité hanches et épaules 20 min. Pas de tractions.</p>`; el.querySelectorAll('.days button').forEach(x=>x.onclick=()=>{S.session=x.dataset.s==='rest'?S.session:x.dataset.s;S.openEx=null;save();renderSeance();}); return; } S.session=id; S.openEx=null; save(); renderSeance(); window.scrollTo({top:0}); });
   el.querySelectorAll('[data-lex]').forEach(b=>b.onclick=e=>{ e.stopPropagation(); showLex(b.dataset.lex); });
+  const fx=$('#fExit'); if(fx) fx.onclick=()=>exitFocus();
+  const fe=$('#fEnd'); if(fe) fe.onclick=()=>{ const e2=$('#endBtn'); if(e2) e2.click(); };
   el.querySelectorAll('[data-open]').forEach(b=>b.onclick=()=>{ S.openEx=b.dataset.open; save(); renderSeance(); const c=el.querySelector('.ex.cur'); if(c) c.scrollIntoView({block:'start',behavior:'smooth'}); });
   el.querySelectorAll('[data-expand]').forEach(p=>p.onclick=()=>p.classList.toggle('clamp1'));
   el.querySelectorAll('[data-gtg]').forEach(c=>c.onchange=()=>{ log.gtg[+c.dataset.gtg]=c.checked; touch(log); });
@@ -608,7 +658,7 @@ function renderSeance(){
   const so=$('#subOff'); if(so) so.onclick=()=>{ if(!USER) return; col('overrides').doc(curSession().id).set({substitute:firebase.firestore.FieldValue.delete(),updatedAt:Date.now()},{merge:true}).catch(()=>{}); toast('Séance prévue rétablie'); };
   $('#notes').onchange=e=>{ log.notes=e.target.value; touch(log); toast('Note enregistrée'); };
   updateElapsed(log);
-  $('#endBtn').onclick=()=>{ log.done=!log.done; touch(log); stopTimer(); if(log.done){ releaseWake(); S.openEx=null; save(); toast('Séance enregistrée','ok'); if(USER&&navigator.onLine){ analyseSession(logKey(log.date,log.session)); document.querySelector('.tabs button[data-tab="coach"]').click(); } } renderSeance(); if(log.done) window.scrollTo({top:0}); };
+  $('#endBtn').onclick=()=>{ log.done=!log.done; touch(log); stopTimer(); if(log.done){ releaseWake(); S.openEx=null; save(); toast('Séance enregistrée','ok'); if(FOCUS){ FOCUS=false; document.body.classList.remove('focus'); } if(USER&&navigator.onLine){ analyseSession(logKey(log.date,log.session)); document.querySelector('.tabs button[data-tab="coach"]').click(); } } renderSeance(); if(log.done) window.scrollTo({top:0}); };
 }
 
 let elapsedTimer=0;
@@ -701,7 +751,9 @@ function renderHist(){
 }
 
 /* ---------- tabs, week ---------- */
-document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>{ document.querySelectorAll('.tabs button').forEach(x=>x.setAttribute('aria-selected',x===b)); if(b.dataset.tab==='coach'){ S.coachSeen=Date.now(); save(); b.classList.remove('badge'); } ['seance','coach','programme','suivi','reglages'].forEach(t=>{ const s=$('#tab-'+t); if(s) s.hidden=t!==b.dataset.tab; }); window.scrollTo({top:0}); });
+document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>{ document.querySelectorAll('.tabs button').forEach(x=>x.setAttribute('aria-selected',x===b)); if(b.dataset.tab==='coach'){ S.coachSeen=Date.now(); save(); b.classList.remove('badge'); } showTab(b.dataset.tab); });
+function showTab(tab){ document.querySelectorAll('.tabs button').forEach(x=>x.setAttribute('aria-selected',x.dataset.tab===tab)); ['home','seance','coach','programme','suivi','reglages'].forEach(t=>{ const s=$('#tab-'+t); if(s) s.hidden=t!==tab; }); if(tab!=='seance') exitFocus(); window.scrollTo({top:0}); }
+$('#settingsBtn').onclick=()=>showTab('reglages');
 $('#weekChip').onclick=()=>{ const auto=weekFor(todayISO()); const cur=curWeek(); const nx=cur%WEEKS.length+1; S.weekOverride=nx===auto?null:nx; save(); render(); };
 document.addEventListener('pointerdown',unlockAudio,{once:true});
 document.addEventListener('pointerdown',()=>{ if(window.Notification&&Notification.permission==='default'){ try{Notification.requestPermission();}catch(e){} } },{once:true});
