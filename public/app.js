@@ -12,7 +12,7 @@ function humanErr(e){ const c=(e&&e.code)||''; const m=(e&&e.message)||String(e|
   if(/network|Failed to fetch|internet/i.test(m)||!navigator.onLine) return 'Pas de réseau. Le coach a besoin d\'une connexion ; tes séries sont enregistrées et partiront toutes seules.';
   if(/invalid-argument/.test(c)) return 'Le serveur n\'a pas compris la demande (version de l\'app en retard ?). Recharge l\'application depuis Réglages.';
   return m; }
-const APP_VERSION='3.11.1';
+const APP_VERSION='3.12.0';
 let PROGRAM={sessions:[]};
 let WEEKS = [
   {n:1,label:'S1 calibrage',from:'2026-09-07',to:'2026-09-13',rirNote:'RIR 3 · établir les références, tout noter'},
@@ -77,6 +77,7 @@ function history(exId){
 }
 function lastRef(exId, date){ return history(exId).find(h=>h.date<date)||null; }
 function e1rm(w,r){ if(!w||!r) return 0; return r===1?w:w*(1+r/30); }
+function fmtSetsNice(sets){ return sets.map(s=>(s.w?s.w+'×':'')+(s.r??'?')+(s.rir!=null?' '+rirLabel(s.rir):'')).join(' · '); }
 function fmtSets(sets){ return sets.map(s=>(s.w?s.w+'×':'')+(s.r??'?')+(s.rir!=null?'@'+s.rir:'')).join(' · '); }
 
 /* ---------- Firebase : auth, Firestore hors ligne, Coach ----------
@@ -835,38 +836,130 @@ function suiviStats(){
 
 /* ---------- render: suivi ---------- */
 let suiviEx=null;
+let SUIVI_VIEW='forme';
+function sparkSvg(pts,opts){ // petite courbe SVG : pts = [{x:label,v}], opts {h, goal, best}
+  const o=opts||{}; const W=600,H=o.h||140,pl=o.pl||40,pr=12,pt=14,pb=o.labels===false?8:22; if(pts.length<1) return '';
+  const vals=pts.map(p=>p.v); let mn=Math.min(...vals,o.goal!=null?o.goal:Infinity), mx=Math.max(...vals,o.goal!=null?o.goal:-Infinity); if(mn===mx){ mn-=1; mx+=1; } const pad=(mx-mn)*0.08; mn-=pad; mx+=pad;
+  const x=i=>pts.length===1?(pl+W-pr)/2:pl+(W-pl-pr)*i/(pts.length-1), y=v=>pt+(H-pt-pb)*(1-(v-mn)/(mx-mn));
+  const path=pts.map((p,i)=>(i?'L':'M')+x(i).toFixed(1)+','+y(p.v).toFixed(1)).join(' ');
+  const area=pts.length>1?`<path class="a" d="${path} L${x(pts.length-1).toFixed(1)},${(H-pb).toFixed(1)} L${x(0).toFixed(1)},${(H-pb).toFixed(1)} Z"/>`:'';
+  const ticks=[mn+pad,mx-pad].map(v=>`<line class="g" x1="${pl}" x2="${W-pr}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}"/><text x="4" y="${(y(v)+4).toFixed(1)}">${o.fmt?o.fmt(v):Math.round(v*10)/10}</text>`).join('');
+  const goal=o.goal!=null?`<line class="goal" x1="${pl}" x2="${W-pr}" y1="${y(o.goal).toFixed(1)}" y2="${y(o.goal).toFixed(1)}"/><text class="gl" x="${W-pr}" y="${(y(o.goal)-5).toFixed(1)}" text-anchor="end">objectif ${o.fmt?o.fmt(o.goal):o.goal}</text>`:'';
+  const dots=pts.map((p,i)=>`<circle class="d ${p.best?'best':''}" cx="${x(i).toFixed(1)}" cy="${y(p.v).toFixed(1)}" r="${p.best?5:3.5}"/>`).join('');
+  const step=Math.max(1,Math.ceil(pts.length/6)); const labels=o.labels===false?'':pts.map((p,i)=>(i%step===0||i===pts.length-1)?`<text x="${x(i).toFixed(1)}" y="${H-6}" text-anchor="${i===0?'start':i===pts.length-1?'end':'middle'}">${esc(p.x)}</text>`:'').join('');
+  return `<svg class="spark2" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">${ticks}${goal}${area}<path class="l" d="${path}"/>${dots}${labels}</svg>`;
+}
+function suiviForce(){ // force globale : somme des meilleurs e1RM des exercices polyarticulaires, par semaine effective
+  const idx={}; PROGRAM.sessions.forEach(se=>se.exercises.forEach(e=>idx[e.id]=e));
+  const byWeek={}; Object.values(S.logs).forEach(l=>{ Object.entries(l.sets||{}).forEach(([exId,arr])=>{ const ex=idx[exId]; if(!ex||ex.mode==='emom') return; const best=(arr||[]).reduce((m,st)=>st&&st.done&&st.w&&st.r?Math.max(m,e1rm(st.w,st.r)):m,0); if(!best) return; const k=weekRaw(l.date); byWeek[k]=byWeek[k]||{}; byWeek[k][exId]=Math.max(byWeek[k][exId]||0,best); }); });
+  const weeks=Object.keys(byWeek).map(Number).sort((a,b)=>a-b); if(!weeks.length) return null;
+  // comparaison honnête : uniquement les exercices présents à la fois dans la première et la dernière semaine
+  const lastW=weeks[weeks.length-1]; const ids=Object.keys(byWeek[weeks[0]]).filter(id=>byWeek[lastW][id]);
+  const usable=ids.length>=2?ids:Object.keys(byWeek[lastW]);
+  const pts=weeks.map(w=>({x:'S'+w,v:Math.round(usable.reduce((a,id)=>a+(byWeek[w][id]||0),0)),full:usable.every(id=>byWeek[w][id])})).filter(p=>p.v>0&&p.full);
+  const first=pts[0]&&pts[0].v, lastV=pts[pts.length-1]&&pts[pts.length-1].v; const delta=ids.length>=2&&pts.length>1&&first&&lastV?Math.round(100*(lastV-first)/first):null;
+  return {pts:pts.length?pts:[{x:'S'+lastW,v:Math.round(usable.reduce((a,id)=>a+(byWeek[lastW][id]||0),0))}],delta,n:usable.length};
+}
 function renderSuivi(){
   const el=$('#tab-suivi'); if(!el) return; const date=todayISO();
-  const bws=Object.values(S.bw).sort((a,b)=>a.date<b.date?1:-1); const tests=Object.values(S.tests).sort((a,b)=>a.date<b.date?1:-1);
-  const doneCount=Object.values(S.logs).filter(l=>l.done).length;
-  const emomEx=PROGRAM.sessions.flatMap(s=>s.exercises.map(e=>({...e,sid:s.id}))).find(e=>e.mode==='emom'); const hasEmom=!!emomEx;
-  const emom=hasEmom?Object.values(S.logs).filter(l=>l.session===emomEx.sid&&l.sets[emomEx.id]).map(l=>({date:l.date,total:l.sets[emomEx.id].filter(s=>s&&s.done).reduce((a,s)=>a+(s.r||0),0)})).sort((a,b)=>a.date<b.date?1:-1):[];
-  const wkNow=curWeek(); const weekDone=Object.values(S.logs).filter(l=>l.done&&l.week===wkNow).length;
-  let h=`<h2>Suivi</h2><div class="kv">
-    <div><div class="k">${bws[0]?bws[0].kg.toFixed(1)+' kg':(PROFILE&&PROFILE.weight?PROFILE.weight+' kg':'—')}</div><div class="l">poids${bws[0]?' · '+fmtD(bws[0].date):' · profil'}</div></div>
-    <div><div class="k">${tests[0]?tests[0].reps:'—'}</div><div class="l">tractions max${tests[0]?' · '+fmtD(tests[0].date):''}</div></div>
-    ${hasEmom?`<div><div class="k">${emom[0]?emom[0].total:'—'}</div><div class="l">reps EMOM dernière séance</div></div>`:`<div><div class="k">${weekDone}/${PROGRAM.sessions.length}</div><div class="l">séances cette semaine</div></div>`}
-    <div><div class="k">${doneCount}</div><div class="l">séances validées</div></div></div>`;
-  const st=suiviStats(); const last=st.weeks.filter(w=>!w.future).slice(-1)[0]||st.weeks[0]; const maxSets=Math.max(1,...st.weeks.map(w=>w.total));
-  h+=`<h3>Assiduité et volume</h3><div class="wkbars">${st.weeks.map(w=>`<div class="wkb ${w===last?'cur':''} ${w.future?'fut':''}"><div class="bar"><i style="height:${Math.round(100*w.total/maxSets)}%"></i></div><b>${w.future?'·':w.done+'/'+w.planned}</b><span>S${w.k+1}</span></div>`).join('')}</div><p class="small muted">Séances faites / prévues${last.tonnage?` · ${Math.round(last.tonnage/1000*10)/10} t cette semaine`:''}</p>`;
-  const groups=Object.entries(last.sets).sort((a,b)=>b[1]-a[1]);
-  if(groups.length){ const mx=groups[0][1]; h+=`<div class="mus">${groups.map(([m,n])=>`<div class="musr"><span>${esc(m)}</span><div class="bar"><i style="width:${Math.round(100*n/mx)}%"></i></div><b>${n}</b></div>`).join('')}</div><p class="small muted">Séries par muscle cette semaine · repère 10 à 20</p>`; }
-  if(st.prs.length) h+=`<h3>Records récents</h3><div class="prs">${st.prs.map(p=>`<div class="pr"><b>${esc(p.name)}</b><span>${p.w} kg × ${p.r} · e1RM ${p.v} kg</span><i>${fmtD(p.date)}</i></div>`).join('')}</div>`;
-  h+=`<h3>Poids de corps</h3><div class="inline"><input type="date" id="bwDate" value="${date}"><input type="number" step="0.1" inputmode="decimal" id="bwKg" placeholder="kg"><button class="btn sm acc" id="bwAdd">Enregistrer</button></div>`;
-  if(bws.length){ const avg7=bws.filter(b=>b.date>=addDays(date,-7)); h+=`<p class="small">Moyenne 7 j : <b>${avg7.length?(avg7.reduce((a,b)=>a+b.kg,0)/avg7.length).toFixed(1):'—'} kg</b> · ${bws.slice(0,8).map(b=>fmtD(b.date)+' '+b.kg.toFixed(1)).join(' · ')}</p>`; }
-  h+=`<h3>Test tractions</h3><div class="inline"><input type="date" id="tDate" value="${date}"><input type="number" inputmode="numeric" id="tReps" placeholder="reps"><button class="btn sm acc" id="tAdd">Enregistrer</button></div>`;
-  if(tests.length) h+=`<p class="small">${tests.map(t=>fmtD(t.date)+' : '+t.reps).join(' · ')}</p>`;
-  h+=`<h3>Progression par exercice</h3><div class="inline"><select id="exSel">`;
-  PROGRAM.sessions.forEach(s=>{ h+=`<optgroup label="${esc(s.name)}">`; s.exercises.forEach(ex=>{ h+=`<option value="${ex.id}" ${suiviEx===ex.id?'selected':''}>${ex.n}. ${esc(ex.name)}</option>`; }); h+=`</optgroup>`; });
-  h+=`</select></div><div id="exHist"></div>`;
-  h+=`<h3>Journal</h3>`;
-  const logs=Object.values(S.logs).filter(l=>Object.keys(l.sets).length||l.done||l.notes).sort((a,b)=>a.date<b.date?1:-1);
-  if(!logs.length) h+=`<div class="empty"><b>Journal vide</b><p class="small muted">Chaque série validée en séance apparaît ici.</p></div>`;
-  else h+=`<div class="tw"><table><thead><tr><th>Date</th><th>Séance</th><th>S</th><th>Séries</th><th>Notes</th></tr></thead><tbody>${logs.map(l=>{ const s=PROGRAM.sessions.find(x=>x.id===l.session); const n=Object.values(l.sets).flat().filter(x=>x&&x.done).length; return `<tr><td class="num">${fmtD(l.date)}</td><td>${s?esc(s.name):l.session}${l.done?' ✓':''}</td><td class="num">${l.week}</td><td class="num">${n}</td><td class="small">${esc(l.notes)}</td></tr>`; }).join('')}</tbody></table></div>`;
+  const views=[['forme','Forme'],['force','Force'],['corps','Corps'],['journal','Journal']];
+  let h=`<div class="suivih"><h2>Progrès</h2></div><div class="seg" role="tablist">${views.map(([k,l])=>`<button role="tab" aria-selected="${SUIVI_VIEW===k}" data-view="${k}">${l}</button>`).join('')}</div>`;
+  h+=`<div class="sview">${({forme:suiviForme,force:suiviForceView,corps:suiviCorps,journal:suiviJournal})[SUIVI_VIEW](date)}</div>`;
   el.innerHTML=h;
-  $('#bwAdd').onclick=()=>{ const d=$('#bwDate').value, kg=parseFloat($('#bwKg').value); if(!d||isNaN(kg)) return; S.bw[d]={date:d,kg,updatedAt:Date.now()}; save(); writeDoc('bw',d,S.bw[d]); renderSuivi(); };
-  $('#tAdd').onclick=()=>{ const d=$('#tDate').value, r=parseInt($('#tReps').value); if(!d||isNaN(r)) return; S.tests[d]={date:d,reps:r,updatedAt:Date.now()}; save(); writeDoc('tests',d,S.tests[d]); renderSuivi(); };
-  const sel=$('#exSel'); if(!suiviEx) suiviEx=sel.value; sel.value=suiviEx; sel.onchange=()=>{ suiviEx=sel.value; renderHist(); }; renderHist();
+  el.querySelectorAll('[data-view]').forEach(b=>b.onclick=()=>{ SUIVI_VIEW=b.dataset.view; renderSuivi(); });
+  el.querySelectorAll('[data-lex]').forEach(b=>b.onclick=e=>{ e.stopPropagation(); showLex(b.dataset.lex); });
+  bindSuivi(el,date);
+}
+function suiviForme(date){
+  const st=suiviStats(); const cur=st.weeks.filter(w=>!w.future).slice(-1)[0]||st.weeks[0];
+  const bws=Object.values(S.bw).sort((a,b)=>a.date<b.date?1:-1); const tests=Object.values(S.tests).sort((a,b)=>a.date<b.date?1:-1);
+  // série de semaines consécutives avec au moins une séance
+  let streak=0; for(let i=st.weeks.length-1;i>=0;i--){ const w=st.weeks[i]; if(w.future) continue; if(w.done>0) streak++; else break; }
+  const pct=Math.round(100*cur.done/Math.max(1,cur.planned)); const r=34, c=2*Math.PI*r;
+  let h=`<div class="hero"><div class="ring"><svg viewBox="0 0 80 80"><circle class="bg" cx="40" cy="40" r="${r}"/><circle class="fg" cx="40" cy="40" r="${r}" stroke-dasharray="${c.toFixed(1)}" stroke-dashoffset="${(c*(1-Math.min(1,cur.done/Math.max(1,cur.planned)))).toFixed(1)}"/></svg><div class="rv"><b>${cur.done}</b><span>/ ${cur.planned}</span></div></div>
+    <div class="herot"><p class="eyebrow">Cette semaine</p><b>${cur.done===0?'Pas encore de séance':cur.done>=cur.planned?'Semaine complète':pct+' % du plan'}</b><span class="muted">${cur.total} série${cur.total>1?'s':''}${cur.tonnage?' · '+(Math.round(cur.tonnage/100)/10)+' t soulevées':''}${streak>1?' · '+streak+' semaines d\'affilée':''}</span></div></div>`;
+  // tendances
+  const f=suiviForce(); const bw7=bws.filter(b=>b.date>=addDays(date,-7)); const bw28=bws.filter(b=>b.date>=addDays(date,-35)&&b.date<addDays(date,-28));
+  const avg=a=>a.length?a.reduce((x,b)=>x+b.kg,0)/a.length:null; const w7=avg(bw7), w28=avg(bw28);
+  const trend=(d,unit,inv)=>d==null?'<i class="flat">—</i>':`<i class="${d>0?(inv?'down':'up'):d<0?(inv?'up':'down'):'flat'}">${d>0?'+':''}${d}${unit}</i>`;
+  h+=`<div class="trends">
+    <button class="tr" data-view="force"><span class="l">Force</span><b>${f&&f.pts.length?f.pts[f.pts.length-1].v+' kg':'—'}</b>${f&&f.delta!=null?trend(f.delta,' %'):'<i class="flat">cycle en cours</i>'}<small>somme des <span class="lx" data-lex="e1rm">e1RM</span>, ${f?f.n:0} exercices</small></button>
+    <button class="tr" data-view="corps"><span class="l">Poids</span><b>${w7!=null?w7.toFixed(1)+' kg':bws[0]?bws[0].kg.toFixed(1)+' kg':'—'}</b>${w7!=null&&w28!=null?trend(Math.round((w7-w28)*10)/10,' kg',true):'<i class="flat">moyenne 7 j</i>'}<small>${w28!=null?'sur 4 semaines':'pèse-toi 2 à 3 fois par semaine'}</small></button>
+    <button class="tr" data-view="corps"><span class="l">Tractions</span><b>${tests[0]?tests[0].reps:'—'}</b>${tests.length>1?trend(tests[0].reps-tests[tests.length-1].reps,''):'<i class="flat">max d\'affilée</i>'}<small>${PROFILE&&PROFILE.pullGoal?'objectif '+PROFILE.pullGoal:tests[0]?'dernier test '+fmtD(tests[0].date):'fais un test'}</small></button></div>`;
+  // semaines
+  const maxSets=Math.max(1,...st.weeks.map(w=>w.total));
+  h+=`<div class="card"><div class="card-h"><b>Semaines</b><span class="muted">séances faites · séries</span></div><div class="wkbars">${st.weeks.map(w=>`<div class="wkb ${w===cur?'cur':''} ${w.future?'fut':''}"><div class="bar"><i style="height:${Math.round(100*w.total/maxSets)}%"></i></div><div class="dots2">${Array.from({length:w.planned},(_,i)=>`<i class="${i<w.done?'ok':''}"></i>`).join('')}</div><span>S${w.k+1}</span></div>`).join('')}</div></div>`;
+  // équilibre musculaire
+  const groups=Object.entries(cur.sets).sort((a,b)=>b[1]-a[1]);
+  if(groups.length){ h+=`<div class="card"><div class="card-h"><b>Équilibre musculaire</b><span class="muted">séries cette semaine</span></div><div class="mus2">${groups.map(([m,n])=>{ const cls=n<10?'low':n>20?'high':'ok'; return `<div class="musr ${cls}"><span>${esc(m)}</span><div class="bar"><i class="band"></i><i class="v" style="width:${Math.min(100,Math.round(100*n/24))}%"></i></div><b>${n}</b></div>`; }).join('')}</div><p class="small muted">Zone grise : 10 à 20 séries par semaine, la fourchette qui fait progresser. En dessous, c\'est de l\'entretien ; au-dessus, la récupération ne suit plus.</p></div>`; }
+  // records
+  if(st.prs.length) h+=`<div class="card"><div class="card-h"><b>Records</b><span class="muted">meilleure estimation du max</span></div><div class="prs2">${st.prs.map(p=>`<button class="pr2" data-ex="${p.exId}"><i>🏅</i><div><b>${esc(p.name)}</b><span>${p.w} kg × ${p.r} · <span class="lx" data-lex="e1rm">e1RM</span> ${p.v} kg</span></div><em>${fmtD(p.date)}</em></button>`).join('')}</div></div>`;
+  else h+=`<div class="card"><div class="card-h"><b>Records</b></div><p class="muted">Dès que tu dépasses ton meilleur max estimé sur un exercice, il apparaît ici.</p></div>`;
+  // mot de Kai (dernier bilan)
+  const bilan=COACH.items.find(i=>i.type==='bilan'||i.type==='cycleEnd'); if(bilan) h+=`<div class="card coachcard" id="suiviBilan" role="button"><div class="card-h"><b>${coachAvatar('idle','xs')} ${esc(COACH_NAME)} · bilan</b><span class="muted">${bilan.createdAt?new Date(bilan.createdAt).toLocaleDateString('fr-FR',{day:'numeric',month:'short'}):''}</span></div><p>${lexify(esc(String(bilan.analysis||'').slice(0,220)))}${String(bilan.analysis||'').length>220?'…':''}</p></div>`;
+  return h;
+}
+function suiviForceView(){
+  const all=PROGRAM.sessions.flatMap(se=>se.exercises.map(e=>({...e,sname:se.name}))); if(!suiviEx||!all.find(e=>e.id===suiviEx)) suiviEx=(all.find(e=>history(e.id).length)||all[0]||{}).id;
+  const f=suiviForce();
+  let h='';
+  if(f&&f.pts.length>1) h+=`<div class="card"><div class="card-h"><b>Force globale</b><span class="${f.delta>0?'up':f.delta<0?'down':'muted'}">${f.delta>0?'+':''}${f.delta} % depuis le début du cycle</span></div>${sparkSvg(f.pts,{h:120,fmt:v=>Math.round(v)})}<p class="small muted">Somme des <button class="lx" data-lex="e1rm">e1RM</button> de tes ${f.n} exercices suivis, par semaine du cycle. C\'est la courbe qui résume si tu deviens plus fort.</p></div>`;
+  h+=`<div class="chips" id="exChips">${PROGRAM.sessions.map(se=>`<div class="chipgrp"><span class="eyebrow">${esc(se.name)}</span>${se.exercises.filter(e=>e.mode!=='emom').map(e=>`<button class="chip2 ${e.id===suiviEx?'on':''}" data-ex="${e.id}">${esc(shortName(e.name))}</button>`).join('')}</div>`).join('')}</div>`;
+  const ex=all.find(e=>e.id===suiviEx); const hist=history(suiviEx).slice().reverse(); const best=hist.reduce((m,x)=>Math.max(m,...x.sets.map(s=>e1rm(s.w,s.r))),0);
+  if(!ex) return h;
+  if(!hist.length) return h+`<div class="card"><div class="card-h"><b>${esc(ex.name)}</b></div><p class="muted">Pas encore de séries validées. Dès ta première séance, la courbe démarre ici.</p></div>`;
+  const pts=hist.map(x=>{ const v=Math.round(x.sets.reduce((m,s)=>Math.max(m,e1rm(s.w,s.r)),0)*10)/10; return {x:fmtD(x.date),v,best:v>=best-0.01}; });
+  const first=pts[0].v,last=pts[pts.length-1].v; const d=first?Math.round(100*(last-first)/first):0; const top=hist[hist.length-1].sets.reduce((m,s)=>e1rm(s.w,s.r)>e1rm(m.w,m.r)?s:m,hist[hist.length-1].sets[0]);
+  h+=`<div class="card"><div class="card-h"><b>${esc(ex.name)}</b><span class="${d>0?'up':d<0?'down':'muted'}">${d>0?'+':''}${d} %</span></div><div class="exbig"><div><b>${last} kg</b><span><button class="lx" data-lex="e1rm">e1RM</button> actuel</span></div><div><b>${top.w} × ${top.r}</b><span>meilleure série, dernière fois</span></div><div><b>${Math.round(best*10)/10} kg</b><span>record</span></div></div>${sparkSvg(pts,{h:150,fmt:v=>Math.round(v)})}
+    <div class="hl2">${hist.slice().reverse().slice(0,8).map((x,i,arr)=>{ const v=pts[pts.length-1-i].v; const prev=pts[pts.length-2-i]; const dv=prev?Math.round((v-prev.v)*10)/10:null; return `<div class="hrow"><span class="d">${fmtD(x.date)} · S${x.week}</span><span class="s">${esc(fmtSetsNice(x.sets))}</span><b>${v}${dv!=null?`<i class="${dv>0?'up':dv<0?'down':'flat'}">${dv>0?'+':''}${dv}</i>`:''}</b></div>`; }).join('')}</div></div>`;
+  return h;
+}
+function suiviCorps(date){
+  const bws=Object.values(S.bw).sort((a,b)=>a.date<b.date?-1:1); const tests=Object.values(S.tests).sort((a,b)=>a.date<b.date?-1:1);
+  const lastBw=bws[bws.length-1]; const base=lastBw?lastBw.kg:(PROFILE&&PROFILE.weight)||70;
+  const avg7=bws.filter(b=>b.date>=addDays(date,-7)); const m7=avg7.length?(avg7.reduce((a,b)=>a+b.kg,0)/avg7.length):null;
+  let h=`<div class="card"><div class="card-h"><b>Poids de corps</b><span class="muted">${m7!=null?'moyenne 7 j '+m7.toFixed(1)+' kg':''}</span></div>
+    <div class="bwbig"><b>${lastBw?lastBw.kg.toFixed(1):'—'}</b><span>kg${lastBw?' · '+fmtD(lastBw.date):''}</span></div>
+    ${bws.length>1?sparkSvg(bws.slice(-30).map(b=>({x:fmtD(b.date),v:b.kg})),{h:120,fmt:v=>v.toFixed(1),goal:PROFILE&&PROFILE.targetWeight||null}):'<p class="small muted">Deux pesées et la courbe apparaît. Le matin à jeun, 2 à 3 fois par semaine : c\'est la moyenne qui compte, pas la pesée du jour.</p>'}
+    <div class="quick"><button class="step" data-bw="-0.1">−</button><input type="number" step="0.1" inputmode="decimal" id="bwKg" value="${base.toFixed(1)}"><button class="step" data-bw="0.1">+</button><input type="date" id="bwDate" value="${date}"><button class="btn fill" id="bwAdd">Enregistrer</button></div></div>`;
+  const goal=(PROFILE&&PROFILE.pullGoal)||null; const lastT=tests[tests.length-1];
+  h+=`<div class="card"><div class="card-h"><b>Tractions max</b><span class="muted">test d\'affilée, strictes</span></div>
+    <div class="bwbig"><b>${lastT?lastT.reps:'—'}</b><span>reps${lastT?' · '+fmtD(lastT.date):''}</span></div>
+    ${goal&&lastT?`<div class="goalbar"><i style="width:${Math.min(100,Math.round(100*lastT.reps/goal))}%"></i><span>${Math.min(100,Math.round(100*lastT.reps/goal))} % de l\'objectif ${goal}</span></div>`:''}
+    ${tests.length>1?sparkSvg(tests.slice(-20).map(t=>({x:fmtD(t.date),v:t.reps})),{h:110,fmt:v=>Math.round(v),goal}):'<p class="small muted">Un test toutes les 3 à 4 semaines, frais, en début de séance. Pas plus souvent : le test fatigue.</p>'}
+    <div class="quick"><input type="number" inputmode="numeric" id="tReps" placeholder="reps"><input type="date" id="tDate" value="${date}"><button class="btn fill" id="tAdd">Enregistrer</button></div></div>`;
+  return h;
+}
+function suiviJournal(){
+  const logs=Object.values(S.logs).filter(l=>Object.values(l.sets||{}).flat().some(x=>x&&x.done)||l.notes).sort((a,b)=>a.date<b.date?1:-1);
+  if(!logs.length) return `<div class="empty"><b>Journal vide</b><p class="small muted">Chaque séance avec des séries validées apparaît ici.</p></div>`;
+  const st=suiviStats(); const prDays=new Set(st.prs.map(p=>p.date)); const idx={}; PROGRAM.sessions.forEach(se=>se.exercises.forEach(e=>idx[e.id]=e));
+  let h='', curW=null;
+  logs.forEach(l=>{ const w=weekRaw(l.date); if(w!==curW){ curW=w; h+=`<p class="eyebrow jw">Semaine ${w}${WEEKS[w-1]?' · '+esc(String(WEEKS[w-1].label).replace(/^S\d+\s*/,'')):''}</p>`; }
+    const ses=PROGRAM.sessions.find(x=>x.id===l.session); const sets=Object.values(l.sets||{}).flat().filter(x=>x&&x.done); const ton=sets.reduce((a,s)=>a+(s.w||0)*(s.r||0),0); const nEx=Object.entries(l.sets||{}).filter(([k,a])=>(a||[]).some(x=>x&&x.done)).length;
+    h+=`<button class="jrow ${l.done?'':'open'}" data-log="${esc(logKey(l.date,l.session))}"><div class="jd"><b>${new Date(l.date+'T12:00:00').getDate()}</b><span>${new Date(l.date+'T12:00:00').toLocaleDateString('fr-FR',{month:'short'})}</span></div><div class="jt"><b>${ses?esc(ses.name):esc(l.session)}${prDays.has(l.date)?' <em class="prtag">record</em>':''}${l.done?'':' <em class="tag">en cours</em>'}</b><span>${nEx} exercice${nEx>1?'s':''} · ${sets.length} série${sets.length>1?'s':''}${ton?' · '+(Math.round(ton/100)/10)+' t':''}${l.notes?' · « '+esc(l.notes.slice(0,40))+(l.notes.length>40?'…':'')+' »':''}</span></div><i>›</i></button>`; });
+  return h;
+}
+function showLogSheet(key){
+  const l=S.logs[key]; if(!l) return; const ses=PROGRAM.sessions.find(x=>x.id===l.session); const idx={}; PROGRAM.sessions.forEach(se=>se.exercises.forEach(e=>idx[e.id]=e));
+  const ana=COACH.items.find(i=>i.logKey===key);
+  let h=`<h3>${ses?esc(ses.name):esc(l.session)} · ${fmtD(l.date)}</h3><p class="small muted">Semaine ${l.week}${l.done?' · terminée':' · non terminée'}</p><div class="hl2">`;
+  Object.entries(l.sets||{}).forEach(([exId,arr])=>{ const done=(arr||[]).filter(x=>x&&x.done); if(!done.length) return; const ex=idx[exId]; h+=`<div class="hrow"><span class="d">${ex?esc(ex.name):exId}</span><span class="s">${esc(fmtSetsNice(done))}</span><b>${ex&&ex.mode!=='emom'?Math.round(done.reduce((m,s)=>Math.max(m,e1rm(s.w,s.r)),0)):''}</b></div>`; });
+  h+=`</div>${l.notes?`<p class="small"><b>Notes :</b> ${esc(l.notes)}</p>`:''}${ana?`<p class="coachline"><b>${esc(COACH_NAME)}</b> ${lexify(esc(String(ana.analysis||'').slice(0,300)))}</p>`:''}<div class="row2">${ana?`<button class="btn" id="logCoach">Voir l\'analyse</button>`:`<button class="btn fill" id="logAna">Demander l\'analyse à ${esc(COACH_NAME)}</button>`}<button class="btn" onclick="hideSheet()">Fermer</button></div>`;
+  const sh=showSheet(h);
+  const a=sh.querySelector('#logAna'); if(a) a.onclick=()=>{ hideSheet(); analyseSession(key); showTab('coach'); };
+  const c=sh.querySelector('#logCoach'); if(c) c.onclick=()=>{ hideSheet(); showTab('coach'); };
+}
+function bindSuivi(el,date){
+  const ba=$('#bwAdd'); if(ba) ba.onclick=()=>{ const d=$('#bwDate').value, kg=parseFloat($('#bwKg').value); if(!d||isNaN(kg)) return; S.bw[d]={date:d,kg,updatedAt:Date.now()}; save(); writeDoc('bw',d,S.bw[d]); toast('Pesée enregistrée','ok'); renderSuivi(); };
+  el.querySelectorAll('[data-bw]').forEach(b=>b.onclick=()=>{ const i=$('#bwKg'); i.value=(Math.round((parseFloat(i.value||0)+parseFloat(b.dataset.bw))*10)/10).toFixed(1); });
+  const ta=$('#tAdd'); if(ta) ta.onclick=()=>{ const d=$('#tDate').value, r=parseInt($('#tReps').value); if(!d||isNaN(r)) return; S.tests[d]={date:d,reps:r,updatedAt:Date.now()}; save(); writeDoc('tests',d,S.tests[d]); toast('Test enregistré','ok'); renderSuivi(); };
+  el.querySelectorAll('.chip2[data-ex]').forEach(b=>b.onclick=()=>{ suiviEx=b.dataset.ex; renderSuivi(); });
+  el.querySelectorAll('.pr2[data-ex]').forEach(b=>b.onclick=()=>{ suiviEx=b.dataset.ex; SUIVI_VIEW='force'; renderSuivi(); });
+  el.querySelectorAll('.tr[data-view]').forEach(b=>b.onclick=()=>{ SUIVI_VIEW=b.dataset.view; renderSuivi(); });
+  el.querySelectorAll('[data-log]').forEach(b=>b.onclick=()=>showLogSheet(b.dataset.log));
+  const sb=$('#suiviBilan'); if(sb) sb.onclick=()=>showTab('coach');
+  const chips=$('#exChips'); if(chips){ const on=chips.querySelector('.chip2.on'); if(on) on.scrollIntoView({block:'nearest',inline:'center'}); }
 }
 function addDays(iso,n){ const d=new Date(iso+'T12:00:00'); d.setDate(d.getDate()+n); return d.toISOString().slice(0,10); }
 function renderHist(){
