@@ -12,7 +12,7 @@ function humanErr(e){ const c=(e&&e.code)||''; const m=(e&&e.message)||String(e|
   if(/network|Failed to fetch|internet/i.test(m)||!navigator.onLine) return 'Pas de réseau. Le coach a besoin d\'une connexion ; tes séries sont enregistrées et partiront toutes seules.';
   if(/invalid-argument/.test(c)) return 'Le serveur n\'a pas compris la demande (version de l\'app en retard ?). Recharge l\'application depuis Réglages.';
   return m; }
-const APP_VERSION='3.11.0';
+const APP_VERSION='3.11.1';
 let PROGRAM={sessions:[]};
 let WEEKS = [
   {n:1,label:'S1 calibrage',from:'2026-09-07',to:'2026-09-13',rirNote:'RIR 3 · établir les références, tout noter'},
@@ -37,7 +37,7 @@ window.addEventListener('message',onNativeMessage); document.addEventListener('m
 
 /* ---------- state ---------- */
 const KEY='rituel.v1';
-let S = {logs:{}, bw:{}, tests:{}, overrides:{}, weekOverride:null, session:null, wake:true, openEx:null};
+let S = {logs:{}, bw:{}, tests:{}, chats:{}, overrides:{}, weekOverride:null, session:null, wake:true, openEx:null};
 try{ const raw=localStorage.getItem(KEY); if(raw) S=Object.assign(S,JSON.parse(raw)); }catch(e){}
 function save(){ const j=JSON.stringify(S); try{ localStorage.setItem(KEY, j); }catch(e){} idbSet(j); }
 function idb(){ return new Promise((res,rej)=>{ const r=indexedDB.open('rituel',1); r.onupgradeneeded=()=>r.result.createObjectStore('kv'); r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error); }); }
@@ -126,14 +126,14 @@ async function onAuth(){
     applyingRemote=false; if(changed){ save(); render(); }
     setSync(snap.metadata.hasPendingWrites?'pend':'on', snap.metadata.hasPendingWrites?'à sync':'sync ok');
   }, err=>{ console.warn(name,err); logErr('listen '+name,err); setSync('pend','sync erreur'); }));
-  listen('logs','logs'); listen('bw','bw'); listen('tests','tests');
+  listen('logs','logs'); listen('bw','bw'); listen('tests','tests'); listen('chats','chats');
   unsubs.push(col('coach').orderBy('createdAt','desc').limit(30).onSnapshot(snap=>{ COACH.items=snap.docs.map(d=>({id:d.id,...d.data()})); renderCoach(); if(PROGRAM_LOADED) renderHome(); }));
   unsubs.push(col('overrides').onSnapshot(snap=>{ S.overrides={}; snap.docs.forEach(d=>S.overrides[d.id]=d.data()); save(); if(PROGRAM_LOADED) renderSeance(); }));
   renderReglages();
 }
 async function pushLocalToRemote(){
   const batchWrites=[];
-  for(const [name,key] of [['logs','logs'],['bw','bw'],['tests','tests']]){
+  for(const [name,key] of [['logs','logs'],['bw','bw'],['tests','tests'],['chats','chats']]){
     for(const id in S[key]){ const local=S[key][id]; if(!local||!local.updatedAt) continue;
       batchWrites.push(async()=>{ const ref=col(name).doc(id); const snap=await ref.get({source:'server'}).catch(()=>ref.get()); const remote=snap.exists?snap.data():null;
         if(!remote||(local.updatedAt||0)>(remote.updatedAt||0)) await ref.set(JSON.parse(JSON.stringify(local))); });
@@ -146,7 +146,7 @@ function writeDoc(name,id,data){ if(!USER||!fbDb||applyingRemote) return; col(na
 function setSync(cls,txt){ const c=$('#syncChip'); c.className='chip sync '+cls; c.textContent=txt; }
 function syncStatusIdle(){ if(!USER) return setSync('off','local'); setSync(navigator.onLine?'on':'pend', navigator.onLine?'sync ok':'hors ligne'); document.body.classList.toggle('offline',!navigator.onLine); }
 function markDirty(){ save(); }
-function mergeInto(local, remote){ let changed=false; for(const c of ['logs','bw','tests']){ const L=local[c]||(local[c]={}), R=(remote&&remote[c])||{}; for(const k in R){ if(!L[k]||(R[k].updatedAt||0)>(L[k].updatedAt||0)){ L[k]=R[k]; changed=true; writeDoc(c,k,R[k]); } } } return changed; }
+function mergeInto(local, remote){ let changed=false; for(const c of ['logs','bw','tests','chats']){ const L=local[c]||(local[c]={}), R=(remote&&remote[c])||{}; for(const k in R){ if(!L[k]||(R[k].updatedAt||0)>(L[k].updatedAt||0)){ L[k]=R[k]; changed=true; writeDoc(c,k,R[k]); } } } return changed; }
 function snapshot(){ return {version:1, exportedAt:new Date().toISOString(), logs:S.logs, bw:S.bw, tests:S.tests}; }
 window.addEventListener('online',syncStatusIdle); window.addEventListener('offline',syncStatusIdle);
 $('#syncChip').onclick=()=>{};
@@ -245,12 +245,18 @@ async function analyseSession(logKeyStr){
   catch(e){ logErr('analyse',e); endJob(false,humanErr(e)); toast(humanErr(e)); }
   COACH.busy=false; renderCoach();
 }
+// Conversations : chaque fil est un document chats/{id} (messages, titre, dates), synchronisé comme le journal.
+function curThread(){ if(!S.chats) S.chats={}; if(COACH.threadId&&S.chats[COACH.threadId]) return S.chats[COACH.threadId]; return null; }
+function newThread(){ const id='c'+Date.now().toString(36); S.chats[id]={id,createdAt:Date.now(),updatedAt:Date.now(),title:'',messages:[]}; COACH.threadId=id; COACH.thread=S.chats[id].messages; return S.chats[id]; }
+function openThread(id){ const t=S.chats&&S.chats[id]; if(!t) return; COACH.threadId=id; COACH.thread=t.messages; COACH.listOpen=false; renderChatSheet(); }
+function saveThread(){ const t=curThread(); if(!t) return; t.updatedAt=Date.now(); if(!t.title){ const u=t.messages.find(m=>m.role==='user'); t.title=u?u.content.slice(0,60):''; } save(); writeDoc('chats',t.id,t); }
+function deleteThread(id){ if(!S.chats[id]) return; delete S.chats[id]; save(); if(USER){ try{ const r=col('chats').doc(id); if(r.delete) r.delete().catch(()=>{}); }catch(e){} } if(COACH.threadId===id){ COACH.threadId=null; COACH.thread=[]; } renderChatSheet(); renderCoach(); }
 async function askCoach(text){
-  if(!text.trim()||COACH.busy) return; COACH.busy=true; COACH.thread.push({role:'user',content:text}); renderCoach();
+  if(!text.trim()||COACH.busy) return; if(!curThread()) newThread(); COACH.busy=true; COACH.thread.push({role:'user',content:text,t:Date.now()}); saveThread(); renderCoach();
   startJob('réfléchit',['Relit ton programme et ton journal','Rédige la réponse'],10000);
-  try{ const r=await callCoach({mode:'chat', messages:COACH.thread.slice(-12), week:curWeek(), session:curSession().id}); COACH.thread.push({role:'assistant',content:r.text||''}); endJob(true,'Réponse prête'); }
-  catch(e){ logErr('chat',e); COACH.thread.push({role:'assistant',content:humanErr(e)}); endJob(false,humanErr(e)); }
-  COACH.busy=false; renderCoach();
+  try{ const r=await callCoach({mode:'chat', messages:COACH.thread.slice(-12), week:curWeek(), session:curSession().id}); COACH.thread.push({role:'assistant',content:r.text||'',t:Date.now()}); endJob(true,'Réponse prête'); }
+  catch(e){ logErr('chat',e); COACH.thread.push({role:'assistant',content:humanErr(e),error:true,t:Date.now()}); endJob(false,humanErr(e)); }
+  saveThread(); COACH.busy=false; renderCoach();
 }
 function applyOverride(item){
   if(!USER||!item.adjustments) return;
@@ -281,7 +287,7 @@ function renderCoach(){
   else if(hasSets&&todayAnalysed) act=`<button class="btn" id="anaBtn">Ré-analyser la séance du jour</button>`;
   h+=`<div class="cstat ${pending||(hasSets&&!todayAnalysed)||missing.length?'needs':''}"><div class="cs-grid"><div><b>S${wk}</b><span>${esc(String(W.label||'').replace(/^S\d+\s*/,''))} · ${esc((W.rirNote||'').split('·')[0].trim())}</span></div><div><b>${weekDone}/${PROGRAM.sessions.length}</b><span>séances cette semaine</span></div><div><b>Dim. 19h</b><span>bilan hebdomadaire</span></div></div>
     <p class="small muted">${pending?'Des charges ajustées attendent d\'être appliquées à la prochaine séance.':hasSets&&!todayAnalysed?'Ta séance du jour a des séries enregistrées : lance l\'analyse pour fixer les charges suivantes.':'Il analyse chaque séance terminée, relance après 3 jours sans séance et prépare le cycle suivant.'}</p>
-    <div class="row2">${act}<button class="btn ${act?'':'fill'}" id="chatBtn">Poser une question${COACH.thread.length?' · '+Math.ceil(COACH.thread.length/2):''}</button></div></div>`;
+    <div class="row2">${act}<button class="btn ${act?'':'fill'}" id="chatBtn">Parler à ${esc(COACH_NAME)}${Object.keys(S.chats||{}).length?' · '+Object.keys(S.chats).length+' conv.':''}</button></div></div>`;
   h+=`<h3>Analyses</h3>`;
   if(!COACH.items.length) h+=`<div class="empty"><div class="ic">◎</div><b>Pas encore d'analyse</b><p class="small muted">Termine une séance : ${esc(COACH_NAME)} l'analyse et fixe les charges de la prochaine.</p></div>`;
   const weekAgo=Date.now()-7*86400000; const older=[];
@@ -330,13 +336,31 @@ function renderCoach(){
 // Clavier iOS : la feuille reste collée au-dessus du clavier (visualViewport), sinon le champ de saisie est masqué.
 (function(){ const vv=window.visualViewport; if(!vv) return; const fix=()=>{ const s=$('#sheet'); if(!s||!s.classList.contains('on')) return; const card=s.querySelector('.sheet-card'); const kb=Math.max(0,window.innerHeight-vv.height-vv.offsetTop); card.style.bottom=kb+'px'; card.style.maxHeight=(vv.height-24)+'px'; const inp=document.activeElement; if(kb&&inp&&card.contains(inp)) setTimeout(()=>inp.scrollIntoView({block:'nearest'}),50); }; vv.addEventListener('resize',fix); vv.addEventListener('scroll',fix); })();
 function renderChatSheet(){
-  const s=$('#sheet'); if(COACH.chatOpen&&s&&s.classList.contains('on')&&!s.querySelector('#askForm')){ COACH.chatOpen=false; return; }
-  const thread=COACH.thread.length?COACH.thread.map(m=>`<div class="msg ${m.role}">${(m.role==='assistant'?lexify(esc(m.content)):esc(m.content)).replace(/\n/g,'<br>')}</div>`).join(''):`<p class="small muted center">Charges, douleur, garde, nutrition, remplacement d\'un exercice : il connaît ton programme et ton historique.</p>`;
-  const sheet=showSheet(`<div class="chead sm">${coachAvatar(COACH.busy?'busy':'idle')}<h3>Question à ${esc(COACH_NAME)}</h3></div><div class="chat">${thread}${COACH.busy&&COACH.thread.length&&COACH.thread[COACH.thread.length-1].role==='user'?`<div class="msg assistant typing" aria-label="${esc(COACH_NAME)} écrit"><i></i><i></i><i></i></div>`:''}</div><form class="ask" id="askForm"><input id="askInput" placeholder="Ta question" autocomplete="off" enterkeyhint="send"><button class="btn fill" type="submit" ${COACH.busy?'disabled':''}>Envoyer</button></form>`);
+  const s0=$('#sheet'); if(COACH.chatOpen&&s0&&s0.classList.contains('on')&&!s0.querySelector('.chatpane')){ COACH.chatOpen=false; return; }
+  const threads=Object.values(S.chats||{}).sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0));
+  const t=curThread(); if(!t&&!COACH.listOpen&&threads.length&&!COACH.thread.length){ COACH.threadId=threads[0].id; COACH.thread=threads[0].messages; }
+  const cur=curThread();
+  let body='';
+  if(COACH.listOpen||!cur){
+    body=`<div class="chat-list">${threads.length?threads.map(x=>`<div class="crow"><button class="copen" data-open-thread="${x.id}"><b>${esc(x.title||'Conversation')}</b><span>${new Date(x.updatedAt||x.createdAt).toLocaleDateString('fr-FR',{day:'numeric',month:'short'})} · ${x.messages.length} message${x.messages.length>1?'s':''}</span></button><button class="cdel" data-del-thread="${x.id}" aria-label="Supprimer">🗑</button></div>`).join(''):`<p class="small muted center">Aucune conversation encore.</p>`}</div><button class="btn fill" id="chatNew">Nouvelle conversation</button>`;
+  } else {
+    const msgs=cur.messages.map(m=>`<div class="msg ${m.role} ${m.error?'err':''}">${(m.role==='assistant'?lexify(esc(m.content)):esc(m.content)).replace(/\n/g,'<br>')}</div>`).join('')||`<p class="small muted center">Charges, douleur, garde, nutrition, remplacement d'un exercice : ${esc(COACH_NAME)} connaît ton programme et ton historique.</p>`;
+    body=`<div class="chat">${msgs}${COACH.busy&&cur.messages.length&&cur.messages[cur.messages.length-1].role==='user'?`<div class="msg assistant typing" aria-label="${esc(COACH_NAME)} écrit"><i></i><i></i><i></i></div>`:''}</div>
+      <form class="ask" id="askForm"><textarea id="askInput" rows="1" placeholder="Écris à ${esc(COACH_NAME)}…" enterkeyhint="send"></textarea><button class="send" type="submit" aria-label="Envoyer" ${COACH.busy?'disabled':''}><svg viewBox="0 0 24 24"><path d="M4 12h14M12 5l7 7-7 7" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></button></form>`;
+  }
+  const sheet=showSheet(`<div class="chatpane"><div class="chead sm">${coachAvatar(COACH.busy?'busy':'idle')}<h3>${COACH.listOpen||!cur?'Conversations':esc(COACH_NAME)}</h3><div class="chtools">${cur&&!COACH.listOpen?`<button class="ico" id="chatList" aria-label="Conversations" title="Conversations"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button><button class="ico" id="chatNew" aria-label="Nouvelle conversation" title="Nouvelle"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg></button>`:''}<button class="ico" id="chatClose" aria-label="Fermer"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg></button></div></div>${body}</div>`);
   sheet.classList.add('tall');
   const c=sheet.querySelector('.chat'); if(c) c.scrollTop=c.scrollHeight;
-  $('#askForm').onsubmit=e=>{ e.preventDefault(); const v=$('#askInput').value; $('#askInput').value=''; askCoach(v); };
-  if(!COACH.busy&&COACH.thread.length) $('#askInput').focus({preventScroll:true});
+  const cl=$('#chatClose'); if(cl) cl.onclick=hideSheet;
+  const ls=$('#chatList'); if(ls) ls.onclick=()=>{ COACH.listOpen=true; renderChatSheet(); };
+  const nw=$('#chatNew'); if(nw) nw.onclick=()=>{ newThread(); COACH.listOpen=false; renderChatSheet(); };
+  sheet.querySelectorAll('[data-open-thread]').forEach(b=>b.onclick=()=>openThread(b.dataset.openThread));
+  sheet.querySelectorAll('[data-del-thread]').forEach(b=>b.onclick=()=>{ if(confirm('Supprimer cette conversation ?')) deleteThread(b.dataset.delThread); });
+  const f=$('#askForm'); if(f){ const ta=$('#askInput');
+    const grow=()=>{ ta.style.height='auto'; ta.style.height=Math.min(ta.scrollHeight,140)+'px'; }; ta.oninput=grow; grow();
+    f.onsubmit=e=>{ e.preventDefault(); const v=ta.value; if(!v.trim()) return; ta.value=''; grow(); askCoach(v); };
+    ta.onkeydown=e=>{ if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); f.requestSubmit(); } };
+    if(!COACH.busy&&cur.messages.length) ta.focus({preventScroll:true}); }
 }
 function updateCoachBadge(){ const t=document.querySelector('.tabs button[data-tab="coach"]'); if(!t) return; const seen=S.coachSeen||0; const n=COACH.items.filter(i=>(i.createdAt||0)>seen).length; t.classList.toggle('badge',n>0&&t.getAttribute('aria-selected')!=='true'); }
 
@@ -636,7 +660,12 @@ const LEX={
 const LEX_TERMS=[['rir',/\bRIR\b/g],['tempo',/\btempo\b/gi],['emom',/\bEMOM\b/g],['gtg',/\bGTG\b/g],['e1rm',/\be1RM\b/g],['mesocycle',/\bm[ée]socycles?\b/gi],['decharge',/\bd[ée]charge\b/gi],['calibrage',/\bcalibrage\b/gi],['accumulation',/\baccumulation\b/gi],['intensification',/\bintensification\b/gi],['dropset',/\bdrop[- ]?sets?\b/gi],['restpause',/\brest[- ]?pause\b/gi],['superset',/\bsupersets?\b/gi],['partielles',/\bpartielles\b/gi],['isolateral',/\biso-?lat[ée]rale?s?\b/gi],['compound',/\bcompounds?\b/gi],['fourchette',/\bfourchette\b/gi],['tonnage',/\btonnage\b/gi],['volume',/\bvolume\b/gi]];
 function lexify(escapedHtml){ let h=String(escapedHtml||''); LEX_TERMS.forEach(([k,re])=>{ h=h.replace(re,m=>`<button class="lx" data-lex="${k}">${m}</button>`); }); return h; }
 document.addEventListener('click',e=>{ const b=e.target.closest&&e.target.closest('.lx[data-lex]'); if(b){ e.preventDefault(); e.stopPropagation(); showLex(b.dataset.lex); } },true);
-function showSheet(html){ let s=$('#sheet'); if(!s){ s=document.createElement('div'); s.id='sheet'; s.innerHTML='<div class="sheet-bg"></div><div class="sheet-card" role="dialog"><div class="sheet-grip"></div><div class="sheet-body"></div></div>'; document.body.appendChild(s); s.querySelector('.sheet-bg').onclick=hideSheet; } s.querySelector('.sheet-body').innerHTML=html; s.classList.add('on'); document.body.style.overflow='hidden'; return s; }
+function showSheet(html){ let s=$('#sheet'); if(!s){ s=document.createElement('div'); s.id='sheet'; s.innerHTML='<div class="sheet-bg"></div><div class="sheet-card" role="dialog"><button class="sheet-grip" aria-label="Fermer"></button><div class="sheet-body"></div></div>'; document.body.appendChild(s); s.querySelector('.sheet-bg').onclick=hideSheet; s.querySelector('.sheet-grip').onclick=hideSheet;
+    // Glisser vers le bas pour fermer : depuis la poignée, ou depuis le contenu quand il est en haut de son défilement.
+    const card=s.querySelector('.sheet-card'); let y0=null, dy=0, drag=false;
+    card.addEventListener('touchstart',e=>{ const fromGrip=e.target.closest('.sheet-grip,.chead'); const atTop=card.scrollTop<=0&&!(e.target.closest('.chat')&&e.target.closest('.chat').scrollTop>0); if(!fromGrip&&!atTop) return; y0=e.touches[0].clientY; dy=0; drag=false; },{passive:true});
+    card.addEventListener('touchmove',e=>{ if(y0==null) return; dy=e.touches[0].clientY-y0; if(dy>8){ drag=true; card.style.transition='none'; card.style.transform=`translateY(${dy}px)`; } },{passive:true});
+    card.addEventListener('touchend',()=>{ if(y0==null) return; card.style.transition=''; if(drag&&dy>90){ card.style.transform=''; hideSheet(); } else card.style.transform=''; y0=null; drag=false; },{passive:true}); } s.querySelector('.sheet-body').innerHTML=html; s.classList.add('on'); document.body.style.overflow='hidden'; return s; }
 function hideSheet(){ const s=$('#sheet'); if(s){ s.classList.remove('on'); s.classList.remove('tall'); const c=s.querySelector('.sheet-card'); if(c){ c.style.bottom=''; c.style.maxHeight=''; } document.body.style.overflow=''; } COACH.chatOpen=false; }
 function showLex(key){ const l=LEX[key]; if(!l) return; showSheet(`<h3>${esc(l[0])}</h3><p>${esc(l[1])}</p><button class="btn" onclick="hideSheet()">Compris</button>`); }
 let toastT=0; function toast(msg,cls){ let t=$('#toast'); if(!t){ t=document.createElement('div'); t.id='toast'; document.body.appendChild(t); } t.textContent=msg; t.className='on '+(cls||''); clearTimeout(toastT); toastT=setTimeout(()=>t.className='',1800); }

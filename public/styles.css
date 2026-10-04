@@ -626,3 +626,24 @@ body.focus #jobbar{bottom:calc(16px + env(safe-area-inset-bottom))}
 #sheet .ask{display:flex;gap:8px}
 #sheet .ask input{flex:1 1 auto;width:auto;min-width:0}
 #sheet .ask .btn{width:auto;flex:0 0 auto;margin:0}
+/* v3.11.1 — conversations, saisie multi-lignes, fermeture des feuilles */
+#sheet .sheet-grip{display:block;width:44px;height:5px;border-radius:3px;background:var(--line);margin:4px auto 10px;padding:0;position:relative}
+#sheet .sheet-grip::before{content:"";position:absolute;inset:-14px -30px}
+.chatpane{display:flex;flex-direction:column;min-height:0;flex:1 1 auto}
+.chatpane .chead{margin:0 0 8px}
+.chtools{margin-left:auto;display:flex;gap:6px}
+.chtools .ico{width:36px;height:36px;border-radius:50%;background:var(--surface2);display:grid;place-items:center;color:var(--ink2);margin:0}
+.chtools .ico svg{width:18px;height:18px}
+#sheet .ask{display:flex;gap:8px;align-items:flex-end;margin:8px 0 0}
+#sheet .ask textarea{flex:1 1 auto;width:auto;min-width:0;min-height:48px;max-height:140px;padding:12px 16px;font-size:16px;line-height:1.4;border-radius:22px;resize:none;overflow:auto}
+#sheet .ask .send{width:48px;height:48px;border-radius:50%;background:var(--accent);color:#fff;display:grid;place-items:center;flex:0 0 auto;margin:0}
+#sheet .ask .send:disabled{opacity:.45}
+#sheet .ask .send svg{width:22px;height:22px}
+.msg.err{background:var(--warn-soft);color:var(--warn)}
+.chat-list{display:flex;flex-direction:column;gap:6px;margin:4px 0 12px}
+.crow{display:flex;align-items:center;gap:6px}
+.copen{flex:1 1 auto;min-width:0;text-align:left;background:var(--surface2);border-radius:var(--r-sm);padding:10px 12px}
+.copen b{display:block;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.copen span{display:block;font-size:12.5px;color:var(--muted);margin-top:2px}
+.cdel{width:40px;height:40px;border-radius:50%;background:var(--surface2);font-size:16px;flex:0 0 auto}
+#sheet .sheet-card.tall{min-height:80vh}

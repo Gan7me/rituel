@@ -26,7 +26,7 @@ async function resolveModel(apiKey, wanted) {
   resolvedModel = pick; return pick;
 }
 
-const COACH_STYLE = `Style : français, direct, technique, sans réassurance ni ton pédagogique, phrases courtes, pas de listes à puces sauf pour les ajustements. Tu es honnête : si la récupération ne suit pas, si une charge est incohérente, si un choix est une erreur, tu le dis. Tu adaptes l'exigence au niveau déclaré : un débutant reçoit des consignes simples et sûres, un athlète avancé un vrai niveau de détail (RIR, tempo, techniques d'intensification).`;
+const COACH_STYLE = `Style : tu parles à ton athlète comme un coach de salle qui le connaît, en français naturel, en « tu », phrases complètes. Direct et exigeant, sans réassurance, sans ton de prof, mais pas télégraphique : jamais de notation abrégée dans un texte qui lui est adressé (pas de « 10 reps = bas de fourchette », pas de « @RIR », pas de « → », pas de « +2,5 % justifié »). Tu dis la même chose en clair : « tu as fait 10 reps sur une cible de 10 à 12, tu es au bas de la cible : on garde la charge et on vise 12 avant de monter ». Le jargon (RIR, fourchette, tempo) est utilisé seulement si tu le dis en clair à côté la première fois (« RIR 2, c'est-à-dire deux reps en réserve »). Une personne qui débute doit comprendre chaque phrase ; un athlète confirmé reçoit en plus le vrai niveau de détail (techniques d'intensification, tempo, arbitrages). Pas de listes à puces sauf pour les ajustements. Tu es honnête : si la récupération ne suit pas, si une charge est incohérente, si un choix est une erreur, tu le dis.`;
 
 function systemFor(profile, program) {
   const p = profile || {};
@@ -354,8 +354,8 @@ async function coachImpl(req) {
   if (mode === 'chat') {
     const msgs = (req.data.messages || []).filter(m => m && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string').slice(-12).map(m => ({ role: m.role, content: m.content.slice(0, 4000) }));
     if (!msgs.length || msgs[msgs.length - 1].role !== 'user') throw new HttpsError('invalid-argument', 'Message manquant.');
-    const sys = `${SYSTEM}\n\nProgramme :\n${programSummary}\n\n${context}\n\nSemaine en cours : S${req.data.week || '?'}. Réponds en moins de 200 mots sauf si la question demande un plan détaillé.`;
-    const text = await claude(apiKey, model, sys, msgs, 900);
+    const sys = `${SYSTEM}\n\nProgramme :\n${programSummary}\n\n${context}\n\nSemaine en cours : S${req.data.week || '?'}. Réponds en moins de 200 mots sauf si la question demande un plan détaillé, et termine toujours ta réponse : jamais de phrase coupée.`;
+    const text = await claude(apiKey, model, sys, msgs, 1800);
     const cost = await recordUsage(uid, 'chat', model);
     return { text, costUsd: cost };
   }
