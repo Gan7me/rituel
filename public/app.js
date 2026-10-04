@@ -12,7 +12,7 @@ function humanErr(e){ const c=(e&&e.code)||''; const m=(e&&e.message)||String(e|
   if(/network|Failed to fetch|internet/i.test(m)||!navigator.onLine) return 'Pas de réseau. Le coach a besoin d\'une connexion ; tes séries sont enregistrées et partiront toutes seules.';
   if(/invalid-argument/.test(c)) return 'Le serveur n\'a pas compris la demande (version de l\'app en retard ?). Recharge l\'application depuis Réglages.';
   return m; }
-const APP_VERSION='3.13.2';
+const APP_VERSION='3.13.3';
 let PROGRAM={sessions:[]};
 let WEEKS = [
   {n:1,label:'S1 calibrage',from:'2026-09-07',to:'2026-09-13',rirNote:'RIR 3 · établir les références, tout noter'},
@@ -249,9 +249,9 @@ async function analyseSession(logKeyStr){
 }
 // Conversations : chaque fil est un document chats/{id} (messages, titre, dates), synchronisé comme le journal.
 function curThread(){ if(!S.chats) S.chats={}; if(COACH.threadId&&S.chats[COACH.threadId]) return S.chats[COACH.threadId]; return null; }
-function newThread(){ const id='c'+Date.now().toString(36); S.chats[id]={id,createdAt:Date.now(),updatedAt:Date.now(),title:'',messages:[]}; COACH.threadId=id; COACH.thread=S.chats[id].messages; return S.chats[id]; }
+function newThread(){ if(!S.chats) S.chats={}; const id='c'+Date.now().toString(36); S.chats[id]={id,createdAt:Date.now(),updatedAt:Date.now(),title:'',messages:[]}; COACH.threadId=id; COACH.thread=S.chats[id].messages; return S.chats[id]; }
 function openThread(id){ const t=S.chats&&S.chats[id]; if(!t) return; COACH.threadId=id; COACH.thread=t.messages; COACH.listOpen=false; renderChatSheet(); }
-function saveThread(){ const t=curThread(); if(!t) return; t.updatedAt=Date.now(); if(!t.title){ const u=t.messages.find(m=>m.role==='user'); t.title=u?u.content.slice(0,60):''; } save(); writeDoc('chats',t.id,t); }
+function saveThread(){ const t=curThread(); if(!t||!t.messages.length) return; t.updatedAt=Date.now(); if(!t.title){ const u=t.messages.find(m=>m.role==='user'); t.title=u?u.content.slice(0,60):''; } save(); writeDoc('chats',t.id,t); }
 function deleteThread(id){ if(!S.chats[id]) return; delete S.chats[id]; save(); if(USER){ try{ const r=col('chats').doc(id); if(r.delete) r.delete().catch(()=>{}); }catch(e){} } if(COACH.threadId===id){ COACH.threadId=null; COACH.thread=[]; } renderChatSheet(); renderCoach(); }
 async function askCoach(text){
   if(!text.trim()||COACH.busy) return; if(!curThread()) newThread(); COACH.busy=true; COACH.thread.push({role:'user',content:text,t:Date.now()}); saveThread(); renderCoach();
@@ -339,9 +339,9 @@ function renderCoach(){
 (function(){ const vv=window.visualViewport; if(!vv) return; const fix=()=>{ const s=$('#sheet'); if(!s||!s.classList.contains('on')) return; const card=s.querySelector('.sheet-card'); const kb=Math.max(0,window.innerHeight-vv.height-vv.offsetTop); card.style.bottom=kb+'px'; card.style.maxHeight=(vv.height-24)+'px'; const inp=document.activeElement; if(kb&&inp&&card.contains(inp)) setTimeout(()=>inp.scrollIntoView({block:'nearest'}),50); }; vv.addEventListener('resize',fix); vv.addEventListener('scroll',fix); })();
 function renderChatSheet(){
   const s0=$('#sheet'); if(COACH.chatOpen&&s0&&s0.classList.contains('on')&&!s0.querySelector('.chatpane')){ COACH.chatOpen=false; return; }
-  const threads=Object.values(S.chats||{}).sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0));
-  const t=curThread(); if(!t&&!COACH.listOpen&&threads.length&&!COACH.thread.length){ COACH.threadId=threads[0].id; COACH.thread=threads[0].messages; }
-  const cur=curThread();
+  const threads=Object.values(S.chats||{}).filter(x=>x&&Array.isArray(x.messages)&&x.messages.length).sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0));
+  const t=curThread(); if(!t&&!COACH.listOpen){ if(threads.length&&!COACH.thread.length){ COACH.threadId=threads[0].id; COACH.thread=threads[0].messages; } else if(!threads.length) newThread(); }
+  const cur=curThread(); if(cur&&!Array.isArray(cur.messages)) cur.messages=[]; if(cur) COACH.thread=cur.messages;
   let body='';
   if(COACH.listOpen||!cur){
     body=`<div class="chat-list">${threads.length?threads.map(x=>`<div class="crow"><button class="copen" data-open-thread="${x.id}"><b>${esc(x.title||'Conversation')}</b><span>${new Date(x.updatedAt||x.createdAt).toLocaleDateString('fr-FR',{day:'numeric',month:'short'})} · ${x.messages.length} message${x.messages.length>1?'s':''}</span></button><button class="cdel" data-del-thread="${x.id}" aria-label="Supprimer">🗑</button></div>`).join(''):`<p class="small muted center">Aucune conversation encore.</p>`}</div><button class="btn fill" id="chatNew">Nouvelle conversation</button>`;
