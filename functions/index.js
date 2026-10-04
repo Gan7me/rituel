@@ -83,7 +83,7 @@ async function loadContext(uid, prog, limit = 14) {
   ]);
   const idx = exerciseIndex(prog);
   const sessions = logs.docs.map(d => d.data()).filter(l => Object.keys(l.sets || {}).length)
-    .map(l => `### ${l.date} · ${(prog.sessions.find(s => s.id === l.session) || {}).name || l.session} · S${l.week}${l.done ? '' : ' (non terminée)'}\n${fmtLog(l, idx)}${l.notes ? '\nNotes : ' + l.notes : ''}`);
+    .map(l => `### ${l.date} · ${(prog.sessions.find(s => s.id === l.session) || {}).name || l.session} · S${l.week}${isDone(l) ? (l.done ? '' : ' (clôturée automatiquement)') : ' (en cours aujourd\'hui)'}\n${fmtLog(l, idx)}${l.notes ? '\nNotes : ' + l.notes : ''}`);
   const weights = bw.docs.map(d => d.data()).map(b => `${b.date} ${b.kg} kg`).join(', ');
   const pull = tests.docs.map(d => d.data()).map(t => `${t.date} ${t.reps}`).join(', ');
   return `## Journal (du plus récent au plus ancien)\n${sessions.join('\n\n') || '(vide)'}\n\n## Poids de corps\n${weights || '(aucune pesée)'}\n\n## Tests tractions max\n${pull || '35 au départ'}`;
@@ -279,7 +279,12 @@ async function coachImpl(req) {
   const prog = meta.program || program; // repli : programme embarqué
   const context = await loadContext(uid, prog);
   const idx = exerciseIndex(prog);
-  const SYSTEM = systemFor(meta.profile, prog);
+  // Repères temporels explicites : date du jour (Paris), séances faites sur 7 jours, semaine effective du cycle.
+  const today = parisISO(); const dayName = new Date().toLocaleDateString('fr-FR', { weekday: 'long', timeZone: 'Europe/Paris' });
+  const weekLogs = await db.collection('users').doc(uid).collection('logs').where('date', '>=', isoDaysAgo(7)).get();
+  const doneWeek = weekLogs.docs.map(d => d.data()).filter(l => isDone(l, today));
+  const weeksDone = await weekIndexDone(uid, prog);
+  const SYSTEM = systemFor(meta.profile, prog) + `\n\nRepères : aujourd'hui ${dayName} ${today}. Séances validées sur les 7 derniers jours : ${doneWeek.length} (${doneWeek.map(l => l.date + ' ' + ((prog.sessions.find(s => s.id === l.session) || {}).name || l.session)).join(', ') || 'aucune'}). Semaines effectuées depuis le début du cycle : ${weeksDone} sur ${(prog.weeks || []).length || 4}. Une séance d'un jour passé avec des séries enregistrées compte comme faite même si elle n'a pas été « terminée » dans l'app.`;
   const programSummary = prog.sessions.map(s => `${s.name} (${s.id}) : ` + s.exercises.map(e => `${e.id} ${e.name} ${e.setsText || ''}`).join(' ; ')).join('\n');
 
   if (mode === 'analyse') {
@@ -366,7 +371,10 @@ async function sendPush(uid, title, body, data) {
     return tokens.length - bad.length;
   } catch (e) { console.warn('push', uid, e.message || e); return 0; }
 }
-function isoDaysAgo(n) { const d = new Date(); d.setDate(d.getDate() - n); return d.toISOString().slice(0, 10); }
+function parisISO(d) { return (d || new Date()).toLocaleDateString('sv-SE', { timeZone: 'Europe/Paris' }); }
+function isoDaysAgo(n) { const d = new Date(); d.setDate(d.getDate() - n); return parisISO(d); }
+// Une séance est considérée faite si elle a été terminée, ou si elle a des séries enregistrées un jour passé (jamais clôturée).
+function isDone(l, today) { return !!(l && (l.done || (Object.keys(l.sets || {}).length && l.date < (today || parisISO())))); }
 async function activeUsers() {
   const refs = await db.collection('users').listDocuments();
   const out = [];
@@ -378,20 +386,20 @@ async function weekIndexDone(uid, prog) {
   const start = (prog.weeks && prog.weeks[0] && prog.weeks[0].from) || isoDaysAgo(28);
   const logs = await db.collection('users').doc(uid).collection('logs').where('date', '>=', start).get();
   const weeks = new Set();
-  logs.docs.map(d => d.data()).filter(l => l.done).forEach(l => { const days = Math.round((new Date(l.date + 'T12:00:00') - new Date(start + 'T12:00:00')) / 86400000); weeks.add(Math.floor(days / 7)); });
+  logs.docs.map(d => d.data()).filter(l => isDone(l)).forEach(l => { const days = Math.round((new Date(l.date + 'T12:00:00') - new Date(start + 'T12:00:00')) / 86400000); weeks.add(Math.floor(days / 7)); });
   return weeks.size;
 }
 exports.weeklyReview = onSchedule({ schedule: '0 19 * * 0', timeZone: 'Europe/Paris', region: 'europe-west1', secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 540, memory: '1GiB' }, async () => {
   const apiKey = String(ANTHROPIC_API_KEY.value() || '').replace(/[^\x21-\x7E]/g, '');
   const model = await resolveModel(apiKey, MODEL.value());
-  const since = isoDaysAgo(7); const weekId = 'week-' + new Date().toISOString().slice(0, 10);
+  const since = isoDaysAgo(7); const weekId = 'week-' + parisISO();
   for (const uid of await activeUsers()) {
     try {
       const meta = await loadMeta(uid); const prog = meta.program; if (!prog) continue;
       const coachRef = db.collection('users').doc(uid).collection('coach');
       if ((await coachRef.doc(weekId).get()).exists) continue;
       const logs = await db.collection('users').doc(uid).collection('logs').where('date', '>=', since).get();
-      const done = logs.docs.map(d => d.data()).filter(l => l.done);
+      const done = logs.docs.map(d => d.data()).filter(l => isDone(l));
       if (!done.length) {
         await coachRef.doc(weekId).set({ type: 'nudge', title: 'Semaine sans séance', analysis: 'Aucune séance validée cette semaine. Le cycle n\'avance pas tant que tu ne reprends pas : il t\'attend à la semaine où tu l\'as laissé. Reprends par la séance du jour, à charges égales, sans chercher à rattraper.', createdAt: Date.now(), applied: true, model: 'none', costUsd: 0 });
         await sendPush(uid, 'Semaine sans séance', 'Le cycle t\'attend où tu l\'as laissé. On reprend demain ?', { tab: 'coach' });
@@ -419,7 +427,7 @@ exports.dailyNudge = onSchedule({ schedule: '0 18 * * *', timeZone: 'Europe/Pari
       if (last.docs.some(d => d.data().done || Object.keys(d.data().sets || {}).length)) continue;
       const recent = await base.collection('coach').where('createdAt', '>=', Date.now() - 3 * 86400000).get();
       if (recent.docs.some(d => d.data().type === 'nudge')) continue;
-      const id = 'nudge-' + new Date().toISOString().slice(0, 10);
+      const id = 'nudge-' + parisISO();
       await base.collection('coach').doc(id).set({ type: 'nudge', title: 'Trois jours sans séance', analysis: 'Trois jours sans séance validée. Rien de grave si c\'est une garde ou une récupération choisie ; si c\'est un décrochage, reprends aujourd\'hui par la séance prévue, mêmes charges que la dernière fois, et note comment tu te sens. Le coach ajustera.', createdAt: Date.now(), applied: true, model: 'none', costUsd: 0 });
       await sendPush(uid, 'Trois jours sans séance', 'La séance du jour t\'attend. Mêmes charges que la dernière fois.', { tab: 'seance' });
     } catch (e) { console.error('dailyNudge', uid, e.message || e); }
