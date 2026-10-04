@@ -12,7 +12,7 @@ import * as Device from 'expo-device';
 import * as KeepAwake from 'expo-keep-awake';
 import * as SplashScreen from 'expo-splash-screen';
 import Constants from 'expo-constants';
-import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 const WEB_URL = (Constants.expoConfig && Constants.expoConfig.extra && Constants.expoConfig.extra.webUrl) || 'https://rituel-6b365.web.app';
 const HOST = new URL(WEB_URL).host;
@@ -36,14 +36,12 @@ async function registerPush() {
 }
 
 function Shell() {
-  const insets = useSafeAreaInsets();
   const web = useRef(null);
   const scheme = useColorScheme();
   const [ready, setReady] = useState(false);
   const [failed, setFailed] = useState(false);
   const restNotif = useRef(null);
   const bg = scheme === 'dark' ? '#0B0D10' : '#F4F5F7';
-  const surface = scheme === 'dark' ? '#15181D' : '#FFFFFF';
 
   const send = useCallback((msg) => { try { web.current && web.current.postMessage(JSON.stringify(msg)); } catch (e) {} }, []);
 
@@ -106,8 +104,10 @@ function Shell() {
   const injected = `window.__RITUEL_NATIVE__={platform:'${Platform.OS}',version:'${Constants.expoConfig ? Constants.expoConfig.version : ''}'}; true;`;
 
   return (
-      <View style={[styles.root, { backgroundColor: bg, paddingTop: insets.top }]}>
-        <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} backgroundColor={bg} />
+      <View style={[styles.root, { backgroundColor: bg }]}>
+        {/* Bord à bord : la page web gère elle-même les zones système (safe-area-inset-top / bottom, viewport-fit=cover),
+            comme une app native moderne. Plus de bande en bas sous l'indicateur d'accueil. */}
+        <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} translucent backgroundColor="transparent" />
         {failed ? (
           <View style={[styles.center, { backgroundColor: bg }]}>
             <Text style={[styles.err, { color: scheme === 'dark' ? '#F2F4F6' : '#0F1216' }]}>Rituel n'arrive pas à se charger.{'\n'}Ouvre l'app une première fois avec du réseau, ensuite elle fonctionne hors ligne.</Text>
@@ -136,10 +136,11 @@ function Shell() {
           cacheEnabled
           applicationNameForUserAgent="RituelApp"
           limitsNavigationsToAppBoundDomains
+          contentInsetAdjustmentBehavior="never"
+          automaticallyAdjustContentInsets={false}
           startInLoadingState
           renderLoading={() => <View style={[styles.center, { backgroundColor: bg }]}><ActivityIndicator color="#D8382B" /></View>}
         />
-        <View style={{ height: insets.bottom, backgroundColor: surface }} />
       </View>
   );
 }

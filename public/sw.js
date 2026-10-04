@@ -1,6 +1,6 @@
 /* Service worker — app shell en cache, fonctionnement hors ligne complet.
    Incrémente VERSION à chaque déploiement pour forcer la mise à jour. */
-const VERSION = 'rituel-v3.13.1';
+const VERSION = 'rituel-v3.13.2';
 const SHELL = [
   './',
   './index.html',
@@ -27,7 +27,8 @@ const SHELL = [
 ];
 
 self.addEventListener('install', e => {
-  e.waitUntil(caches.open(VERSION).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));
+  // cache: 'reload' contourne le cache HTTP du navigateur, sinon on peut installer une version déjà périmée juste après un déploiement.
+  e.waitUntil(caches.open(VERSION).then(c => Promise.all(SHELL.map(u => fetch(u, { cache: 'reload' }).then(r => { if (r.ok) return c.put(u, r); })))).then(() => self.skipWaiting()));
 });
 
 self.addEventListener('activate', e => {

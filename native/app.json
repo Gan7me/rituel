@@ -2,7 +2,7 @@
   "expo": {
     "name": "Rituel",
     "slug": "rituel",
-    "version": "3.7.1",
+    "version": "3.13.2",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "scheme": "rituel",
@@ -10,6 +10,7 @@
     "backgroundColor": "#0F1216",
     "ios": {
       "bundleIdentifier": "fr.rituel.app",
+      "buildNumber": "1",
       "supportsTablet": false,
       "infoPlist": {
         "CFBundleDisplayName": "Rituel",
@@ -26,6 +27,7 @@
     },
     "android": {
       "package": "fr.rituel.app",
+      "versionCode": 1,
       "adaptiveIcon": {
         "backgroundColor": "#0F1216",
         "foregroundImage": "./assets/adaptive-foreground.png",
@@ -62,9 +64,7 @@
     ],
     "extra": {
       "webUrl": "https://rituel-6b365.web.app",
-      "eas": {
-        "projectId": "3e1b316a-757c-4229-a194-762584bda052"
-      }
+      "eas": {}
     }
   }
 }

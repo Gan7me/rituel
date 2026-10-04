@@ -8,7 +8,7 @@
     ],
     "headers": [
       {
-        "source": "sw.js",
+        "source": "**/*.@(html|js|css|webmanifest)",
         "headers": [
           {
             "key": "Cache-Control",
@@ -17,11 +17,11 @@
         ]
       },
       {
-        "source": "**/*.@(js|css|json|html)",
+        "source": "**/*.@(json|png|jpg|svg|ico)",
         "headers": [
           {
             "key": "Cache-Control",
-            "value": "public, max-age=300"
+            "value": "public, max-age=86400"
           }
         ]
       },

@@ -12,7 +12,7 @@ function humanErr(e){ const c=(e&&e.code)||''; const m=(e&&e.message)||String(e|
   if(/network|Failed to fetch|internet/i.test(m)||!navigator.onLine) return 'Pas de réseau. Le coach a besoin d\'une connexion ; tes séries sont enregistrées et partiront toutes seules.';
   if(/invalid-argument/.test(c)) return 'Le serveur n\'a pas compris la demande (version de l\'app en retard ?). Recharge l\'application depuis Réglages.';
   return m; }
-const APP_VERSION='3.13.1';
+const APP_VERSION='3.13.2';
 let PROGRAM={sessions:[]};
 let WEEKS = [
   {n:1,label:'S1 calibrage',from:'2026-09-07',to:'2026-09-13',rirNote:'RIR 3 · établir les références, tout noter'},
