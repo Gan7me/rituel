@@ -235,6 +235,18 @@ exports.deleteAccount = onCall({ region: 'europe-west1' }, async (req) => {
 });
 
 exports.coach = onCall({ region: 'europe-west1', secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 540, memory: '1GiB' }, async (req) => {
+  // Journal lisible dans `firebase functions:log` (texte brut) : mode, durée, résultat ou erreur.
+  const t0 = Date.now(); const mode0 = (req.data || {}).mode; const uid0 = req.auth ? req.auth.uid.slice(0, 6) : 'anon';
+  try {
+    const out = await coachImpl(req);
+    console.log(`[coach] ${mode0} uid=${uid0} ok ${Date.now() - t0} ms`);
+    return out;
+  } catch (e) {
+    console.error(`[coach] ${mode0} uid=${uid0} ERREUR ${e && e.code ? e.code : ''} : ${e && e.message ? e.message : e} (${Date.now() - t0} ms)`);
+    throw e;
+  }
+});
+async function coachImpl(req) {
   if (!req.auth) throw new HttpsError('unauthenticated', 'Connexion requise.');
   const uid = req.auth.uid; const { mode } = req.data || {};
   if (!QUOTAS[mode]) throw new HttpsError('invalid-argument', 'mode inconnu');
@@ -325,7 +337,7 @@ exports.coach = onCall({ region: 'europe-west1', secrets: [ANTHROPIC_API_KEY], t
     return { text, costUsd: cost };
   }
   throw new HttpsError('invalid-argument', 'mode inconnu');
-});
+}
 
 
 /* ---------- Coach permanent : fonctions planifiées ----------
