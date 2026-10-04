@@ -12,7 +12,7 @@ function humanErr(e){ const c=(e&&e.code)||''; const m=(e&&e.message)||String(e|
   if(/network|Failed to fetch|internet/i.test(m)||!navigator.onLine) return 'Pas de réseau. Le coach a besoin d\'une connexion ; tes séries sont enregistrées et partiront toutes seules.';
   if(/invalid-argument/.test(c)) return 'Le serveur n\'a pas compris la demande (version de l\'app en retard ?). Recharge l\'application depuis Réglages.';
   return m; }
-const APP_VERSION='3.12.0';
+const APP_VERSION='3.13.0';
 let PROGRAM={sessions:[]};
 let WEEKS = [
   {n:1,label:'S1 calibrage',from:'2026-09-07',to:'2026-09-13',rirNote:'RIR 3 · établir les références, tout noter'},
@@ -974,7 +974,9 @@ function renderHist(){
 
 /* ---------- tabs, week ---------- */
 document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>{ document.querySelectorAll('.tabs button').forEach(x=>x.setAttribute('aria-selected',x===b)); if(b.dataset.tab==='coach'){ S.coachSeen=Date.now(); save(); b.classList.remove('badge'); } showTab(b.dataset.tab); });
-function showTab(tab){ document.querySelectorAll('.tabs button').forEach(x=>x.setAttribute('aria-selected',x.dataset.tab===tab)); ['home','seance','coach','programme','suivi','reglages'].forEach(t=>{ const s=$('#tab-'+t); if(s) s.hidden=t!==tab; }); if(tab!=='seance') exitFocus(); window.scrollTo({top:0}); }
+// La barre flottante se range quand on défile vers le bas, revient dès qu'on remonte ou qu'on arrive en bas de page.
+(function(){ let last=0, acc=0; const tabs=document.querySelector('.tabs'); if(!tabs) return; window.addEventListener('scroll',()=>{ const y=window.scrollY; const dy=y-last; last=y; if(FOCUS||y<40||y+window.innerHeight>=document.documentElement.scrollHeight-40){ tabs.classList.remove('hide'); acc=0; return; } acc=Math.max(-80,Math.min(80,acc+dy)); if(acc>50) tabs.classList.add('hide'); else if(acc<-20) tabs.classList.remove('hide'); },{passive:true}); })();
+function showTab(tab){ const tb=document.querySelector('.tabs'); if(tb) tb.classList.remove('hide'); document.querySelectorAll('.tabs button').forEach(x=>x.setAttribute('aria-selected',x.dataset.tab===tab)); ['home','seance','coach','programme','suivi','reglages'].forEach(t=>{ const s=$('#tab-'+t); if(s) s.hidden=t!==tab; }); if(tab!=='seance') exitFocus(); window.scrollTo({top:0}); }
 $('#settingsBtn').onclick=()=>showTab('reglages');
 $('#weekChip').onclick=()=>{ const auto=weekFor(todayISO()); const cur=curWeek(); const nx=cur%WEEKS.length+1; S.weekOverride=nx===auto?null:nx; save(); render(); };
 document.addEventListener('pointerdown',unlockAudio,{once:true});
