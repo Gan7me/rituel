@@ -12,7 +12,7 @@ function humanErr(e){ const c=(e&&e.code)||''; const m=(e&&e.message)||String(e|
   if(/network|Failed to fetch|internet/i.test(m)||!navigator.onLine) return 'Pas de réseau. Le coach a besoin d\'une connexion ; tes séries sont enregistrées et partiront toutes seules.';
   if(/invalid-argument/.test(c)) return 'Le serveur n\'a pas compris la demande (version de l\'app en retard ?). Recharge l\'application depuis Réglages.';
   return m; }
-const APP_VERSION='3.13.0';
+const APP_VERSION='3.13.1';
 let PROGRAM={sessions:[]};
 let WEEKS = [
   {n:1,label:'S1 calibrage',from:'2026-09-07',to:'2026-09-13',rirNote:'RIR 3 · établir les références, tout noter'},
@@ -144,7 +144,8 @@ async function pushLocalToRemote(){
 }
 function writeDoc(name,id,data){ if(!USER||!fbDb||applyingRemote) return; col(name).doc(id).set(JSON.parse(JSON.stringify(data))).catch(e=>{ console.warn('write',e); logErr('write '+name,e); }); }
 
-function setSync(cls,txt){ const c=$('#syncChip'); c.className='chip sync '+cls; c.textContent=txt; }
+// État de synchro : un point discret, visible seulement quand ça n'est pas « sync ok » (hors ligne, en attente, erreur).
+function setSync(cls,txt){ const c=$('#syncChip'); c.className='chip sync '+cls; c.textContent=cls==='on'?'':txt; c.title=txt; c.hidden=cls==='on'; }
 function syncStatusIdle(){ if(!USER) return setSync('off','local'); setSync(navigator.onLine?'on':'pend', navigator.onLine?'sync ok':'hors ligne'); document.body.classList.toggle('offline',!navigator.onLine); }
 function markDirty(){ save(); }
 function mergeInto(local, remote){ let changed=false; for(const c of ['logs','bw','tests','chats']){ const L=local[c]||(local[c]={}), R=(remote&&remote[c])||{}; for(const k in R){ if(!L[k]||(R[k].updatedAt||0)>(L[k].updatedAt||0)){ L[k]=R[k]; changed=true; writeDoc(c,k,R[k]); } } } return changed; }
@@ -378,8 +379,9 @@ function showGate(mode){
   mode=mode||'login';
   document.querySelector('.tabs').hidden=true; document.querySelector('.top').hidden=true;
   const m=document.querySelector('main');
-  const head=`<div class="gateh"><div class="logo" role="img" aria-label="Rituel"></div><p class="lede">Ton programme, ton coach, ta séance du jour.</p></div>`;
-  const feats=`<div class="feats"><div><b>01</b><span>Un mésocycle construit sur ton profil, ton matériel, tes objectifs.</span></div><div><b>02</b><span>La séance guidée : charges, RIR, tempo, chrono de repos automatique. Sans réseau.</span></div><div><b>03</b><span>Après chaque séance, le coach analyse et ajuste la suivante.</span></div></div>`;
+  const head=`<div class="gateh"><div class="logo" role="img" aria-label="Rituel"></div><p class="lede">Un vrai coach dans ta poche.</p></div>`;
+  const feats=`<div class="kaiintro">${coachAvatar('idle','lg')}<div><b>${esc(COACH_NAME)}</b><p>Je construis ton programme sur ton profil et ton matériel, je te guide à chaque série, et j'analyse chaque séance pour régler la suivante. Tu progresses, je m'adapte.</p></div></div>
+    <div class="feats"><div><b>01</b><span>Un cycle de 3 à 6 semaines pensé pour toi, pas un programme générique.</span></div><div><b>02</b><span>La séance guidée : photos du mouvement, charges, chrono de repos. Sans réseau.</span></div><div><b>03</b><span>Après chaque séance, ${esc(COACH_NAME)} lit tes séries et ajuste les charges.</span></div></div>`;
   let form='';
   if(mode==='login') form=`<form class="form auth" id="authForm"><label>E-mail<input name="email" type="email" autocomplete="email" inputmode="email" required></label><label>Mot de passe<input name="password" type="password" autocomplete="current-password" required minlength="8"></label><p class="small err" id="authMsg"></p><button class="btn fill" type="submit">Se connecter</button><p class="small"><button type="button" class="link" data-mode="reset">Mot de passe oublié</button></p></form><button type="button" class="btn" data-mode="signup">Créer un compte</button>`;
   if(mode==='signup') form=`<form class="form auth" id="authForm"><label>Prénom<input name="name" autocomplete="given-name" required></label><label>E-mail<input name="email" type="email" autocomplete="email" inputmode="email" required></label><label>Mot de passe (8 caractères minimum)<input name="password" type="password" autocomplete="new-password" required minlength="8"></label><p class="small err" id="authMsg"></p><p class="small muted">En créant un compte tu acceptes que tes données d'entraînement soient stockées sur Firebase (Europe) et analysées par l'API Anthropic pour le coach. <a href="confidentialite.html" target="_blank" rel="noopener">Politique de confidentialité</a>.</p><button class="btn fill" type="submit">Créer mon compte</button></form><p class="small muted">Déjà un compte ? <button type="button" class="link" data-mode="login">Se connecter</button></p>`;
@@ -406,9 +408,9 @@ function showOnboarding(step){
   const m=document.querySelector('main');
   if(step==='profile'||!PROFILE){ onbStep(0); return; }
   m.innerHTML=`<section class="onb"><div class="onb-prog"><i style="width:100%"></i></div><h2>Ton programme</h2>
-    <p>Le coach construit un mésocycle de 4 semaines à partir de ton profil : séances, exercices, séries, repos, avec pour chaque exercice pourquoi il est là et comment l'exécuter. Tu pourras ensuite le faire évoluer avec lui.</p>
-    <div class="row2"><button class="btn fill" id="genBtn">Générer mon programme</button></div>
-    <div id="genWait" hidden><div class="wait"><div class="spin"></div><div><b id="genStep">Le coach lit ton profil…</b><p class="small muted">Une à deux minutes. Tu peux garder l'écran ouvert ou revenir plus tard, le programme t'attendra.</p></div></div></div>
+    <div class="kaisay">${coachAvatar('idle')}<p>J'ai ce qu'il me faut. Je construis ton premier cycle : les séances, chaque exercice avec pourquoi il est là et comment l'exécuter, les séries, les repos, la progression semaine par semaine. Ensuite on le fait évoluer ensemble.</p></div>
+    <div class="row2"><button class="btn fill" id="genBtn">${esc(COACH_NAME)}, construis mon programme</button></div>
+    <div id="genWait" hidden><div class="wait">${coachAvatar('busy')}<div><b id="genStep">${esc(COACH_NAME)} lit ton profil…</b><p class="small muted">Une à deux minutes. Tu peux garder l'écran ouvert ou revenir plus tard, le programme t'attendra.</p></div></div></div>
     <p class="small err" id="genMsg"></p>
     ${DEFAULT_PROGRAM&&USER&&/@nexisafe\.com$/i.test(USER.email||'')?`<details class="more"><summary>Autre option</summary><p class="small">Importer le programme « ${esc(DEFAULT_PROGRAM.cycleName||'Fondations')} » tel quel.</p><button class="btn sm" id="importBtn">Importer ce programme</button></details>`:''}
     <p class="small muted"><button class="link" id="backProf">Modifier mon profil</button></p>
@@ -436,7 +438,8 @@ function onbStep(i){
       <p class="small muted">Rituel ne remplace pas un avis médical. En cas de douleur, de pathologie ou de reprise après blessure, valide ton programme avec un professionnel de santé.</p>`},
   ];
   const st=steps[i];
-  m.innerHTML=`<section class="onb"><div class="onb-prog"><i style="width:${Math.round(100*(i+1)/(steps.length+1))}%"></i></div><p class="eyebrow">Étape ${i+1} sur ${steps.length}</p><h2>${st.t}</h2><p class="small muted">${st.s}</p>
+  const say=['Je règle l\'exigence sur ton niveau et ton gabarit. Sois précis, je m\'adapte ensuite.','Dis-moi ce que tu veux vraiment. Je fais les arbitrages entre tes objectifs, et je te dirai lesquels.','Je ne te proposerai que des exercices faisables avec ce que tu as, où que tu t\'entraînes.','Blessures, gardes, douleurs : je construis autour, pas contre. Rien de ce que tu écris ici n\'est jugé.'][i]||'';
+  m.innerHTML=`<section class="onb"><div class="onb-prog"><i style="width:${Math.round(100*(i+1)/(steps.length+1))}%"></i></div><p class="eyebrow">Étape ${i+1} sur ${steps.length}</p><h2>${st.t}</h2><div class="kaisay">${coachAvatar('idle')}<p>${esc(say||st.s)}</p></div>
     <form class="form" id="onbForm">${st.f}<div class="row2 onb-nav">${i>0?'<button type="button" class="btn" id="onbBack">Retour</button>':''}<button class="btn fill" type="submit">${i<steps.length-1?'Continuer':'Terminer'}</button></div></form></section>`;
   window.scrollTo({top:0});
   const back=$('#onbBack'); if(back) back.onclick=()=>{ collect(); onbStep(i-1); };
@@ -497,7 +500,7 @@ function autoCloseLogs(){
   return n;
 }
 function applyProgram(p){
-  PROGRAM=p; if(p.weeks&&p.weeks.length) WEEKS=p.weeks; PROGRAM_LOADED=true; $('#weekChip').hidden=false;
+  PROGRAM=p; if(p.weeks&&p.weeks.length) WEEKS=p.weeks; PROGRAM_LOADED=true;
   const sm=document.querySelector('.brand small'); if(sm) sm.textContent=p.cycleName||'';
   restoreShell(); autoCloseLogs(); renderCycle(); render(); ensureDemos();
 }
@@ -811,9 +814,12 @@ function renderProgramme(){
     s.exercises.forEach(ex=>{ const p=rx(ex,wk); const did=demoId(ex); h+=`<div class="prow" data-pex="${ex.id}">${did?`<img class="pimg" src="${demoImg(did,1)}" alt="" loading="lazy">`:`<span class="n">${ex.n}</span>`}<span class="nm">${esc(ex.name)}${ex.star?' <span style="color:var(--accent)">★</span>':''}</span><span class="rx2">${p.sets}×${esc(p.reps)}</span></div>`; });
     h+=`</div>`;
   });
+  h+=`<p class="small muted center">Semaine affichée : <b>S${wk}</b>${S.weekOverride?' (forcée)':''} · <button class="link" id="wkNext">Voir la semaine suivante</button>${S.weekOverride?' · <button class="link" id="wkAuto">Revenir à la semaine réelle</button>':''}</p>`;
   h+=`<details class="cyc doc"><summary>Lire le cycle</summary>${cycleHtml()}</details>`;
   $('#tab-programme').innerHTML=h;
   const rb=$('#regenBtn'); if(rb) rb.onclick=regenerateProgram;
+  const wn=$('#wkNext'); if(wn) wn.onclick=()=>{ const auto=weekFor(todayISO()); const nx=curWeek()%WEEKS.length+1; S.weekOverride=nx===auto?null:nx; save(); render(); };
+  const wa=$('#wkAuto'); if(wa) wa.onclick=()=>{ S.weekOverride=null; save(); render(); };
   $('#tab-programme').querySelectorAll('[data-pex]').forEach(r=>r.onclick=()=>{ const ex=PROGRAM.sessions.flatMap(x=>x.exercises).find(e=>e.id===r.dataset.pex); if(ex) showDemo(ex); });
 }
 

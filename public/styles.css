@@ -767,3 +767,18 @@ body.hasjob{padding-bottom:calc(var(--tabh) + 120px + env(safe-area-inset-bottom
 .tabs button[aria-selected="true"] svg,.tabs button[aria-selected="true"] .tabmk{color:var(--accent)}
 @media (prefers-color-scheme: dark){ :root:not([data-theme="light"]) .tabs{background:color-mix(in srgb,var(--surface) 90%,transparent)} }
 :root[data-theme="dark"] .tabs{background:color-mix(in srgb,var(--surface) 90%,transparent)}
+/* v3.13.1 — haut d'écran minimal, Kai à l'accueil et dans l'onboarding */
+.top .wrap{padding:8px 16px 6px}
+.brand .bname{font-size:17px}
+.chip.sync{padding:6px 2px}
+.chip.sync::before{width:9px;height:9px}
+.chip.sync{font-size:0}
+.chip.sync.pend::before{background:var(--warn)}
+.chip.sync.off::before{background:var(--muted)}
+.kaiintro{display:flex;gap:14px;align-items:flex-start;background:var(--surface);border-radius:var(--r);padding:14px 16px;box-shadow:var(--shadow)}
+.kaiintro b{display:block;font-family:var(--disp);font-size:18px;font-weight:800;margin-bottom:2px}
+.kaiintro p{margin:0;font-size:15px;line-height:1.45;color:var(--ink2)}
+.kaisay{display:flex;gap:12px;align-items:flex-start;margin:6px 0 16px}
+.kaisay p{margin:0;background:var(--surface);border-radius:18px 18px 18px 6px;padding:10px 14px;font-size:15px;line-height:1.45;color:var(--ink2);box-shadow:var(--shadow)}
+.wait{display:flex;gap:14px;align-items:center}
+.wait .spin{display:none}
