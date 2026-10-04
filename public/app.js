@@ -12,7 +12,7 @@ function humanErr(e){ const c=(e&&e.code)||''; const m=(e&&e.message)||String(e|
   if(/network|Failed to fetch|internet/i.test(m)||!navigator.onLine) return 'Pas de réseau. Le coach a besoin d\'une connexion ; tes séries sont enregistrées et partiront toutes seules.';
   if(/invalid-argument/.test(c)) return 'Le serveur n\'a pas compris la demande (version de l\'app en retard ?). Recharge l\'application depuis Réglages.';
   return m; }
-const APP_VERSION='3.10.1';
+const APP_VERSION='3.10.2';
 let PROGRAM={sessions:[]};
 let WEEKS = [
   {n:1,label:'S1 calibrage',from:'2026-09-07',to:'2026-09-13',rirNote:'RIR 3 · établir les références, tout noter'},
@@ -244,8 +244,10 @@ function renderCoach(){
   const wk=curWeek(), W=WEEKS[wk-1]||{}; const a=WEEKS[0]?addDays(WEEKS[0].from,Math.max(0,Math.floor(Math.round((new Date(date+'T12:00:00')-new Date(WEEKS[0].from+'T12:00:00'))/86400000)/7))*7):date;
   const weekDone=Object.values(S.logs).filter(l=>l.done&&l.date>=a&&l.date<=addDays(a,6)).length;
   const pending=COACH.items.find(i=>i.adjustments&&i.adjustments.length&&!i.applied&&i.type!=='bilan');
+  const missing=Object.entries(S.logs).filter(([k,l])=>l.done&&l.date>=addDays(date,-14)&&l.date<date&&Object.keys(l.sets||{}).length&&!COACH.items.some(i=>i.logKey===k)).sort((x,y)=>x[1].date<y[1].date?-1:1).map(([k])=>k);
   let act='';
   if(COACH.busy) act=`<button class="btn acc" disabled>Analyse en cours…</button>`;
+  else if(missing.length) act=`<button class="btn fill" id="anaMissing">Analyser ${missing.length} séance${missing.length>1?'s':''} non analysée${missing.length>1?'s':''}</button>`;
   else if(hasSets&&!todayAnalysed) act=`<button class="btn fill" id="anaBtn">Analyser la séance du jour</button>`;
   else if(pending) act=`<button class="btn fill" data-apply="${esc(pending.id)}">Appliquer les charges · ${esc(pending.title||'')}</button>`;
   else if(hasSets&&todayAnalysed) act=`<button class="btn" id="anaBtn">Ré-analyser la séance du jour</button>`;
@@ -282,6 +284,7 @@ function renderCoach(){
   el.innerHTML=h;
   el.querySelectorAll('[data-unclamp]').forEach(b=>b.onclick=()=>{ b.previousElementSibling.classList.remove('clamp'); b.remove(); });
   const ab=$('#anaBtn'); if(ab) ab.onclick=()=>analyseSession(logKey(date,ses.id));
+  const am=$('#anaMissing'); if(am) am.onclick=async()=>{ for(const k of missing){ await analyseSession(k); } };
   const cb=$('#chatBtn'); if(cb) cb.onclick=()=>{ COACH.chatOpen=true; renderChatSheet(); };
   if(COACH.chatOpen) renderChatSheet();
   el.querySelectorAll('[data-apply]').forEach(b=>b.onclick=()=>applyOverride(COACH.items.find(i=>i.id===b.dataset.apply)));

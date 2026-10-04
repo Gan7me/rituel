@@ -100,18 +100,31 @@ async function recordUsage(uid, mode, model) {
   await ref.set({ tokensIn: admin.firestore.FieldValue.increment(u.input_tokens || 0), tokensOut: admin.firestore.FieldValue.increment(u.output_tokens || 0), costUsd: admin.firestore.FieldValue.increment(cost), lastCostUsd: cost, lastMode: mode, lastModel: model }, { merge: true });
   return cost;
 }
+// Certains modèles récents refusent tool_choice "tool" (appel d'outil forcé). On essaie forcé, puis en "auto" avec
+// consigne explicite, et en dernier recours on lit le JSON dans le texte. Le mode qui marche est mémorisé par modèle.
+const TOOL_MODE = {};
 async function claudeJSON(apiKey, model, system, messages, schema, maxTokens = 2500) {
   const tool = { name: 'reponse', description: 'Réponse structurée du coach.', input_schema: schema };
-  const r = await fetch('https://api.anthropic.com/v1/messages', {
+  const call = async (forced) => fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-    body: JSON.stringify({ model, max_tokens: maxTokens, system, messages, tools: [tool], tool_choice: { type: 'tool', name: 'reponse' } })
+    body: JSON.stringify({ model, max_tokens: maxTokens, system: forced ? system : system + '\n\nRéponds obligatoirement en appelant l\'outil « reponse », sans texte libre.', messages, tools: [tool], tool_choice: forced ? { type: 'tool', name: 'reponse' } : { type: 'auto' } })
   });
+  let forced = TOOL_MODE[model] !== 'auto';
+  let r = await call(forced);
+  if (!r.ok && forced && r.status === 400) {
+    const t = await r.text();
+    if (/tool_choice/i.test(t)) { TOOL_MODE[model] = 'auto'; forced = false; r = await call(false); }
+    else throw new HttpsError('internal', `Anthropic 400: ${t.slice(0, 300)}`);
+  }
   if (!r.ok) { const t = await r.text(); throw new HttpsError('internal', `Anthropic ${r.status}: ${t.slice(0, 300)}`); }
   const j = await r.json(); LAST_USAGE = j.usage || null;
   const use = (j.content || []).find(c => c.type === 'tool_use');
-  if (!use || !use.input) throw new HttpsError('internal', 'Le coach n\'a pas renvoyé de réponse structurée.');
-  return use.input;
+  if (use && use.input) return use.input;
+  const text = (j.content || []).filter(c => c.type === 'text').map(c => c.text).join('');
+  const a = text.indexOf('{'), b = text.lastIndexOf('}');
+  if (a >= 0 && b > a) { try { return JSON.parse(text.slice(a, b + 1)); } catch (e) {} }
+  throw new HttpsError('internal', 'Le coach n\'a pas renvoyé de réponse structurée.');
 }
 
 // Démos visuelles : association de chaque exercice à une fiche photo (free-exercise-db, domaine public). Un seul appel par programme.
@@ -239,7 +252,7 @@ exports.coach = onCall({ region: 'europe-west1', secrets: [ANTHROPIC_API_KEY], t
   const t0 = Date.now(); const mode0 = (req.data || {}).mode; const uid0 = req.auth ? req.auth.uid.slice(0, 6) : 'anon';
   try {
     const out = await coachImpl(req);
-    console.log(`[coach] ${mode0} uid=${uid0} ok ${Date.now() - t0} ms`);
+    console.log(`[coach] ${mode0} uid=${uid0} ok ${Date.now() - t0} ms · ${resolvedModel || MODEL.value()}`);
     return out;
   } catch (e) {
     console.error(`[coach] ${mode0} uid=${uid0} ERREUR ${e && e.code ? e.code : ''} : ${e && e.message ? e.message : e} (${Date.now() - t0} ms)`);
