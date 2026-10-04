@@ -12,7 +12,7 @@ function humanErr(e){ const c=(e&&e.code)||''; const m=(e&&e.message)||String(e|
   if(/network|Failed to fetch|internet/i.test(m)||!navigator.onLine) return 'Pas de réseau. Le coach a besoin d\'une connexion ; tes séries sont enregistrées et partiront toutes seules.';
   if(/invalid-argument/.test(c)) return 'Le serveur n\'a pas compris la demande (version de l\'app en retard ?). Recharge l\'application depuis Réglages.';
   return m; }
-const APP_VERSION='3.10.0';
+const APP_VERSION='3.10.1';
 let PROGRAM={sessions:[]};
 let WEEKS = [
   {n:1,label:'S1 calibrage',from:'2026-09-07',to:'2026-09-13',rirNote:'RIR 3 · établir les références, tout noter'},
@@ -283,6 +283,8 @@ function renderCoach(){
   el.querySelectorAll('[data-goseance]').forEach(b=>b.onclick=()=>document.querySelector('.tabs button[data-tab="seance"]').click());
   updateCoachBadge();
 }
+// Clavier iOS : la feuille reste collée au-dessus du clavier (visualViewport), sinon le champ de saisie est masqué.
+(function(){ const vv=window.visualViewport; if(!vv) return; const fix=()=>{ const s=$('#sheet'); if(!s||!s.classList.contains('on')) return; const card=s.querySelector('.sheet-card'); const kb=Math.max(0,window.innerHeight-vv.height-vv.offsetTop); card.style.bottom=kb+'px'; card.style.maxHeight=(vv.height-24)+'px'; const inp=document.activeElement; if(kb&&inp&&card.contains(inp)) setTimeout(()=>inp.scrollIntoView({block:'nearest'}),50); }; vv.addEventListener('resize',fix); vv.addEventListener('scroll',fix); })();
 function renderChatSheet(){
   const s=$('#sheet'); if(COACH.chatOpen&&s&&s.classList.contains('on')&&!s.querySelector('#askForm')){ COACH.chatOpen=false; return; }
   const thread=COACH.thread.length?COACH.thread.map(m=>`<div class="msg ${m.role}">${(m.role==='assistant'?lexify(esc(m.content)):esc(m.content)).replace(/\n/g,'<br>')}</div>`).join(''):`<p class="small muted center">Charges, douleur, garde, nutrition, remplacement d\'un exercice : il connaît ton programme et ton historique.</p>`;
@@ -417,10 +419,18 @@ async function saveProgram(prog, cycleHtml){
   const doc=JSON.parse(JSON.stringify(prog)); doc.cycleHtml=cycleHtml||doc.cycleHtml||''; doc.savedAt=Date.now();
   await fbDb.collection('users').doc(USER.uid).collection('meta').doc('program').set(doc);
 }
+// Une séance d'un jour passé avec des séries enregistrées mais jamais « terminée » est clôturée automatiquement :
+// elle compte pour la semaine, le coach la voit, et l'analyse est lancée si le réseau le permet.
+function autoCloseLogs(){
+  const today=todayISO(); let n=0; const keys=[];
+  Object.entries(S.logs).forEach(([k,l])=>{ if(!l.done&&l.date<today&&Object.keys(l.sets||{}).length){ l.done=true; l.autoClosed=true; l.updatedAt=Date.now(); n++; keys.push(k); writeDoc('logs',k,l); } });
+  if(n){ save(); toast(n===1?'Séance d\'hier clôturée':n+' séances clôturées'); if(USER&&navigator.onLine) keys.slice(-2).forEach(k=>{ if(!COACH.items.some(i=>i.logKey===k)) analyseSession(k); }); }
+  return n;
+}
 function applyProgram(p){
   PROGRAM=p; if(p.weeks&&p.weeks.length) WEEKS=p.weeks; PROGRAM_LOADED=true; $('#weekChip').hidden=false;
   const sm=document.querySelector('.brand small'); if(sm) sm.textContent=p.cycleName||'';
-  restoreShell(); renderCycle(); render(); ensureDemos();
+  restoreShell(); autoCloseLogs(); renderCycle(); render(); ensureDemos();
 }
 function cycleHtml(){
   if(PROGRAM.cycleHtml) return PROGRAM.cycleHtml;
@@ -583,7 +593,7 @@ const LEX_TERMS=[['rir',/\bRIR\b/g],['tempo',/\btempo\b/gi],['emom',/\bEMOM\b/g]
 function lexify(escapedHtml){ let h=String(escapedHtml||''); LEX_TERMS.forEach(([k,re])=>{ h=h.replace(re,m=>`<button class="lx" data-lex="${k}">${m}</button>`); }); return h; }
 document.addEventListener('click',e=>{ const b=e.target.closest&&e.target.closest('.lx[data-lex]'); if(b){ e.preventDefault(); e.stopPropagation(); showLex(b.dataset.lex); } },true);
 function showSheet(html){ let s=$('#sheet'); if(!s){ s=document.createElement('div'); s.id='sheet'; s.innerHTML='<div class="sheet-bg"></div><div class="sheet-card" role="dialog"><div class="sheet-grip"></div><div class="sheet-body"></div></div>'; document.body.appendChild(s); s.querySelector('.sheet-bg').onclick=hideSheet; } s.querySelector('.sheet-body').innerHTML=html; s.classList.add('on'); document.body.style.overflow='hidden'; return s; }
-function hideSheet(){ const s=$('#sheet'); if(s){ s.classList.remove('on'); s.classList.remove('tall'); document.body.style.overflow=''; } COACH.chatOpen=false; }
+function hideSheet(){ const s=$('#sheet'); if(s){ s.classList.remove('on'); s.classList.remove('tall'); const c=s.querySelector('.sheet-card'); if(c){ c.style.bottom=''; c.style.maxHeight=''; } document.body.style.overflow=''; } COACH.chatOpen=false; }
 function showLex(key){ const l=LEX[key]; if(!l) return; showSheet(`<h3>${esc(l[0])}</h3><p>${esc(l[1])}</p><button class="btn" onclick="hideSheet()">Compris</button>`); }
 let toastT=0; function toast(msg,cls){ let t=$('#toast'); if(!t){ t=document.createElement('div'); t.id='toast'; document.body.appendChild(t); } t.textContent=msg; t.className='on '+(cls||''); clearTimeout(toastT); toastT=setTimeout(()=>t.className='',1800); }
 function rirLabel(v){ return v==null?'':v>=3?'F':v>=1?'J':'É'; }
