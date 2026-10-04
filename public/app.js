@@ -12,7 +12,7 @@ function humanErr(e){ const c=(e&&e.code)||''; const m=(e&&e.message)||String(e|
   if(/network|Failed to fetch|internet/i.test(m)||!navigator.onLine) return 'Pas de réseau. Le coach a besoin d\'une connexion ; tes séries sont enregistrées et partiront toutes seules.';
   if(/invalid-argument/.test(c)) return 'Le serveur n\'a pas compris la demande (version de l\'app en retard ?). Recharge l\'application depuis Réglages.';
   return m; }
-const APP_VERSION='3.10.2';
+const APP_VERSION='3.11.0';
 let PROGRAM={sessions:[]};
 let WEEKS = [
   {n:1,label:'S1 calibrage',from:'2026-09-07',to:'2026-09-13',rirNote:'RIR 3 · établir les références, tout noter'},
@@ -206,6 +206,29 @@ function renderReglages(){
   $('#reloadBtn').onclick=async()=>{ if(navigator.serviceWorker){ const r=await navigator.serviceWorker.getRegistration(); if(r){ await r.update(); } } location.reload(); };
 }
 
+/* ---------- Présence du coach : identité, états visibles, barre de travail ---------- */
+const COACH_NAME='Kai';
+// Avatar : le loup de Rituel dans un cercle. États : idle, busy (anneau qui tourne), attention (point rouge), ok (coche).
+function coachAvatar(state,size){ return `<span class="cav ${state||'idle'} ${size||''}" aria-hidden="true"><i class="mk"></i><i class="ring"></i><i class="dot"></i></span>`; }
+// Barre de travail globale : ce que fait le coach, étape en cours, progression. Un seul job à la fois.
+const JOB={on:false,t:0,iv:0};
+function startJob(label,steps,expectMs){
+  JOB.on=true; JOB.label=label; JOB.steps=steps||[]; JOB.t0=Date.now(); JOB.expect=expectMs||20000; JOB.k=0;
+  let bar=$('#jobbar'); if(!bar){ bar=document.createElement('div'); bar.id='jobbar'; bar.setAttribute('role','status'); bar.setAttribute('aria-live','polite'); document.body.appendChild(bar); }
+  bar.innerHTML=`${coachAvatar('busy')}<div class="jt"><b>${esc(COACH_NAME)} · ${esc(label)}</b><span id="jobStep">${esc(JOB.steps[0]||'')}</span></div><span class="jsec" id="jobSec">0 s</span><div class="jbar"><i id="jobFill"></i></div>`;
+  requestAnimationFrame(()=>bar.classList.add('on')); document.body.classList.add('hasjob');
+  clearInterval(JOB.iv);
+  JOB.iv=setInterval(()=>{ const el=Date.now()-JOB.t0; const sec=$('#jobSec'); if(sec) sec.textContent=Math.round(el/1000)+' s';
+    // progression asymptotique vers 92 % sur la durée attendue : honnête sur l'incertitude, jamais figée.
+    const p=92*(1-Math.exp(-el/(JOB.expect*0.6))); const f=$('#jobFill'); if(f) f.style.width=p.toFixed(1)+'%';
+    const n=JOB.steps.length; if(n>1){ const k=Math.min(n-1,Math.floor(n*el/JOB.expect)); if(k!==JOB.k){ JOB.k=k; const st=$('#jobStep'); if(st){ st.textContent=JOB.steps[k]; st.classList.remove('sw'); void st.offsetWidth; st.classList.add('sw'); } } } },250);
+}
+function endJob(ok,msg){
+  clearInterval(JOB.iv); JOB.on=false; const bar=$('#jobbar'); if(!bar) return;
+  const f=$('#jobFill'); if(f) f.style.width='100%';
+  bar.querySelector('.cav').className='cav '+(ok?'ok':'attention'); const st=$('#jobStep'); if(st) st.textContent=msg||(ok?'Terminé':'Échec');
+  setTimeout(()=>{ if(!JOB.on){ bar.classList.remove('on'); document.body.classList.remove('hasjob'); } },ok?1400:3000);
+}
 /* ---------- Coach ---------- */
 const COACH={items:[], busy:false, thread:[]};
 async function callCoach(payload){
@@ -216,14 +239,17 @@ async function callCoach(payload){
 }
 async function analyseSession(logKeyStr){
   if(COACH.busy) return; COACH.busy=true; renderCoach();
-  try{ await callCoach({mode:'analyse', logKey:logKeyStr, week:curWeek()}); }
-  catch(e){ logErr('analyse',e); toast(humanErr(e)); }
+  const l=S.logs[logKeyStr]; const sname=l?((PROGRAM.sessions.find(x=>x.id===l.session)||{}).name||l.session):'la séance';
+  startJob(`analyse ${sname}`,['Lit tes séries et ton ressenti','Compare à ton historique','Décide les charges de la prochaine fois','Rédige le verdict'],22000);
+  try{ const r=await callCoach({mode:'analyse', logKey:logKeyStr, week:curWeek()}); endJob(true,`${sname} analysée`); if(r&&r.adjustments&&r.adjustments.length) toast(`${COACH_NAME} propose ${r.adjustments.length} ajustement${r.adjustments.length>1?'s':''} de charge`,'ok'); }
+  catch(e){ logErr('analyse',e); endJob(false,humanErr(e)); toast(humanErr(e)); }
   COACH.busy=false; renderCoach();
 }
 async function askCoach(text){
   if(!text.trim()||COACH.busy) return; COACH.busy=true; COACH.thread.push({role:'user',content:text}); renderCoach();
-  try{ const r=await callCoach({mode:'chat', messages:COACH.thread.slice(-12), week:curWeek(), session:curSession().id}); COACH.thread.push({role:'assistant',content:r.text||''}); }
-  catch(e){ logErr('chat',e); COACH.thread.push({role:'assistant',content:humanErr(e)}); }
+  startJob('réfléchit',['Relit ton programme et ton journal','Rédige la réponse'],10000);
+  try{ const r=await callCoach({mode:'chat', messages:COACH.thread.slice(-12), week:curWeek(), session:curSession().id}); COACH.thread.push({role:'assistant',content:r.text||''}); endJob(true,'Réponse prête'); }
+  catch(e){ logErr('chat',e); COACH.thread.push({role:'assistant',content:humanErr(e)}); endJob(false,humanErr(e)); }
   COACH.busy=false; renderCoach();
 }
 function applyOverride(item){
@@ -235,7 +261,9 @@ function applyOverride(item){
 }
 function renderCoach(){
   const el=$('#tab-coach'); if(!el||!PROGRAM_LOADED||!PROGRAM.sessions.length) return;
-  let h=`<h2>Coach</h2>`;
+  const lastItem=COACH.items[0]; const lastAt=lastItem&&lastItem.createdAt?new Date(lastItem.createdAt):null;
+  const stateTxt=COACH.busy?'Au travail…':lastAt?`En veille · dernier passage ${lastAt.toLocaleDateString('fr-FR',{day:'numeric',month:'short'})} à ${lastAt.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})}`:'En veille · aucune analyse encore';
+  let h=`<div class="chead">${coachAvatar(COACH.busy?'busy':'idle','lg')}<div><h2>${esc(COACH_NAME)}</h2><p class="cstate ${COACH.busy?'busy':''}">${esc(stateTxt)}</p></div></div>`;
   if(!USER){ h+=`<p class="small muted">Connecte-toi (Réglages) pour activer le Coach : analyse de chaque séance, ajustement des charges, réponses sur ta progression.</p>`; el.innerHTML=h; return; }
   const date=todayISO(), ses=curSession(), log=S.logs[logKey(date,ses.id)];
   const todayAnalysed=COACH.items.some(i=>i.logKey===logKey(date,ses.id));
@@ -244,22 +272,25 @@ function renderCoach(){
   const wk=curWeek(), W=WEEKS[wk-1]||{}; const a=WEEKS[0]?addDays(WEEKS[0].from,Math.max(0,Math.floor(Math.round((new Date(date+'T12:00:00')-new Date(WEEKS[0].from+'T12:00:00'))/86400000)/7))*7):date;
   const weekDone=Object.values(S.logs).filter(l=>l.done&&l.date>=a&&l.date<=addDays(a,6)).length;
   const pending=COACH.items.find(i=>i.adjustments&&i.adjustments.length&&!i.applied&&i.type!=='bilan');
-  const missing=Object.entries(S.logs).filter(([k,l])=>l.done&&l.date>=addDays(date,-14)&&l.date<date&&Object.keys(l.sets||{}).length&&!COACH.items.some(i=>i.logKey===k)).sort((x,y)=>x[1].date<y[1].date?-1:1).map(([k])=>k);
+  const missing=Object.entries(S.logs).filter(([k,l])=>l.done&&l.date>=addDays(date,-14)&&l.date<date&&Object.values(l.sets||{}).flat().some(x=>x&&x.done)&&!COACH.items.some(i=>i.logKey===k)).sort((x,y)=>x[1].date<y[1].date?-1:1).map(([k])=>k);
   let act='';
   if(COACH.busy) act=`<button class="btn acc" disabled>Analyse en cours…</button>`;
   else if(missing.length) act=`<button class="btn fill" id="anaMissing">Analyser ${missing.length} séance${missing.length>1?'s':''} non analysée${missing.length>1?'s':''}</button>`;
   else if(hasSets&&!todayAnalysed) act=`<button class="btn fill" id="anaBtn">Analyser la séance du jour</button>`;
   else if(pending) act=`<button class="btn fill" data-apply="${esc(pending.id)}">Appliquer les charges · ${esc(pending.title||'')}</button>`;
   else if(hasSets&&todayAnalysed) act=`<button class="btn" id="anaBtn">Ré-analyser la séance du jour</button>`;
-  h+=`<div class="cstat"><div class="cs-grid"><div><b>S${wk}</b><span>${esc(String(W.label||'').replace(/^S\d+\s*/,''))} · ${esc((W.rirNote||'').split('·')[0].trim())}</span></div><div><b>${weekDone}/${PROGRAM.sessions.length}</b><span>séances cette semaine</span></div><div><b>Dim. 19h</b><span>bilan hebdomadaire</span></div></div>
+  h+=`<div class="cstat ${pending||(hasSets&&!todayAnalysed)||missing.length?'needs':''}"><div class="cs-grid"><div><b>S${wk}</b><span>${esc(String(W.label||'').replace(/^S\d+\s*/,''))} · ${esc((W.rirNote||'').split('·')[0].trim())}</span></div><div><b>${weekDone}/${PROGRAM.sessions.length}</b><span>séances cette semaine</span></div><div><b>Dim. 19h</b><span>bilan hebdomadaire</span></div></div>
     <p class="small muted">${pending?'Des charges ajustées attendent d\'être appliquées à la prochaine séance.':hasSets&&!todayAnalysed?'Ta séance du jour a des séries enregistrées : lance l\'analyse pour fixer les charges suivantes.':'Il analyse chaque séance terminée, relance après 3 jours sans séance et prépare le cycle suivant.'}</p>
     <div class="row2">${act}<button class="btn ${act?'':'fill'}" id="chatBtn">Poser une question${COACH.thread.length?' · '+Math.ceil(COACH.thread.length/2):''}</button></div></div>`;
   h+=`<h3>Analyses</h3>`;
-  if(!COACH.items.length) h+=`<div class="empty"><div class="ic">◎</div><b>Pas encore d'analyse</b><p class="small muted">Termine une séance : le coach l'analyse et fixe les charges de la prochaine.</p></div>`;
+  if(!COACH.items.length) h+=`<div class="empty"><div class="ic">◎</div><b>Pas encore d'analyse</b><p class="small muted">Termine une séance : ${esc(COACH_NAME)} l'analyse et fixe les charges de la prochaine.</p></div>`;
+  const weekAgo=Date.now()-7*86400000; const older=[];
   COACH.items.forEach(it=>{
+    if(!it.type&&it.logKey){ const lg=S.logs[it.logKey]; if(lg&&!Object.values(lg.sets||{}).flat().some(x=>x&&x.done)) return; }
+    if(it.type==='nudge'&&(it.createdAt||0)<weekAgo){ older.push(it); return; }
     if(it.type==='bilan'||it.type==='cycleEnd'||it.type==='nudge'){
       const lbl={ok:'OK',up:'En hausse',hold:'Stable',warn:'Attention'};
-      h+=`<div class="ana ${it.type}"><div class="anah"><b>${esc(it.title||'')}</b><span class="small muted">${it.createdAt?new Date(it.createdAt).toLocaleDateString('fr-FR'):''}</span></div>`;
+      h+=`<div class="ana ${it.type}"><div class="anah">${coachAvatar('idle','xs')}<b>${esc(it.title||'')}</b><span class="small muted">${it.createdAt?new Date(it.createdAt).toLocaleDateString('fr-FR'):''}</span></div>`;
       if(it.analysis) h+=`<div class="anab">${lexify(esc(it.analysis)).replace(/\n/g,'<br>')}</div>`;
       if(it.highlights&&it.highlights.length) h+=`<div class="hl">${it.highlights.map(x=>`<div class="hli s-${esc(x.status||'ok')}"><span class="v">${esc(x.value)}</span><span class="l">${esc(x.label)}</span></div>`).join('')}</div>`;
       if(it.alerts&&it.alerts.length) h+=`<div class="banner">${it.alerts.map(esc).join('<br>')}</div>`;
@@ -271,17 +302,21 @@ function renderCoach(){
     const adjBy={}; (it.adjustments||[]).forEach(a=>adjBy[a.exId]=a);
     const exs=(it.exercises&&it.exercises.length)?it.exercises:(it.adjustments||[]).map(a=>({exId:a.exId,name:a.name,done:'',read:a.reason,status:'up'}));
     const lbl={ok:'OK',up:'Charger',hold:'Plus de reps',warn:'À revoir'};
-    h+=`<div class="ana"><div class="anah"><b>${esc(it.title||it.logKey||'')}</b><span class="small muted">${it.createdAt?new Date(it.createdAt).toLocaleDateString('fr-FR'):''}</span></div>`;
-    if(it.analysis){ const long=it.analysis.length>260; h+=`<div class="anab ${long?'clamp':''}" data-clamp>${lexify(esc(it.analysis)).replace(/\n/g,'<br>')}</div>${long?'<button class="link" data-unclamp>Lire la suite</button>':''}`; }
+    const needs=it.adjustments&&it.adjustments.length&&!it.applied; h+=`<div class="ana ${needs?'needs':''}"><div class="anah">${coachAvatar(needs?'attention':'idle','xs')}<b>${esc(it.title||it.logKey||'')}</b>${needs?'<span class="tag">à appliquer</span>':''}<span class="small muted">${it.createdAt?new Date(it.createdAt).toLocaleDateString('fr-FR'):''}</span></div>`;
+    if(it.analysis){ const long=it.analysis.length>420; h+=`<div class="anab ${long?'clamp':''}" data-clamp>${lexify(esc(it.analysis)).replace(/\n/g,'<br>')}</div>${long?'<button class="link" data-unclamp>Lire la suite</button>':''}`; }
     if(exs.length){
       h+=`<div class="exl2">`+exs.map(e=>{ const a=adjBy[e.exId]; const fx=findEx(e.exId); return `<div class="exc ${fx&&demoId(fx)?'hasimg':''}">${fx?demoThumb(fx):''}<div class="l1"><b>${esc(e.name)}</b><span class="st s-${esc(e.status||'ok')}">${lbl[e.status]||'OK'}</span></div><div class="l2"><span class="done">${esc(e.done||'—')}</span>${a?`<span class="arrow">→</span><span class="next">${esc(a.change)}</span>`:''}</div></div>`; }).join('')+`</div>`;
-      h+=`<details class="more"><summary>Le détail du coach</summary><div class="exl">${exs.map(e=>{ const a=adjBy[e.exId]; return `<div class="exr s-${esc(e.status||'ok')}"><i></i><div><b>${esc(e.name)}</b><div class="read">${lexify(esc(e.read||''))}${a&&a.reason?' <span class="muted">— '+lexify(esc(a.reason))+'</span>':''}</div></div></div>`; }).join('')}</div></details>`;
+      h+=`<details class="more" open><summary>Le détail de ${esc(COACH_NAME)}</summary><div class="exl">${exs.map(e=>{ const a=adjBy[e.exId]; return `<div class="exr s-${esc(e.status||'ok')}"><i></i><div><b>${esc(e.name)}</b><div class="read">${lexify(esc(e.read||''))}${a&&a.reason?' <span class="muted">— '+lexify(esc(a.reason))+'</span>':''}</div></div></div>`; }).join('')}</div></details>`;
     }
+    if(it.questions&&it.questions.length) h+=`<div class="cq">${coachAvatar('attention','xs')}<div><b>${esc(COACH_NAME)} te demande</b>${it.questions.map(q=>`<p>${esc(q)} <button class="link" data-ask="${esc(q)}">Répondre</button></p>`).join('')}</div></div>`;
+    if(it.cue) h+=`<p class="coachline cue"><b>Point technique</b> ${lexify(esc(it.cue))}</p>`;
     if(it.nextFocus) h+=`<p class="coachline"><b>Prochaine fois</b> ${lexify(esc(it.nextFocus))}</p>`;
     if(it.adjustments&&it.adjustments.length){ h+=`<div class="adj">${it.applied?'<span class="tag ok">appliqué à la prochaine séance</span>':`<button class="btn sm acc" data-apply="${it.id}">Appliquer ces charges à la prochaine séance</button>`}</div>`; }
     h+=`</div>`;
   });
+  if(older.length) h+=`<details class="more"><summary>Relances passées (${older.length})</summary>${older.map(it=>`<p class="small muted">${it.createdAt?new Date(it.createdAt).toLocaleDateString('fr-FR'):''} · ${esc(it.title||'')}</p>`).join('')}</details>`;
   el.innerHTML=h;
+  el.querySelectorAll('[data-ask]').forEach(b=>b.onclick=()=>{ COACH.chatOpen=true; renderChatSheet(); const i=$('#askInput'); if(i){ i.value='Tu me demandes : « '+b.dataset.ask+' » — '; i.focus(); i.setSelectionRange(i.value.length,i.value.length); } });
   el.querySelectorAll('[data-unclamp]').forEach(b=>b.onclick=()=>{ b.previousElementSibling.classList.remove('clamp'); b.remove(); });
   const ab=$('#anaBtn'); if(ab) ab.onclick=()=>analyseSession(logKey(date,ses.id));
   const am=$('#anaMissing'); if(am) am.onclick=async()=>{ for(const k of missing){ await analyseSession(k); } };
@@ -297,7 +332,7 @@ function renderCoach(){
 function renderChatSheet(){
   const s=$('#sheet'); if(COACH.chatOpen&&s&&s.classList.contains('on')&&!s.querySelector('#askForm')){ COACH.chatOpen=false; return; }
   const thread=COACH.thread.length?COACH.thread.map(m=>`<div class="msg ${m.role}">${(m.role==='assistant'?lexify(esc(m.content)):esc(m.content)).replace(/\n/g,'<br>')}</div>`).join(''):`<p class="small muted center">Charges, douleur, garde, nutrition, remplacement d\'un exercice : il connaît ton programme et ton historique.</p>`;
-  const sheet=showSheet(`<h3>Question au coach</h3><div class="chat">${thread}${COACH.busy&&COACH.thread.length&&COACH.thread[COACH.thread.length-1].role==='user'?'<div class="msg assistant muted">…</div>':''}</div><form class="ask" id="askForm"><input id="askInput" placeholder="Ta question" autocomplete="off" enterkeyhint="send"><button class="btn fill" type="submit" ${COACH.busy?'disabled':''}>Envoyer</button></form>`);
+  const sheet=showSheet(`<div class="chead sm">${coachAvatar(COACH.busy?'busy':'idle')}<h3>Question à ${esc(COACH_NAME)}</h3></div><div class="chat">${thread}${COACH.busy&&COACH.thread.length&&COACH.thread[COACH.thread.length-1].role==='user'?`<div class="msg assistant typing" aria-label="${esc(COACH_NAME)} écrit"><i></i><i></i><i></i></div>`:''}</div><form class="ask" id="askForm"><input id="askInput" placeholder="Ta question" autocomplete="off" enterkeyhint="send"><button class="btn fill" type="submit" ${COACH.busy?'disabled':''}>Envoyer</button></form>`);
   sheet.classList.add('tall');
   const c=sheet.querySelector('.chat'); if(c) c.scrollTop=c.scrollHeight;
   $('#askForm').onsubmit=e=>{ e.preventDefault(); const v=$('#askInput').value; $('#askInput').value=''; askCoach(v); };
@@ -418,11 +453,11 @@ function bindProfileForm(after,root){
 }
 async function generateProgram(){
   const msg=$('#genMsg'), btn=$('#genBtn'), wait=$('#genWait'); if(btn) btn.hidden=true; if(wait) wait.hidden=false; if(msg) msg.textContent='';
-  const stepsTxt=['Le coach lit ton profil…','Il choisit les exercices pour ton matériel…','Il règle séries, repos et progression sur 4 semaines…','Il rédige les explications de chaque exercice…','Dernières vérifications…']; let k=0;
+  const stepsTxt=[COACH_NAME+' lit ton profil…','Il choisit les exercices pour ton matériel…','Il règle séries, repos et progression…','Il rédige les explications de chaque exercice…','Dernières vérifications…']; let k=0; startJob('construit ton programme',stepsTxt.map(x=>x.replace(/…$/,'')),90000);
   const iv=setInterval(()=>{ k=Math.min(k+1,stepsTxt.length-1); const e=$('#genStep'); if(e) e.textContent=stepsTxt[k]; },18000);
   try{ const fn=fbFn.httpsCallable('coach',{timeout:540000}); await fn({mode:'program'}); }
-  catch(e){ logErr('program',e); if(msg) msg.textContent=humanErr(e); if(btn){ btn.hidden=false; btn.textContent='Réessayer'; } if(wait) wait.hidden=true; }
-  clearInterval(iv);
+  catch(e){ logErr('program',e); endJob(false,humanErr(e)); if(msg) msg.textContent=humanErr(e); if(btn){ btn.hidden=false; btn.textContent='Réessayer'; } if(wait) wait.hidden=true; clearInterval(iv); return; }
+  clearInterval(iv); endJob(true,'Programme prêt');
 }
 async function saveProgram(prog, cycleHtml){
   const doc=JSON.parse(JSON.stringify(prog)); doc.cycleHtml=cycleHtml||doc.cycleHtml||''; doc.savedAt=Date.now();
@@ -524,8 +559,8 @@ function renderHome(){
   h+=`<div class="card wk"><div class="card-h"><b>Cette semaine</b><span class="muted">${weekDone}/${PROGRAM.sessions.length} séances</span></div><div class="dots">${dots}</div></div>`;
   // dernier mot du coach
   const last=COACH.items[0];
-  if(last){ const txt=last.type==='bilan'||last.type==='cycleEnd'?(last.nextWeek||last.analysis):last.type==='nudge'?last.analysis:(last.nextFocus||last.analysis); h+=`<div class="card coachcard" id="homeCoach" role="button" tabindex="0"><div class="card-h"><b>Coach</b><span class="muted">${last.createdAt?new Date(last.createdAt).toLocaleDateString('fr-FR',{day:'numeric',month:'short'}):''}</span></div><p>${lexify(esc(String(txt||'').slice(0,180)))}${String(txt||'').length>180?'…':''}</p>${last.adjustments&&last.adjustments.length&&!last.applied?'<span class="tag">charges à appliquer</span>':''}</div>`; }
-  else h+=`<div class="card"><div class="card-h"><b>Coach</b></div><p class="muted">Après ta première séance terminée, il analyse et fixe les charges suivantes.</p></div>`;
+  if(last){ const txt=last.type==='bilan'||last.type==='cycleEnd'?(last.nextWeek||last.analysis):last.type==='nudge'?last.analysis:(last.nextFocus||last.analysis); h+=`<div class="card coachcard" id="homeCoach" role="button" tabindex="0"><div class="card-h"><b>${coachAvatar(last.adjustments&&last.adjustments.length&&!last.applied?'attention':'idle','xs')} ${esc(COACH_NAME)}</b><span class="muted">${last.createdAt?new Date(last.createdAt).toLocaleDateString('fr-FR',{day:'numeric',month:'short'}):''}</span></div><p>${lexify(esc(String(txt||'').slice(0,180)))}${String(txt||'').length>180?'…':''}</p>${last.adjustments&&last.adjustments.length&&!last.applied?'<span class="tag">charges à appliquer</span>':''}</div>`; }
+  else h+=`<div class="card"><div class="card-h"><b>${coachAvatar('idle','xs')} ${esc(COACH_NAME)}</b></div><p class="muted">Ton coach. Après ta première séance terminée, il l'analyse et fixe les charges suivantes.</p></div>`;
   // prochaine séance
   const nextS=[1,2,3,4,5,6,7].map(i=>{ const d=(new Date().getDay()+i)%7; return PROGRAM.sessions.find(x=>x.day===d); }).find(Boolean);
   if(nextS&&nextS.id!==ses.id) h+=`<p class="small muted center">Prochaine : ${esc(nextS.dayName)} · ${esc(nextS.name)}</p>`;
@@ -550,7 +585,7 @@ function demoId(ex){ if(!ex) return null; if(ex.demo) return ex.demo; const m=(P
 function demoImg(id,i){ return DEMO.base+encodeURIComponent(id)+'/'+i+'.jpg'; }
 function loadDemoIndex(){ if(DEMO.index) return Promise.resolve(DEMO.index); if(!DEMO.loading) DEMO.loading=fetch('demo/index.json').then(r=>r.json()).then(a=>{ DEMO.index={}; a.forEach(x=>DEMO.index[x.i]=x); return DEMO.index; }).catch(()=>{ DEMO.loading=null; return {}; }); return DEMO.loading; }
 // Programme généré avant les fiches : on demande l'association au coach une seule fois, elle est enregistrée dans le programme.
-async function ensureDemos(){ if(DEMO.asked||!USER||!navigator.onLine||!PROGRAM_LOADED||!PROGRAM.sessions.length||PROGRAM.demos||PROGRAM.demosAt) return; DEMO.asked=true; try{ await callCoach({mode:'demo'}); }catch(e){ logErr('demo',e); } }
+async function ensureDemos(){ if(DEMO.asked||!USER||!navigator.onLine||!PROGRAM_LOADED||!PROGRAM.sessions.length||PROGRAM.demos||PROGRAM.demosAt) return; DEMO.asked=true; startJob('associe les photos des mouvements',['Parcourt ton programme','Choisit la fiche la plus proche pour chaque exercice'],15000); try{ await callCoach({mode:'demo'}); endJob(true,'Photos associées'); }catch(e){ logErr('demo',e); endJob(false,'Photos : association impossible'); } }
 function demoStrip(ex,cls){ const id=demoId(ex); if(!id) return ''; return `<button class="demo ${cls||''}" data-demo="${esc(ex.id)}" aria-label="Voir le mouvement"><img src="${demoImg(id,0)}" alt="" loading="lazy"><i class="arr">›</i><img src="${demoImg(id,1)}" alt="" loading="lazy"><span>Voir le mouvement</span></button>`; }
 function demoThumb(ex){ const id=demoId(ex); if(!id) return ''; return `<button class="dthumb" data-demo="${esc(ex.id)}" aria-label="Voir le mouvement"><img src="${demoImg(id,1)}" alt="" loading="lazy"></button>`; }
 function findEx(exId){ for(const s of PROGRAM.sessions){ const e=s.exercises.find(x=>x.id===exId); if(e) return e; const sub=((S.overrides||{})[s.id]||{}).substitute; if(sub){ const e2=(sub.exercises||[]).find(x=>x.id===exId); if(e2) return e2; } } return null; }
@@ -719,9 +754,9 @@ function renderSeance(){
   });
   const sb=$('#subBtn'); if(sb) sb.onclick=()=>{ const base=curSession(); const opts=[['halteres','Haltères'],['elastiques','Élastiques'],['kettlebell','Kettlebell'],['traction','Barre de traction'],['trx','TRX / sangles'],['banc','Banc'],['corps','Poids du corps']];
     const sheet=showSheet(`<h3>Pas de salle aujourd'hui</h3><p class="small muted">Le coach reconstruit ${esc(base.name)} avec ce que tu as. Coche ton matériel.</p><div class="chks" id="subGear">${opts.map(([v,l])=>`<label class="chk"><input type="checkbox" value="${v}" ${(PROFILE&&PROFILE.gear||[]).includes(v)?'checked':''}> ${l}</label>`).join('')}</div><label class="small muted" style="display:block;margin-top:10px">Précision (facultatif)<textarea id="subNote" rows="2" placeholder="Ex. : chambre d'hôtel, 20 minutes, genou sensible" style="width:100%;margin-top:6px"></textarea></label><button class="btn fill" id="subGo">Construire la séance</button><p class="small err" id="subMsg"></p>`);
-    sheet.querySelector('#subGo').onclick=async()=>{ const gear=[...sheet.querySelectorAll('#subGear input:checked')].map(x=>x.value); const btn=sheet.querySelector('#subGo'); btn.disabled=true; btn.textContent='Le coach construit la séance…';
-      try{ await callCoach({mode:'substitute',sessionId:base.id,gear,note:sheet.querySelector('#subNote').value,week:curWeek()}); hideSheet(); toast('Séance adaptée','ok'); }
-      catch(e){ logErr('substitute',e); sheet.querySelector('#subMsg').textContent=humanErr(e); btn.disabled=false; btn.textContent='Réessayer'; } };
+    sheet.querySelector('#subGo').onclick=async()=>{ const gear=[...sheet.querySelectorAll('#subGear input:checked')].map(x=>x.value); const btn=sheet.querySelector('#subGo'); btn.disabled=true; btn.textContent=COACH_NAME+' construit la séance…'; startJob('reconstruit '+base.name,['Garde les mêmes muscles et la même intention','Choisit les exercices pour ton matériel','Règle séries, tempo et repos'],25000);
+      try{ await callCoach({mode:'substitute',sessionId:base.id,gear,note:sheet.querySelector('#subNote').value,week:curWeek()}); endJob(true,'Séance prête'); hideSheet(); toast('Séance adaptée','ok'); }
+      catch(e){ logErr('substitute',e); endJob(false,humanErr(e)); sheet.querySelector('#subMsg').textContent=humanErr(e); btn.disabled=false; btn.textContent='Réessayer'; } };
   };
   const so=$('#subOff'); if(so) so.onclick=()=>{ if(!USER) return; col('overrides').doc(curSession().id).set({substitute:firebase.firestore.FieldValue.delete(),updatedAt:Date.now()},{merge:true}).catch(()=>{}); toast('Séance prévue rétablie'); };
   $('#notes').onchange=e=>{ log.notes=e.target.value; touch(log); toast('Note enregistrée'); };
