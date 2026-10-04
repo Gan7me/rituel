@@ -114,6 +114,20 @@ async function claudeJSON(apiKey, model, system, messages, schema, maxTokens = 2
   return use.input;
 }
 
+// Démos visuelles : association de chaque exercice à une fiche photo (free-exercise-db, domaine public). Un seul appel par programme.
+const DEMO_IDS = require('./demo-ids.json'); const DEMO_SET = new Set(DEMO_IDS);
+const DEMO_SCHEMA = { type: 'object', required: ['map'], properties: { map: { type: 'array', items: { type: 'object', required: ['exId', 'demoId'], properties: { exId: { type: 'string' }, demoId: { type: 'string', description: 'Identifiant exact pris dans la liste fournie, ou "" si aucune fiche ne montre un mouvement proche.' } } } } } };
+async function mapDemos(apiKey, model, exercises) {
+  const list = exercises.filter(e => e && e.id && e.name).map(e => `${e.id} | ${e.name} | ${e.machine || ''} | ${e.target || ''}`);
+  if (!list.length) return {};
+  const user = `Pour chaque exercice ci-dessous, choisis dans la liste de fiches l'identifiant qui montre le mouvement le plus proche (même geste, même muscle cible ; une version barre, haltère, machine ou câble du même geste est acceptable si le geste est identique). Si rien n'est proche, renvoie "". Ne réponds qu'avec les identifiants de la liste.\n\nExercices (id | nom | matériel | cible) :\n${list.join('\n')}\n\nFiches disponibles :\n${DEMO_IDS.join(', ')}`;
+  try {
+    const parsed = await claudeJSON(apiKey, model, 'Tu associes des exercices de musculation à des fiches de démonstration. Réponds uniquement via l\'outil.', [{ role: 'user', content: user }], DEMO_SCHEMA, 3000);
+    const out = {}; (parsed.map || []).forEach(m => { if (m && m.exId && DEMO_SET.has(String(m.demoId || ''))) out[String(m.exId)] = String(m.demoId); });
+    return out;
+  } catch (e) { return {}; }
+}
+
 const ANALYSIS_SCHEMA = {
   type: 'object',
   required: ['title', 'verdict', 'exercises', 'adjustments', 'nextFocus'],
@@ -199,13 +213,13 @@ function applyGuardrails(prog, profile) {
 }
 function nextMonday() { const d = new Date(); const day = d.getDay(); const diff = day === 1 ? 0 : (8 - day) % 7; d.setDate(d.getDate() + diff); return d.toISOString().slice(0, 10); }
 
-const QUOTAS = { program: 4, analyse: 60, chat: 300, substitute: 12 }; // par mois et par compte : plafonne le coût IA
+const QUOTAS = { program: 4, analyse: 60, chat: 300, substitute: 12, demo: 10 }; // par mois et par compte : plafonne le coût IA
 async function checkQuota(uid, mode) {
   const month = new Date().toISOString().slice(0, 7);
   const ref = db.collection('users').doc(uid).collection('meta').doc('usage');
   return db.runTransaction(async tx => {
     const snap = await tx.get(ref); const d = snap.exists ? snap.data() : {};
-    const cur = d.month === month ? d : { month, program: 0, analyse: 0, chat: 0, substitute: 0, tokensIn: 0, tokensOut: 0, costUsd: 0 };
+    const cur = d.month === month ? d : { month, program: 0, analyse: 0, chat: 0, substitute: 0, demo: 0, tokensIn: 0, tokensOut: 0, costUsd: 0 };
     if ((cur[mode] || 0) >= QUOTAS[mode]) throw new HttpsError('resource-exhausted', `Quota mensuel atteint pour « ${mode} » (${QUOTAS[mode]}). Il se renouvelle le 1er du mois.`);
     cur[mode] = (cur[mode] || 0) + 1; cur.updatedAt = Date.now();
     tx.set(ref, cur); return cur;
@@ -244,8 +258,9 @@ exports.coach = onCall({ region: 'europe-west1', secrets: [ANTHROPIC_API_KEY], t
     const prog = applyGuardrails(normalizeProgram(parsed, nextMonday()), meta.profile);
     if (!prog.sessions.length) throw new HttpsError('internal', 'Programme vide, relance la génération.');
     prog.generatedAt = Date.now(); prog.model = model; prog.profileSnapshot = meta.profile;
-    await db.collection('users').doc(uid).collection('meta').doc('program').set(prog);
     await recordUsage(uid, 'program', model);
+    prog.demos = await mapDemos(apiKey, model, prog.sessions.flatMap(se => se.exercises)); prog.demosAt = Date.now(); if (Object.keys(prog.demos).length) await recordUsage(uid, 'demo', model);
+    await db.collection('users').doc(uid).collection('meta').doc('program').set(prog);
     return { ok: true, sessions: prog.sessions.length };
   }
 
@@ -286,9 +301,19 @@ exports.coach = onCall({ region: 'europe-west1', secrets: [ANTHROPIC_API_KEY], t
     const exercises = (parsed.exercises || []).map((e, j) => { const restSec = Math.max(20, Math.min(300, parseInt(e.restSec) || 60)); const sets = Math.max(1, Math.min(6, parseInt(e.sets) || 3)); const rir = Math.max(0, Math.min(4, parseInt(e.rir) || 2)); return { id: `${sid}-sub${j + 1}`, n: j + 1, name: String(e.name || 'Exercice'), machine: String(e.machine || ''), alt: '', star: false, sets, reps: String(e.reps || '10-15'), per: '', rir: Array(6).fill(rir), tempo: String(e.tempo || '2-1-1-0'), restSec, restText: restSec >= 60 ? Math.round(restSec / 60) + ' min' : restSec + ' s', mode: 'normal', replaces: String(e.replaces || ''), why: String(e.why || ''), target: String(e.target || ''), exec: String(e.exec || ''), seek: String(e.seek || ''), reco: '' }; });
     if (exercises.length < 3) throw new HttpsError('internal', 'Séance de remplacement incomplète, relance.');
     const cost = await recordUsage(uid, 'substitute', model);
+    const dm = await mapDemos(apiKey, model, exercises); exercises.forEach(e => { if (dm[e.id]) e.demo = dm[e.id]; }); if (Object.keys(dm).length) await recordUsage(uid, 'demo', model);
     const substitute = { name: String(parsed.name || ses.name + ' · sans salle'), intro: String(parsed.intro || ''), gear, exercises, date: new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Paris' }), createdAt: Date.now(), model, costUsd: cost };
     await db.collection('users').doc(uid).collection('overrides').doc(sid).set({ substitute, updatedAt: Date.now() }, { merge: true });
     return substitute;
+  }
+
+  if (mode === 'demo') {
+    // Programme déjà généré sans fiches : on les associe une fois et on les enregistre dans le programme.
+    const exercises = prog.sessions.flatMap(se => se.exercises);
+    const demos = await mapDemos(apiKey, model, exercises);
+    await db.collection('users').doc(uid).collection('meta').doc('program').set({ demos, demosAt: Date.now() }, { merge: true });
+    await recordUsage(uid, 'demo', model);
+    return { ok: true, demos };
   }
 
   if (mode === 'chat') {

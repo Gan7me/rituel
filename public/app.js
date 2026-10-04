@@ -12,7 +12,7 @@ function humanErr(e){ const c=(e&&e.code)||''; const m=(e&&e.message)||String(e|
   if(/network|Failed to fetch|internet/i.test(m)||!navigator.onLine) return 'Pas de réseau. Le coach a besoin d\'une connexion ; tes séries sont enregistrées et partiront toutes seules.';
   if(/invalid-argument/.test(c)) return 'Le serveur n\'a pas compris la demande (version de l\'app en retard ?). Recharge l\'application depuis Réglages.';
   return m; }
-const APP_VERSION='3.9.0';
+const APP_VERSION='3.10.0';
 let PROGRAM={sessions:[]};
 let WEEKS = [
   {n:1,label:'S1 calibrage',from:'2026-09-07',to:'2026-09-13',rirNote:'RIR 3 · établir les références, tout noter'},
@@ -233,9 +233,19 @@ function renderCoach(){
   if(!USER){ h+=`<p class="small muted">Connecte-toi (Réglages) pour activer le Coach : analyse de chaque séance, ajustement des charges, réponses sur ta progression.</p>`; el.innerHTML=h; return; }
   const date=todayISO(), ses=curSession(), log=S.logs[logKey(date,ses.id)];
   const todayAnalysed=COACH.items.some(i=>i.logKey===logKey(date,ses.id));
-  h+=`<div class="row2"><button class="btn acc" id="anaBtn" ${COACH.busy||!log||!Object.keys(log.sets||{}).length?'disabled':''}>${COACH.busy?'Analyse en cours…':todayAnalysed?'Ré-analyser la séance du jour':'Analyser la séance du jour'}</button></div>`;
-  h+=`<div class="chat">`+COACH.thread.map(m=>`<div class="msg ${m.role}">${(m.role==='assistant'?lexify(esc(m.content)):esc(m.content)).replace(/\n/g,'<br>')}</div>`).join('')+(COACH.busy&&COACH.thread.length&&COACH.thread[COACH.thread.length-1].role==='user'?'<div class="msg assistant muted">…</div>':'')+`</div>`;
-  h+=`<form class="ask" id="askForm"><input id="askInput" placeholder="Question au coach (charges, douleur, garde, nutrition…)" autocomplete="off"><button class="btn fill" type="submit" ${COACH.busy?'disabled':''}>Envoyer</button></form>`;
+  const hasSets=!!(log&&Object.keys(log.sets||{}).length);
+  // État du coach : ce qu'il surveille et la prochaine action utile.
+  const wk=curWeek(), W=WEEKS[wk-1]||{}; const a=WEEKS[0]?addDays(WEEKS[0].from,Math.max(0,Math.floor(Math.round((new Date(date+'T12:00:00')-new Date(WEEKS[0].from+'T12:00:00'))/86400000)/7))*7):date;
+  const weekDone=Object.values(S.logs).filter(l=>l.done&&l.date>=a&&l.date<=addDays(a,6)).length;
+  const pending=COACH.items.find(i=>i.adjustments&&i.adjustments.length&&!i.applied&&i.type!=='bilan');
+  let act='';
+  if(COACH.busy) act=`<button class="btn acc" disabled>Analyse en cours…</button>`;
+  else if(hasSets&&!todayAnalysed) act=`<button class="btn fill" id="anaBtn">Analyser la séance du jour</button>`;
+  else if(pending) act=`<button class="btn fill" data-apply="${esc(pending.id)}">Appliquer les charges · ${esc(pending.title||'')}</button>`;
+  else if(hasSets&&todayAnalysed) act=`<button class="btn" id="anaBtn">Ré-analyser la séance du jour</button>`;
+  h+=`<div class="cstat"><div class="cs-grid"><div><b>S${wk}</b><span>${esc(String(W.label||'').replace(/^S\d+\s*/,''))} · ${esc((W.rirNote||'').split('·')[0].trim())}</span></div><div><b>${weekDone}/${PROGRAM.sessions.length}</b><span>séances cette semaine</span></div><div><b>Dim. 19h</b><span>bilan hebdomadaire</span></div></div>
+    <p class="small muted">${pending?'Des charges ajustées attendent d\'être appliquées à la prochaine séance.':hasSets&&!todayAnalysed?'Ta séance du jour a des séries enregistrées : lance l\'analyse pour fixer les charges suivantes.':'Il analyse chaque séance terminée, relance après 3 jours sans séance et prépare le cycle suivant.'}</p>
+    <div class="row2">${act}<button class="btn ${act?'':'fill'}" id="chatBtn">Poser une question${COACH.thread.length?' · '+Math.ceil(COACH.thread.length/2):''}</button></div></div>`;
   h+=`<h3>Analyses</h3>`;
   if(!COACH.items.length) h+=`<div class="empty"><div class="ic">◎</div><b>Pas encore d'analyse</b><p class="small muted">Termine une séance : le coach l'analyse et fixe les charges de la prochaine.</p></div>`;
   COACH.items.forEach(it=>{
@@ -256,7 +266,7 @@ function renderCoach(){
     h+=`<div class="ana"><div class="anah"><b>${esc(it.title||it.logKey||'')}</b><span class="small muted">${it.createdAt?new Date(it.createdAt).toLocaleDateString('fr-FR'):''}</span></div>`;
     if(it.analysis){ const long=it.analysis.length>260; h+=`<div class="anab ${long?'clamp':''}" data-clamp>${lexify(esc(it.analysis)).replace(/\n/g,'<br>')}</div>${long?'<button class="link" data-unclamp>Lire la suite</button>':''}`; }
     if(exs.length){
-      h+=`<div class="exl2">`+exs.map(e=>{ const a=adjBy[e.exId]; return `<div class="exc"><div class="l1"><b>${esc(e.name)}</b><span class="st s-${esc(e.status||'ok')}">${lbl[e.status]||'OK'}</span></div><div class="l2"><span class="done">${esc(e.done||'—')}</span>${a?`<span class="arrow">→</span><span class="next">${esc(a.change)}</span>`:''}</div></div>`; }).join('')+`</div>`;
+      h+=`<div class="exl2">`+exs.map(e=>{ const a=adjBy[e.exId]; const fx=findEx(e.exId); return `<div class="exc ${fx&&demoId(fx)?'hasimg':''}">${fx?demoThumb(fx):''}<div class="l1"><b>${esc(e.name)}</b><span class="st s-${esc(e.status||'ok')}">${lbl[e.status]||'OK'}</span></div><div class="l2"><span class="done">${esc(e.done||'—')}</span>${a?`<span class="arrow">→</span><span class="next">${esc(a.change)}</span>`:''}</div></div>`; }).join('')+`</div>`;
       h+=`<details class="more"><summary>Le détail du coach</summary><div class="exl">${exs.map(e=>{ const a=adjBy[e.exId]; return `<div class="exr s-${esc(e.status||'ok')}"><i></i><div><b>${esc(e.name)}</b><div class="read">${lexify(esc(e.read||''))}${a&&a.reason?' <span class="muted">— '+lexify(esc(a.reason))+'</span>':''}</div></div></div>`; }).join('')}</div></details>`;
     }
     if(it.nextFocus) h+=`<p class="coachline"><b>Prochaine fois</b> ${lexify(esc(it.nextFocus))}</p>`;
@@ -266,11 +276,21 @@ function renderCoach(){
   el.innerHTML=h;
   el.querySelectorAll('[data-unclamp]').forEach(b=>b.onclick=()=>{ b.previousElementSibling.classList.remove('clamp'); b.remove(); });
   const ab=$('#anaBtn'); if(ab) ab.onclick=()=>analyseSession(logKey(date,ses.id));
-  $('#askForm').onsubmit=e=>{ e.preventDefault(); const v=$('#askInput').value; $('#askInput').value=''; askCoach(v); };
+  const cb=$('#chatBtn'); if(cb) cb.onclick=()=>{ COACH.chatOpen=true; renderChatSheet(); };
+  if(COACH.chatOpen) renderChatSheet();
   el.querySelectorAll('[data-apply]').forEach(b=>b.onclick=()=>applyOverride(COACH.items.find(i=>i.id===b.dataset.apply)));
   const nc=$('#nextCycleBtn'); if(nc) nc.onclick=()=>{ document.querySelector('.tabs button[data-tab="programme"]').click(); regenerateProgram(); };
   el.querySelectorAll('[data-goseance]').forEach(b=>b.onclick=()=>document.querySelector('.tabs button[data-tab="seance"]').click());
   updateCoachBadge();
+}
+function renderChatSheet(){
+  const s=$('#sheet'); if(COACH.chatOpen&&s&&s.classList.contains('on')&&!s.querySelector('#askForm')){ COACH.chatOpen=false; return; }
+  const thread=COACH.thread.length?COACH.thread.map(m=>`<div class="msg ${m.role}">${(m.role==='assistant'?lexify(esc(m.content)):esc(m.content)).replace(/\n/g,'<br>')}</div>`).join(''):`<p class="small muted center">Charges, douleur, garde, nutrition, remplacement d\'un exercice : il connaît ton programme et ton historique.</p>`;
+  const sheet=showSheet(`<h3>Question au coach</h3><div class="chat">${thread}${COACH.busy&&COACH.thread.length&&COACH.thread[COACH.thread.length-1].role==='user'?'<div class="msg assistant muted">…</div>':''}</div><form class="ask" id="askForm"><input id="askInput" placeholder="Ta question" autocomplete="off" enterkeyhint="send"><button class="btn fill" type="submit" ${COACH.busy?'disabled':''}>Envoyer</button></form>`);
+  sheet.classList.add('tall');
+  const c=sheet.querySelector('.chat'); if(c) c.scrollTop=c.scrollHeight;
+  $('#askForm').onsubmit=e=>{ e.preventDefault(); const v=$('#askInput').value; $('#askInput').value=''; askCoach(v); };
+  if(!COACH.busy&&COACH.thread.length) $('#askInput').focus({preventScroll:true});
 }
 function updateCoachBadge(){ const t=document.querySelector('.tabs button[data-tab="coach"]'); if(!t) return; const seen=S.coachSeen||0; const n=COACH.items.filter(i=>(i.createdAt||0)>seen).length; t.classList.toggle('badge',n>0&&t.getAttribute('aria-selected')!=='true'); }
 
@@ -400,7 +420,7 @@ async function saveProgram(prog, cycleHtml){
 function applyProgram(p){
   PROGRAM=p; if(p.weeks&&p.weeks.length) WEEKS=p.weeks; PROGRAM_LOADED=true; $('#weekChip').hidden=false;
   const sm=document.querySelector('.brand small'); if(sm) sm.textContent=p.cycleName||'';
-  restoreShell(); renderCycle(); render();
+  restoreShell(); renderCycle(); render(); ensureDemos();
 }
 function cycleHtml(){
   if(PROGRAM.cycleHtml) return PROGRAM.cycleHtml;
@@ -502,6 +522,34 @@ let FOCUS=false;
 function enterFocus(){ FOCUS=true; document.body.classList.add('focus'); renderSeance(); window.scrollTo({top:0}); requestWake(); }
 function exitFocus(){ if(!FOCUS) return; FOCUS=false; document.body.classList.remove('focus'); renderSeance(); }
 
+
+/* ---------- Démos visuelles des mouvements ---------- */
+const DEMO={base:window.__DEMO_BASE||'https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/',index:null,loading:null,asked:false};
+// Repli local quand le coach n'a pas encore associé les fiches : mots-clés français → fiche.
+const DEMO_GUESS=[[/traction.*(assist|machine)|chin.*assist/i,'Machine_Assisted_Chin-Up'],[/traction|pull[- ]?up/i,'Pullups'],[/chin[- ]?up|supination/i,'Chin-Up'],[/dips?\b/i,'Dips_-_Triceps_Version'],[/hack/i,'Hack_Squat'],[/presse|leg press/i,'Leg_Press'],[/pendulum|belt squat/i,'Hack_Squat'],[/squat.*(avant|front)|front squat/i,'Front_Barbell_Squat'],[/squat.*(goblet)/i,'Goblet_Squat'],[/squat/i,'Barbell_Full_Squat'],[/fente|lunge|split/i,'Dumbbell_Lunges'],[/leg curl.*(couch|allong)|lying leg curl/i,'Lying_Leg_Curls'],[/leg curl|ischio/i,'Seated_Leg_Curl'],[/leg ext|extension.*(jambe|quad)/i,'Leg_Extensions'],[/soulev.*terre.*(jambes? tendues|roumain)|rdl|romanian/i,'Romanian_Deadlift'],[/soulev.*terre|deadlift/i,'Barbell_Deadlift'],[/hip thrust/i,'Barbell_Hip_Thrust'],[/mollet.*(assis)|seated calf/i,'Seated_Calf_Raise'],[/mollet|calf/i,'Standing_Calf_Raises'],[/d[ée]velopp[ée].*(inclin|incline)/i,'Incline_Dumbbell_Press'],[/d[ée]velopp[ée].*(d[ée]clin|decline)/i,'Decline_Barbell_Bench_Press'],[/d[ée]velopp[ée].*(couch|bench).*halt/i,'Dumbbell_Bench_Press'],[/d[ée]velopp[ée].*(couch|bench)|bench press/i,'Barbell_Bench_Press_-_Medium_Grip'],[/d[ée]velopp[ée].*(militaire|[ée]paule|overhead|shoulder)|press.*[ée]paule/i,'Dumbbell_Shoulder_Press'],[/chest press|press.*(pector|poitrine)/i,'Machine_Bench_Press'],[/pec[- ]?deck|butterfly|[ée]cart[ée].*(machine|poulie)|fly/i,'Butterfly'],[/[ée]cart[ée]/i,'Dumbbell_Flyes'],[/crossover|poulie.*(vis|crois)/i,'Cable_Crossover'],[/tirage.*(vertical|haut)|lat ?pull/i,'Wide-Grip_Lat_Pulldown'],[/tirage.*(horizontal|bas)|seated row|rowing.*(poulie|c[âa]ble)/i,'Seated_Cable_Rows'],[/rowing.*(halt|unilat|un bras)|one[- ]arm/i,'One-Arm_Dumbbell_Row'],[/rowing.*(barre|pench)|bent.?over/i,'Bent_Over_Barbell_Row'],[/rowing|row\b/i,'Seated_Cable_Rows'],[/face ?pull/i,'Face_Pull'],[/pull[- ]?over/i,'Straight-Arm_Dumbbell_Pullover'],[/[ée]l[ée]vation.*lat|lateral raise/i,'Side_Lateral_Raise'],[/[ée]l[ée]vation.*(front|avant)/i,'Front_Dumbbell_Raise'],[/oiseau|rear delt|reverse (fly|pec)/i,'Seated_Bent-Over_Rear_Delt_Raise'],[/shrug|haussement/i,'Dumbbell_Shrug'],[/curl.*(marteau|hammer)/i,'Hammer_Curls'],[/curl.*(inclin|incline)/i,'Incline_Dumbbell_Curl'],[/curl.*(pupitre|larry|preacher|scott)/i,'Preacher_Curl'],[/curl.*(poulie|c[âa]ble)/i,'Cable_Hammer_Curls_-_Rope_Attachment'],[/curl.*(barre|ez)/i,'Barbell_Curl'],[/curl/i,'Dumbbell_Bicep_Curl'],[/skull|barre au front|triceps.*(couch|allong)/i,'Lying_Triceps_Press'],[/extension.*(poulie|corde|c[âa]ble)|push ?down|pushdown/i,'Triceps_Pushdown_-_Rope_Attachment'],[/extension.*(nuque|overhead|au[- ]dessus)/i,'Standing_Dumbbell_Triceps_Extension'],[/kick ?back/i,'Tricep_Dumbbell_Kickback'],[/pompes?|push[- ]?up/i,'Pushups'],[/gainage|planche|plank/i,'Plank'],[/crunch.*(poulie|c[âa]ble)/i,'Cable_Crunch'],[/relev[ée].*jambes|leg raise|hanging/i,'Hanging_Leg_Raise'],[/crunch|abdo/i,'Crunches'],[/farmer/i,'Farmers_Walk'],[/suspension.*(barre)|dead ?hang|grip|avant[- ]bras/i,'Wrist_Curl'],[/good ?morning/i,'Good_Morning'],[/kettlebell swing|swing/i,'Kettlebell_Swing'],[/muscle[- ]?up/i,'Pullups']];
+function demoId(ex){ if(!ex) return null; if(ex.demo) return ex.demo; const m=(PROGRAM.demos||{})[ex.id]; if(m) return m; const t=(ex.name||'')+' '+(ex.machine||''); const g=DEMO_GUESS.find(([re])=>re.test(t)); return g?g[1]:null; }
+function demoImg(id,i){ return DEMO.base+encodeURIComponent(id)+'/'+i+'.jpg'; }
+function loadDemoIndex(){ if(DEMO.index) return Promise.resolve(DEMO.index); if(!DEMO.loading) DEMO.loading=fetch('demo/index.json').then(r=>r.json()).then(a=>{ DEMO.index={}; a.forEach(x=>DEMO.index[x.i]=x); return DEMO.index; }).catch(()=>{ DEMO.loading=null; return {}; }); return DEMO.loading; }
+// Programme généré avant les fiches : on demande l'association au coach une seule fois, elle est enregistrée dans le programme.
+async function ensureDemos(){ if(DEMO.asked||!USER||!navigator.onLine||!PROGRAM_LOADED||!PROGRAM.sessions.length||PROGRAM.demos||PROGRAM.demosAt) return; DEMO.asked=true; try{ await callCoach({mode:'demo'}); }catch(e){ logErr('demo',e); } }
+function demoStrip(ex,cls){ const id=demoId(ex); if(!id) return ''; return `<button class="demo ${cls||''}" data-demo="${esc(ex.id)}" aria-label="Voir le mouvement"><img src="${demoImg(id,0)}" alt="" loading="lazy"><i class="arr">›</i><img src="${demoImg(id,1)}" alt="" loading="lazy"><span>Voir le mouvement</span></button>`; }
+function demoThumb(ex){ const id=demoId(ex); if(!id) return ''; return `<button class="dthumb" data-demo="${esc(ex.id)}" aria-label="Voir le mouvement"><img src="${demoImg(id,1)}" alt="" loading="lazy"></button>`; }
+function findEx(exId){ for(const s of PROGRAM.sessions){ const e=s.exercises.find(x=>x.id===exId); if(e) return e; const sub=((S.overrides||{})[s.id]||{}).substitute; if(sub){ const e2=(sub.exercises||[]).find(x=>x.id===exId); if(e2) return e2; } } return null; }
+let demoAnim=0;
+async function showDemo(ex){
+  if(!ex) return; const id=demoId(ex);
+  const yt='https://www.youtube.com/results?search_query='+encodeURIComponent((ex.name||'')+' '+(ex.machine||'').split('·')[0]+' exécution');
+  let d='<dl class="dl">'; if(ex.target) d+=`<dt>Cible</dt><dd>${esc(ex.target)}</dd>`; if(ex.exec) d+=`<dt>Exécution</dt><dd>${esc(ex.exec)}</dd>`; if(ex.why) d+=`<dt>Pourquoi</dt><dd>${esc(ex.why)}</dd>`; if(ex.seek) d+=`<dt class="seek">Ce qu'on cherche</dt><dd>${esc(ex.seek)}</dd>`; if(ex.reco) d+=`<dt>Reconnaître la machine</dt><dd>${esc(ex.reco)}</dd>`; d+='</dl>';
+  const links=`<div class="row2 dlinks">${ex.url?`<a class="btn sm" href="${esc(ex.url)}" target="_blank" rel="noopener" data-ext>Photo de la machine ↗</a>`:''}<a class="btn sm" href="${yt}" target="_blank" rel="noopener" data-ext>Vidéo ↗</a></div>`;
+  const p=rx(ex,curWeek()); const rxh=`<div class="rx"><b>${p.sets} × ${esc(p.reps)}</b>${p.rir!=null?`<b data-lex="rir"><i>RIR</i>${p.rir}</b>`:''}<b data-lex="tempo"><i>tempo</i>${esc(ex.tempo||'')}</b><b><i>repos</i>${esc(p.restText||'')}</b></div>`;
+  const sheet=showSheet(`<h3>${esc(ex.name)}</h3><p class="small muted">${esc(ex.machine||'')}${ex.alt?' · alternative : '+esc(ex.alt):''}</p>${id?`<div class="dplay" id="dplay"><img src="${demoImg(id,0)}" alt="Position de départ" class="on"><img src="${demoImg(id,1)}" alt="Position d'arrivée"><div class="dcap"><span class="on">Départ</span><span>Arrivée</span></div></div><div class="mmap-slot" id="mslot"></div>`:`<p class="hint">Pas de photos pour ce mouvement. La vidéo ci-dessous montre l'exécution.</p>`}${rxh}${links}${d}<button class="btn" onclick="hideSheet()">Fermer</button>`);
+  sheet.querySelectorAll('[data-lex]').forEach(b=>b.onclick=e=>{ e.stopPropagation(); showLex(b.dataset.lex); });
+  clearInterval(demoAnim);
+  if(id){ let k=0; demoAnim=setInterval(()=>{ const p=$('#dplay'); if(!p||!sheet.classList.contains('on')){ clearInterval(demoAnim); return; } k=1-k; p.querySelectorAll('img').forEach((im,i)=>im.classList.toggle('on',i===k)); p.querySelectorAll('.dcap span').forEach((c,i)=>c.classList.toggle('on',i===k)); },1100);
+    const idx=await loadDemoIndex(); const info=idx[id]; const slot=$('#mslot'); if(info&&slot&&window.muscleMap) slot.innerHTML=muscleMap(info.p,info.s); }
+}
+document.addEventListener('click',e=>{ const b=e.target.closest&&e.target.closest('[data-demo]'); if(b){ e.preventDefault(); e.stopPropagation(); showDemo(findEx(b.dataset.demo)); } },true);
+
 /* ---------- render: séance ---------- */
 function render(){ if(!PROGRAM.sessions.length||!PROGRAM_LOADED||!$('#tab-seance')) return; renderHome(); renderSeance(); renderProgramme(); renderSuivi(); renderReglages(); renderCoach(); const w=WEEKS[curWeek()-1]; $('#weekChip').textContent=`Semaine ${w.n}`; }
 
@@ -535,7 +583,7 @@ const LEX_TERMS=[['rir',/\bRIR\b/g],['tempo',/\btempo\b/gi],['emom',/\bEMOM\b/g]
 function lexify(escapedHtml){ let h=String(escapedHtml||''); LEX_TERMS.forEach(([k,re])=>{ h=h.replace(re,m=>`<button class="lx" data-lex="${k}">${m}</button>`); }); return h; }
 document.addEventListener('click',e=>{ const b=e.target.closest&&e.target.closest('.lx[data-lex]'); if(b){ e.preventDefault(); e.stopPropagation(); showLex(b.dataset.lex); } },true);
 function showSheet(html){ let s=$('#sheet'); if(!s){ s=document.createElement('div'); s.id='sheet'; s.innerHTML='<div class="sheet-bg"></div><div class="sheet-card" role="dialog"><div class="sheet-grip"></div><div class="sheet-body"></div></div>'; document.body.appendChild(s); s.querySelector('.sheet-bg').onclick=hideSheet; } s.querySelector('.sheet-body').innerHTML=html; s.classList.add('on'); document.body.style.overflow='hidden'; return s; }
-function hideSheet(){ const s=$('#sheet'); if(s){ s.classList.remove('on'); document.body.style.overflow=''; } }
+function hideSheet(){ const s=$('#sheet'); if(s){ s.classList.remove('on'); s.classList.remove('tall'); document.body.style.overflow=''; } COACH.chatOpen=false; }
 function showLex(key){ const l=LEX[key]; if(!l) return; showSheet(`<h3>${esc(l[0])}</h3><p>${esc(l[1])}</p><button class="btn" onclick="hideSheet()">Compris</button>`); }
 let toastT=0; function toast(msg,cls){ let t=$('#toast'); if(!t){ t=document.createElement('div'); t.id='toast'; document.body.appendChild(t); } t.textContent=msg; t.className='on '+(cls||''); clearTimeout(toastT); toastT=setTimeout(()=>t.className='',1800); }
 function rirLabel(v){ return v==null?'':v>=3?'F':v>=1?'J':'É'; }
@@ -577,6 +625,7 @@ function renderSeance(){
     }
     h+=`<div class="ex cur ${complete?'complete':''} ${skip?'skipped':''}" data-ex="${ex.id}"><div class="exh"><span class="n">${ex.n}</span><span class="name">${esc(ex.name)}${ex.star?'<button class="star" data-lex="star">★</button>':''}</span>${alt?'<span class="tag">alternative</span>':''}${skip?'<span class="tag">sauté</span>':''}<button class="more-btn" data-menu="${ex.id}" aria-label="Options">⋯</button></div>`;
     h+=`<p class="mach clamp1" data-expand>${esc(ex.machine)}${ex.alt?' <span class="muted">· alt. '+esc(ex.alt)+'</span>':''}</p>`;
+    h+=demoStrip(ex);
     h+=`<div class="rx"><b>${p.sets} × ${esc(p.reps)}${ex.per?' '+esc(ex.per):''}</b>${p.rir!=null?`<b data-lex="rir"><i>RIR</i>${p.rir}</b>`:''}<b data-lex="tempo"><i>tempo</i>${esc(ex.tempo)}</b><b><i>repos</i>${esc(p.restText)}</b>${ex.mode==='emom'?'<b data-lex="emom">EMOM</b>':''}</div>`;
     if(o) h+=`<p class="coachline"><b>Coach</b> ${esc(o.change)}</p>`;
     let tgtW=null;
@@ -638,13 +687,13 @@ function renderSeance(){
       const flags=(log.flags||{})[exId]||{};
       const sheet=showSheet(`<h3>${esc(ex.name)}</h3><p class="small muted">${esc(ex.machine)}${ex.alt?' · alternative : '+esc(ex.alt):''}${ex.replaces?' · remplace '+esc(ex.replaces):''}</p>
         <div class="menu">
-          <button data-act="explain">Pourquoi cet exercice, comment l'exécuter</button>
+          <button data-act="explain">Voir le mouvement, pourquoi cet exercice, exécution</button>
           ${ex.url?`<a href="${esc(ex.url)}" target="_blank" rel="noopener" data-ext>Voir la machine ↗</a>`:''}
           <button data-act="alt">${flags.alt?'✓ Alternative utilisée (annuler)':'Machine absente, j\'utilise l\'alternative'}</button>
           <button data-act="skip">${flags.skip?'✓ Exercice sauté (annuler)':'Sauter cet exercice aujourd\'hui'}</button>
           <div class="row2"><span class="small muted">Chrono</span><button class="btn sm" data-rest="60">1:00</button><button class="btn sm" data-rest="120">2:00</button><button class="btn sm" data-rest="180">3:00</button></div>
         </div>`);
-      sheet.querySelectorAll('[data-act]').forEach(x=>x.onclick=()=>{ const act=x.dataset.act; if(act==='explain'){ let d='<dl class="dl">'; if(ex.reco) d+=`<dt>Reconnaître la machine</dt><dd>${esc(ex.reco)}</dd>`; if(ex.why) d+=`<dt>Pourquoi</dt><dd>${esc(ex.why)}</dd>`; if(ex.target) d+=`<dt>Cible</dt><dd>${esc(ex.target)}</dd>`; if(ex.exec) d+=`<dt>Exécution</dt><dd>${esc(ex.exec)}</dd>`; if(ex.seek) d+=`<dt class="seek">Ce qu'on cherche</dt><dd>${esc(ex.seek)}</dd>`; d+='</dl>'; showSheet(`<h3>${esc(ex.name)}</h3>${d}<button class="btn" onclick="hideSheet()">Fermer</button>`); return; }
+      sheet.querySelectorAll('[data-act]').forEach(x=>x.onclick=()=>{ const act=x.dataset.act; if(act==='explain'){ showDemo(ex); return; }
         log.flags=log.flags||{}; const f=log.flags[exId]||(log.flags[exId]={}); f[act]=!f[act]; touch(log); hideSheet(); if(act==='skip'&&f.skip) S.openEx=null; save(); renderSeance(); });
       sheet.querySelectorAll('[data-rest]').forEach(x=>x.onclick=()=>{ startTimer(+x.dataset.rest,`Repos · ${ex.name}`,''); hideSheet(); });
     };
@@ -675,16 +724,13 @@ function renderProgramme(){
   const wk=curWeek(); let h=`<h2>Programme</h2><p class="small muted">${esc(PROGRAM.cycleName||'')} · <button class="lx" data-lex="mesocycle">mésocycle</button> de ${WEEKS.length} semaines · semaine ${wk} affichée${PROGRAM.cycleReason?'<br><span class="small">'+esc(PROGRAM.cycleReason)+'</span>':''}</p><div class="row2"><button class="btn sm" id="regenBtn">Nouveau cycle avec le coach</button></div>`;
   PROGRAM.sessions.forEach(s=>{
     h+=`<h3>${esc(s.dayName)} — ${esc(s.name)} <span class="muted small">(${esc(s.sub)})</span></h3><div class="pcard">`;
-    s.exercises.forEach(ex=>{ const p=rx(ex,wk); h+=`<div class="prow" data-pex="${ex.id}"><span class="n">${ex.n}</span><span class="nm">${esc(ex.name)}${ex.star?' <span style="color:var(--accent)">★</span>':''}</span><span class="rx2">${p.sets}×${esc(p.reps)}</span></div>`; });
+    s.exercises.forEach(ex=>{ const p=rx(ex,wk); const did=demoId(ex); h+=`<div class="prow" data-pex="${ex.id}">${did?`<img class="pimg" src="${demoImg(did,1)}" alt="" loading="lazy">`:`<span class="n">${ex.n}</span>`}<span class="nm">${esc(ex.name)}${ex.star?' <span style="color:var(--accent)">★</span>':''}</span><span class="rx2">${p.sets}×${esc(p.reps)}</span></div>`; });
     h+=`</div>`;
   });
   h+=`<details class="cyc doc"><summary>Lire le cycle</summary>${cycleHtml()}</details>`;
   $('#tab-programme').innerHTML=h;
   const rb=$('#regenBtn'); if(rb) rb.onclick=regenerateProgram;
-  $('#tab-programme').querySelectorAll('[data-pex]').forEach(r=>r.onclick=()=>{ const ex=PROGRAM.sessions.flatMap(x=>x.exercises).find(e=>e.id===r.dataset.pex); if(!ex) return; const p=rx(ex,wk);
-    let d=`<h3>${esc(ex.name)}</h3><div class="rx"><b>${p.sets} × ${esc(p.reps)}</b>${p.rir!=null?`<b><i>RIR</i>${p.rir}</b>`:''}<b><i>tempo</i>${esc(ex.tempo)}</b><b><i>repos</i>${esc(p.restText)}</b></div><p class="small muted">${esc(ex.machine)}${ex.alt?' · alternative : '+esc(ex.alt):''}</p><dl class="dl">`;
-    if(ex.reco) d+=`<dt>Reconnaître la machine</dt><dd>${esc(ex.reco)}</dd>`; if(ex.why) d+=`<dt>Pourquoi</dt><dd>${esc(ex.why)}</dd>`; if(ex.target) d+=`<dt>Cible</dt><dd>${esc(ex.target)}</dd>`; if(ex.exec) d+=`<dt>Exécution</dt><dd>${esc(ex.exec)}</dd>`; if(ex.seek) d+=`<dt class="seek">Ce qu'on cherche</dt><dd>${esc(ex.seek)}</dd>`;
-    showSheet(d+`</dl>${ex.url?`<a class="btn" href="${esc(ex.url)}" target="_blank" rel="noopener">Voir la machine ↗</a>`:''}<button class="btn" onclick="hideSheet()">Fermer</button>`); });
+  $('#tab-programme').querySelectorAll('[data-pex]').forEach(r=>r.onclick=()=>{ const ex=PROGRAM.sessions.flatMap(x=>x.exercises).find(e=>e.id===r.dataset.pex); if(ex) showDemo(ex); });
 }
 
 

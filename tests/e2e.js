@@ -47,8 +47,14 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   const srv = await serve();
   const b = await puppeteer.launch({ executablePath: CHROME, args: ['--no-sandbox', '--disable-gpu'], headless: true });
   const p = await b.newPage(); await p.setViewport({ width: 390, height: 844, deviceScaleFactor: 2, isMobile: true });
+  p.on('error', e => console.log('  ! page crash : ' + e.message));
+  p.on('dialog', d => { console.log('  ! dialogue : ' + d.message()); d.accept(); });
   p.on('pageerror', e => { errors.push(e.message); console.log('  ! erreur JS : ' + e.message); });
   await p.evaluateOnNewDocument(stub);
+  // Pas de service worker pendant le test : son activation recharge la page (controllerchange) et casse les handles Puppeteer.
+  await p.evaluateOnNewDocument(() => { try { Object.defineProperty(navigator, 'serviceWorker', { value: { register: () => new Promise(() => {}), getRegistration: async () => null, addEventListener() {}, controller: null }, configurable: true }); } catch (e) {} });
+  // Photos de démonstration : image locale (data URL) pour ne pas dépendre du réseau.
+  await p.evaluateOnNewDocument(() => { window.__DEMO_BASE = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==#'; });
   const prog = JSON.parse(fs.readFileSync(path.join(ROOT, 'program.json'), 'utf8'));
   const base = `http://localhost:${PORT}/index.html`;
 
@@ -134,8 +140,19 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   assert(await p.$('.ana.nudge'), 'relance affichée');
   await p.evaluate(() => document.querySelector('[data-apply="a1"]').click()); await sleep(200);
   assert(await p.evaluate(() => window.__writes.some(w => w.name === 'overrides' && w.id === 'jambesA')), 'ajustements appliqués');
-  await p.type('#askInput', 'Question ?'); await p.click('#askForm button[type=submit]'); await sleep(200);
-  assert((await p.$$('.msg')).length >= 2, 'chat : question et réponse');
+  assert(await p.$('.cstat .cs-grid'), 'coach : carte d\'état');
+  assert((await p.$$('.exc.hasimg .dthumb img')).length >= 1, 'coach : photo du mouvement dans l\'analyse');
+  await p.click('#chatBtn'); await sleep(250);
+  assert(await p.$('#sheet.on #askForm'), 'chat ouvert en feuille');
+  await p.type('#askInput', 'Question ?'); await p.click('#askForm button[type=submit]'); await sleep(300);
+  assert((await p.$$('#sheet .msg')).length >= 2, 'chat : question et réponse');
+  await p.evaluate(() => hideSheet()); await sleep(200);
+  await p.click('.tabs button[data-tab="seance"]'); await sleep(200);
+  assert(await p.$('.ex.cur .demo img'), 'séance : photos départ / arrivée du mouvement');
+  await p.evaluate(() => document.querySelector('.ex.cur .demo').click()); await sleep(400);
+  assert(await p.$('#sheet.on #dplay'), 'fiche mouvement ouverte');
+  assert(await p.$('#sheet.on .mmap .m.p'), 'carte musculaire avec muscle cible');
+  await p.evaluate(() => hideSheet()); await sleep(200);
 
   console.log('Suivi, Programme, Réglages');
   await p.click('.tabs button[data-tab="suivi"]'); await sleep(200);
