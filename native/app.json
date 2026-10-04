@@ -64,7 +64,9 @@
     ],
     "extra": {
       "webUrl": "https://rituel-6b365.web.app",
-      "eas": {}
+      "eas": {
+        "projectId": "3e1b316a-757c-4229-a194-762584bda052"
+      }
     }
   }
 }
