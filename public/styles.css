@@ -743,3 +743,27 @@ body.focus #jobbar{bottom:calc(16px + env(safe-area-inset-bottom))}
 .wkb .bar{height:52px}
 .lx{cursor:pointer}
 span.lx{background:none;padding:0;font:inherit;color:inherit;text-decoration:underline dotted var(--accent);text-underline-offset:3px}
+
+/* ===== v3.13 — barre d'onglets flottante (capsule, se réduit au défilement) ===== */
+:root{--tabh:60px}
+.tabs{left:14px;right:14px;bottom:calc(10px + env(safe-area-inset-bottom));height:var(--tabh);padding:0 6px;border-radius:999px;border:1px solid color-mix(in srgb,var(--ink) 8%,transparent);background:color-mix(in srgb,var(--surface) 78%,transparent);-webkit-backdrop-filter:saturate(180%) blur(24px);backdrop-filter:saturate(180%) blur(24px);box-shadow:0 10px 30px -10px rgba(0,0,0,.35),0 1px 0 rgba(255,255,255,.4) inset;max-width:520px;margin:0 auto;transition:transform .28s cubic-bezier(.2,.8,.2,1),opacity .2s;transform-origin:50% 100%}
+.tabs.hide{transform:translateY(calc(100% + 14px + env(safe-area-inset-bottom))) scale(.96);opacity:0;pointer-events:none}
+.tabs button{position:relative;gap:2px;padding:0;margin:6px 0;border-radius:999px;font-size:11px;color:var(--muted)}
+.tabs button span{line-height:1}
+.tabs button svg{width:24px;height:24px}
+.tabs button[aria-selected="true"]{background:color-mix(in srgb,var(--ink) 92%,transparent);color:var(--bg);font-weight:600}
+.tabs button[aria-selected="true"] svg *{stroke-width:2.2}
+.tabs .tabmk{display:block;width:22px;height:24px;background:currentColor;-webkit-mask:url(icons/mark-mask.png) center/contain no-repeat;mask:url(icons/mark-mask.png) center/contain no-repeat}
+.tabs button.badge::after{top:5px;left:calc(50% + 9px);border-color:var(--bg)}
+.timer{bottom:calc(var(--tabh) + 22px + env(safe-area-inset-bottom))}
+#jobbar{bottom:calc(var(--tabh) + 22px + env(safe-area-inset-bottom))}
+body{padding-bottom:calc(var(--tabh) + 40px + env(safe-area-inset-bottom))}
+body.hasjob{padding-bottom:calc(var(--tabh) + 120px + env(safe-area-inset-bottom))}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]) .tabs{box-shadow:0 10px 30px -10px rgba(0,0,0,.8),0 1px 0 rgba(255,255,255,.06) inset;border-color:rgba(255,255,255,.08)} }
+:root[data-theme="dark"] .tabs{box-shadow:0 10px 30px -10px rgba(0,0,0,.8),0 1px 0 rgba(255,255,255,.06) inset;border-color:rgba(255,255,255,.08)}
+.tabs button{font-size:10.5px;padding:0 4px;letter-spacing:-.01em}
+.tabs button span{max-width:100%;overflow:hidden;text-overflow:ellipsis}
+.tabs button[aria-selected="true"]{flex:1.35 1 0;background:color-mix(in srgb,var(--ink) 10%,transparent);color:var(--ink)}
+.tabs button[aria-selected="true"] svg,.tabs button[aria-selected="true"] .tabmk{color:var(--accent)}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]) .tabs{background:color-mix(in srgb,var(--surface) 90%,transparent)} }
+:root[data-theme="dark"] .tabs{background:color-mix(in srgb,var(--surface) 90%,transparent)}
