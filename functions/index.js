@@ -12,12 +12,14 @@ admin.initializeApp();
 const db = admin.firestore();
 const ANTHROPIC_API_KEY = defineSecret('ANTHROPIC_API_KEY');
 const MODEL = defineString('COACH_MODEL', { default: 'auto' });
+// Base de l'API (surchargée par l'émulateur de test, qui pointe vers un modèle simulé).
+const API_BASE = process.env.ANTHROPIC_BASE_URL || 'https://api.anthropic.com';
 let resolvedModel = null;
 // 'auto' : choisit le Sonnet le plus récent disponible sur le compte (bon rapport qualité/coût pour ce coach).
 async function resolveModel(apiKey, wanted) {
   if (wanted && wanted !== 'auto') return wanted;
   if (resolvedModel) return resolvedModel;
-  const r = await fetch('https://api.anthropic.com/v1/models?limit=100', { headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' } });
+  const r = await fetch(API_BASE + '/v1/models?limit=100', { headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' } });
   if (r.status === 401) throw new HttpsError('failed-precondition', 'Clé API Anthropic refusée (401). La clé enregistrée côté serveur est invalide ou révoquée : régénère une clé sur console.anthropic.com et enregistre-la à nouveau.');
   if (!r.ok) throw new HttpsError('internal', 'Impossible de lister les modèles Anthropic (' + r.status + ').');
   const ids = ((await r.json()).data || []).map(m => m.id);
@@ -105,7 +107,7 @@ async function recordUsage(uid, mode, model) {
 const TOOL_MODE = {};
 async function claudeJSON(apiKey, model, system, messages, schema, maxTokens = 2500) {
   const tool = { name: 'reponse', description: 'Réponse structurée du coach.', input_schema: schema };
-  const call = async (forced) => fetch('https://api.anthropic.com/v1/messages', {
+  const call = async (forced) => fetch(API_BASE + '/v1/messages', {
     method: 'POST',
     headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
     body: JSON.stringify({ model, max_tokens: maxTokens, system: forced ? system : system + '\n\nRéponds obligatoirement en appelant l\'outil « reponse », sans texte libre.', messages, tools: [tool], tool_choice: forced ? { type: 'tool', name: 'reponse' } : { type: 'auto' } })
@@ -156,7 +158,7 @@ const ANALYSIS_SCHEMA = {
 };
 
 async function claude(apiKey, model, system, messages, maxTokens = 1500) {
-  const r = await fetch('https://api.anthropic.com/v1/messages', {
+  const r = await fetch(API_BASE + '/v1/messages', {
     method: 'POST',
     headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
     body: JSON.stringify({ model, max_tokens: maxTokens, system, messages })
@@ -228,7 +230,8 @@ function applyGuardrails(prog, profile) {
 }
 function nextMonday() { const d = new Date(); const day = d.getDay(); const diff = day === 1 ? 0 : (8 - day) % 7; d.setDate(d.getDate() + diff); return d.toISOString().slice(0, 10); }
 
-const QUOTAS = { program: 4, analyse: 60, chat: 300, substitute: 12, demo: 10 }; // par mois et par compte : plafonne le coût IA
+const QUOTAS = { program: 6, analyse: 60, chat: 300, substitute: 12, demo: 10 };
+async function refundQuota(uid, mode) { try { await db.collection('users').doc(uid).collection('meta').doc('usage').set({ [mode]: admin.firestore.FieldValue.increment(-1) }, { merge: true }); } catch (e) {} } // par mois et par compte : plafonne le coût IA
 async function checkQuota(uid, mode) {
   const month = new Date().toISOString().slice(0, 7);
   const ref = db.collection('users').doc(uid).collection('meta').doc('usage');
@@ -278,12 +281,15 @@ async function coachImpl(req) {
     const safety = { debutant: 'Débutant : 3 séances max, 4 à 6 exercices par séance, 12 à 16 séries, RIR jamais sous 2, pas de techniques d\'intensification, machines guidées et mouvements simples, échauffement détaillé, aucune charge suggérée en kg.', intermediaire: 'Intermédiaire : 16 à 22 séries par séance, RIR 3 → 1, une seule technique d\'intensification en S3.', confirme: 'Confirmé : 22 à 28 séries, RIR jusqu\'à 0 sur les isolations en S3, intensification ciblée.', avance: 'Avancé : volume et intensité d\'athlète, techniques d\'intensification justifiées.' }[(meta.profile || {}).level] || '';
     const constraints = (meta.profile || {}).constraints ? `Respecte strictement les contraintes déclarées (blessures, douleurs, métier) : exclus tout exercice qui les sollicite et propose une alternative. ` : '';
     const user = `Construis le mésocycle de 4 semaines de cet athlète (départ le ${nextMonday()}). Sois concret et exigeant au niveau déclaré. ${safety} ${constraints}${PROGRAM_SCHEMA}`;
-    const text = await claude(apiKey, model, sys, [{ role: 'user', content: user }], 16000);
-    let parsed;
-    try { parsed = JSON.parse(text.slice(text.indexOf('{'), text.lastIndexOf('}') + 1)); }
-    catch (e) { throw new HttpsError('internal', 'Le coach a renvoyé un programme illisible, relance la génération.'); }
-    const prog = applyGuardrails(normalizeProgram(parsed, nextMonday()), meta.profile);
-    if (!prog.sessions.length) throw new HttpsError('internal', 'Programme vide, relance la génération.');
+    let prog;
+    try {
+      const text = await claude(apiKey, model, sys, [{ role: 'user', content: user }], 16000);
+      let parsed;
+      try { parsed = JSON.parse(text.slice(text.indexOf('{'), text.lastIndexOf('}') + 1)); }
+      catch (e) { throw new HttpsError('internal', 'Le coach a renvoyé un programme illisible, relance la génération.'); }
+      prog = applyGuardrails(normalizeProgram(parsed, nextMonday()), meta.profile);
+      if (!prog.sessions.length) throw new HttpsError('internal', 'Programme vide, relance la génération.');
+    } catch (e) { await refundQuota(uid, 'program'); throw e; } // un échec ne consomme pas une génération
     prog.generatedAt = Date.now(); prog.model = model; prog.profileSnapshot = meta.profile;
     await recordUsage(uid, 'program', model);
     prog.demos = await mapDemos(apiKey, model, prog.sessions.flatMap(se => se.exercises)); prog.demosAt = Date.now(); if (Object.keys(prog.demos).length) await recordUsage(uid, 'demo', model);

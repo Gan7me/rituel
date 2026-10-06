@@ -12,7 +12,7 @@ function humanErr(e){ const c=(e&&e.code)||''; const m=(e&&e.message)||String(e|
   if(/network|Failed to fetch|internet/i.test(m)||!navigator.onLine) return 'Pas de réseau. Le coach a besoin d\'une connexion ; tes séries sont enregistrées et partiront toutes seules.';
   if(/invalid-argument/.test(c)) return 'Le serveur n\'a pas compris la demande (version de l\'app en retard ?). Recharge l\'application depuis Réglages.';
   return m; }
-const APP_VERSION='3.13.3';
+const APP_VERSION='3.13.4';
 let PROGRAM={sessions:[]};
 let WEEKS = [
   {n:1,label:'S1 calibrage',from:'2026-09-07',to:'2026-09-13',rirNote:'RIR 3 · établir les références, tout noter'},
@@ -99,6 +99,8 @@ function initFirebase(){
   try{
     fbApp=firebase.initializeApp(FB_CONFIG);
     fbAuth=firebase.auth(); fbDb=firebase.firestore(); fbFn=firebase.app().functions('europe-west1');
+    // Banc de test local : le client parle aux émulateurs Firebase quand la page est servie par l'émulateur Hosting.
+    if(location.hostname==='localhost'&&new URLSearchParams(location.search).has('emu')){ fbAuth.useEmulator('http://localhost:9099',{disableWarnings:true}); fbDb.useEmulator('localhost',8080); fbFn.useEmulator('localhost',5001); }
     fbDb.settings({ignoreUndefinedProperties:true});
     fbDb.enablePersistence({synchronizeTabs:true}).catch(()=>{});
     fbAuth.useDeviceLanguage();
@@ -123,6 +125,8 @@ async function onAuth(){
     applyingRemote=true; let changed=false;
     snap.docChanges().forEach(ch=>{ const d=ch.doc.data(); const id=ch.doc.id;
       if(ch.type==='removed'){ delete S[key][id]; changed=true; return; }
+      if(key==='chats'&&COACH.busy&&id===COACH.threadId) return; // fil en cours d'échange : la copie locale fait foi jusqu'à la réponse
+      if(key==='chats'&&S[key][id]&&Array.isArray(d.messages)&&Array.isArray(S[key][id].messages)&&d.messages.length<S[key][id].messages.length) return; // jamais perdre un message local
       if(!S[key][id]||(d.updatedAt||0)>=(S[key][id].updatedAt||0)){ S[key][id]=d; changed=true; } });
     applyingRemote=false; if(changed){ save(); render(); }
     setSync(snap.metadata.hasPendingWrites?'pend':'on', snap.metadata.hasPendingWrites?'à sync':'sync ok');
@@ -253,11 +257,13 @@ function newThread(){ if(!S.chats) S.chats={}; const id='c'+Date.now().toString(
 function openThread(id){ const t=S.chats&&S.chats[id]; if(!t) return; COACH.threadId=id; COACH.thread=t.messages; COACH.listOpen=false; renderChatSheet(); }
 function saveThread(){ const t=curThread(); if(!t||!t.messages.length) return; t.updatedAt=Date.now(); if(!t.title){ const u=t.messages.find(m=>m.role==='user'); t.title=u?u.content.slice(0,60):''; } save(); writeDoc('chats',t.id,t); }
 function deleteThread(id){ if(!S.chats[id]) return; delete S.chats[id]; save(); if(USER){ try{ const r=col('chats').doc(id); if(r.delete) r.delete().catch(()=>{}); }catch(e){} } if(COACH.threadId===id){ COACH.threadId=null; COACH.thread=[]; } renderChatSheet(); renderCoach(); }
+// Le fil peut être remplacé par sa copie Firestore entre deux messages : on relit toujours l'objet courant, jamais une référence gardée.
+function threadMsgs(){ const t=curThread()||newThread(); if(!Array.isArray(t.messages)) t.messages=[]; COACH.thread=t.messages; return t.messages; }
 async function askCoach(text){
-  if(!text.trim()||COACH.busy) return; if(!curThread()) newThread(); COACH.busy=true; COACH.thread.push({role:'user',content:text,t:Date.now()}); saveThread(); renderCoach();
+  if(!text.trim()||COACH.busy) return; COACH.busy=true; threadMsgs().push({role:'user',content:text,t:Date.now()}); saveThread(); renderCoach();
   startJob('réfléchit',['Relit ton programme et ton journal','Rédige la réponse'],10000);
-  try{ const r=await callCoach({mode:'chat', messages:COACH.thread.slice(-12), week:curWeek(), session:curSession().id}); COACH.thread.push({role:'assistant',content:r.text||'',t:Date.now()}); endJob(true,'Réponse prête'); }
-  catch(e){ logErr('chat',e); COACH.thread.push({role:'assistant',content:humanErr(e),error:true,t:Date.now()}); endJob(false,humanErr(e)); }
+  try{ const r=await callCoach({mode:'chat', messages:threadMsgs().slice(-12).map(m=>({role:m.role,content:m.content})), week:curWeek(), session:curSession().id}); threadMsgs().push({role:'assistant',content:r.text||'',t:Date.now()}); endJob(true,'Réponse prête'); }
+  catch(e){ logErr('chat',e); threadMsgs().push({role:'assistant',content:humanErr(e),error:true,t:Date.now()}); endJob(false,humanErr(e)); }
   saveThread(); COACH.busy=false; renderCoach();
 }
 function applyOverride(item){
@@ -403,7 +409,8 @@ function restoreShell(){
   if(!$('#tab-seance')) m.innerHTML=`<section id="tab-home"></section><section id="tab-seance" hidden></section><section id="tab-coach" hidden></section><section id="tab-programme" hidden></section><section id="tab-suivi" hidden></section><section id="tab-reglages" hidden></section>`;
   document.querySelector('.tabs').hidden=false; document.querySelector('.top').hidden=false; const av=$('#settingsBtn'); if(av&&USER) av.textContent=(USER.displayName||USER.email||'?').slice(0,1).toUpperCase();
 }
-function showOnboarding(step){
+let GENERATING=false, ONB_STEP=null;
+function showOnboarding(step){ ONB_STEP=step;
   restoreShell(); document.querySelector('.tabs').hidden=true; $('#weekChip').hidden=true;
   const m=document.querySelector('main');
   if(step==='profile'||!PROFILE){ onbStep(0); return; }
@@ -480,12 +487,13 @@ function bindProfileForm(after,root){
     after&&after(); };
 }
 async function generateProgram(){
+  if(GENERATING) return; GENERATING=true;
   const msg=$('#genMsg'), btn=$('#genBtn'), wait=$('#genWait'); if(btn) btn.hidden=true; if(wait) wait.hidden=false; if(msg) msg.textContent='';
   const stepsTxt=[COACH_NAME+' lit ton profil…','Il choisit les exercices pour ton matériel…','Il règle séries, repos et progression…','Il rédige les explications de chaque exercice…','Dernières vérifications…']; let k=0; startJob('construit ton programme',stepsTxt.map(x=>x.replace(/…$/,'')),90000);
   const iv=setInterval(()=>{ k=Math.min(k+1,stepsTxt.length-1); const e=$('#genStep'); if(e) e.textContent=stepsTxt[k]; },18000);
   try{ const fn=fbFn.httpsCallable('coach',{timeout:540000}); await fn({mode:'program'}); }
-  catch(e){ logErr('program',e); endJob(false,humanErr(e)); if(msg) msg.textContent=humanErr(e); if(btn){ btn.hidden=false; btn.textContent='Réessayer'; } if(wait) wait.hidden=true; clearInterval(iv); return; }
-  clearInterval(iv); endJob(true,'Programme prêt');
+  catch(e){ logErr('program',e); GENERATING=false; endJob(false,humanErr(e)); if(msg) msg.textContent=humanErr(e); if(btn){ btn.hidden=false; btn.textContent='Réessayer'; } if(wait) wait.hidden=true; clearInterval(iv); return; }
+  clearInterval(iv); GENERATING=false; endJob(true,'Programme prêt');
 }
 async function saveProgram(prog, cycleHtml){
   const doc=JSON.parse(JSON.stringify(prog)); doc.cycleHtml=cycleHtml||doc.cycleHtml||''; doc.savedAt=Date.now();
@@ -500,7 +508,7 @@ function autoCloseLogs(){
   return n;
 }
 function applyProgram(p){
-  PROGRAM=p; if(p.weeks&&p.weeks.length) WEEKS=p.weeks; PROGRAM_LOADED=true;
+  PROGRAM=p; if(p.weeks&&p.weeks.length) WEEKS=p.weeks; PROGRAM_LOADED=true; ONB_STEP=null;
   const sm=document.querySelector('.brand small'); if(sm) sm.textContent=p.cycleName||'';
   restoreShell(); autoCloseLogs(); renderCycle(); render(); ensureDemos();
 }
@@ -521,9 +529,10 @@ function listenMeta(){
   unsubs.push(fbDb.collection('users').doc(USER.uid).collection('meta').onSnapshot(snap=>{
     let prof=null, prog=null; snap.docs.forEach(d=>{ if(d.id==='profile') prof=d.data(); if(d.id==='program') prog=d.data(); if(d.id==='usage') USAGE=d.data(); });
     PROFILE=prof;
-    if(prog&&prog.sessions&&prog.sessions.length){ applyProgram(prog); }
+    if(prog&&prog.sessions&&prog.sessions.length){ GENERATING=false; applyProgram(prog); }
     else if(snap.metadata.fromCache&&!snap.docs.length){ /* première ouverture hors ligne : attendre le serveur */ }
-    else { PROGRAM_LOADED=false; showOnboarding(prof?'program':'profile'); }
+    else if(GENERATING){ /* génération en cours : l'écriture du compteur d'usage ne doit pas réinitialiser l'écran d'attente */ }
+    else { PROGRAM_LOADED=false; const step=prof?'program':'profile'; if(ONB_STEP!==step||!document.querySelector('.onb')) showOnboarding(step); }
   }, err=>{ console.warn('meta',err); logErr('listen meta',err); }));
 }
 async function regenerateProgram(){

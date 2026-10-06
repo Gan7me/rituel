@@ -7,3 +7,9 @@ functions/.env.*
 ios/
 android/
 node_modules/
+
+functions/.secret.local
+functions/.env.local
+firebase-debug.log
+firestore-debug.log
+ui-debug.log

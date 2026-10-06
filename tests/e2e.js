@@ -29,13 +29,16 @@ function stub() {
   window.__setMeta = (docs) => metaCb && metaCb({ docs: docs.map(d => ({ id: d.id, data: () => d.data })), metadata: { fromCache: false } });
   window.__setCoach = (docs) => coachCb && coachCb({ docs: docs.map(d => ({ id: d.id, data: () => d.data })) });
   window.__writes = [];
-  const docObj = (name, id) => ({ get: async () => ({ exists: false }), set: async (d) => { window.__writes.push({ name, id, d }); }, collection: (n) => colObj(n) });
-  const colObj = (n) => ({ onSnapshot: (cb) => { if (n === 'coach') coachCb = cb; if (n === 'meta') { metaCb = cb; cb({ docs: [], metadata: { fromCache: false } }); return () => {}; } cb({ docChanges: () => [], docs: [], metadata: {} }); return () => {}; }, orderBy() { return this; }, limit() { return this; }, where() { return this; }, doc: (id) => docObj(n, id) });
+  // Écho Firestore : chaque écriture dans une collection écoutée revient par le listener, comme en vrai (copie, pas la même référence).
+  const listeners = {}; let echo = false; window.__echo = (on) => { echo = on; };
+  window.__pushDoc = (name, id, data) => { const cb = listeners[name]; if (cb) cb({ docChanges: () => [{ type: 'modified', doc: { id, data: () => JSON.parse(JSON.stringify(data)) } }], docs: [], metadata: {} }); };
+  const docObj = (name, id) => ({ get: async () => ({ exists: false }), set: async (d) => { window.__writes.push({ name, id, d }); if (echo) setTimeout(() => window.__pushDoc(name, id, d), 10); }, delete: async () => {}, collection: (n) => colObj(n) });
+  const colObj = (n) => ({ onSnapshot: (cb) => { if (n === 'coach') coachCb = cb; if (n === 'meta') { metaCb = cb; cb({ docs: [], metadata: { fromCache: false } }); return () => {}; } listeners[n] = cb; cb({ docChanges: () => [], docs: [], metadata: {} }); return () => {}; }, orderBy() { return this; }, limit() { return this; }, where() { return this; }, doc: (id) => docObj(n, id) });
   window.firebase = {
     initializeApp: () => ({}),
     auth: Object.assign(() => ({ useDeviceLanguage() {}, getRedirectResult: () => Promise.resolve(), onAuthStateChanged: (cb) => { window.__auth = cb; setTimeout(() => cb(location.search.includes('noauth') ? null : { uid: 'u1', displayName: 'Test', email: 'test@nexisafe.com', emailVerified: true, providerData: [{ providerId: 'password' }] }), 30); }, signOut: async () => {}, signInWithEmailAndPassword: async () => { throw { code: 'auth/invalid-credential' }; }, createUserWithEmailAndPassword: async () => ({ user: { updateProfile: async () => {}, sendEmailVerification: async () => {} } }), sendPasswordResetEmail: async () => {} }), {}),
     firestore: () => ({ settings() {}, enablePersistence: () => Promise.resolve(), collection: () => ({ doc: () => ({ collection: (n) => colObj(n) }) }) }),
-    app: () => ({ functions: () => ({ httpsCallable: (name) => async (p) => { window.__calls = (window.__calls || []).concat([{ name, p }]); return { data: { text: 'Réponse du coach.' } }; } }) })
+    app: () => ({ functions: () => ({ httpsCallable: (name) => async (p) => { window.__calls = (window.__calls || []).concat([{ name, p }]); await new Promise(r => setTimeout(r, 120)); return { data: { text: 'Réponse du coach.' } }; } }) })
   };
 }
 
@@ -82,8 +85,10 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   if (!profWrite) console.log('   writes:', JSON.stringify(await p.evaluate(() => window.__writes)).slice(0, 300));
   assert(profWrite && profWrite.d.name === 'Léo' && profWrite.d.goals.includes('masse'), 'profil enregistré avec les 4 étapes');
   assert(await p.$('#genBtn'), 'écran de génération');
-  await p.click('#genBtn'); await sleep(200);
+  await p.click('#genBtn'); await sleep(50);
   assert(await p.evaluate(() => (window.__calls || []).some(c => c.p && c.p.mode === 'program')), 'génération demandée au coach');
+  await p.evaluate(() => window.__setMeta([{ id: 'profile', data: { name: 'Léo' } }, { id: 'usage', data: { program: 1 } }])); await sleep(100);
+  assert(await p.evaluate(() => !document.querySelector('#genWait').hidden && document.querySelector('#genBtn').hidden), 'écran d\'attente conservé quand le compteur d\'usage s\'écrit');
 
   console.log('Séance');
   await p.evaluate((pg) => window.__setMeta([{ id: 'profile', data: { name: 'Test', level: 'confirme', weight: 69 } }, { id: 'program', data: pg }]), prog);
@@ -150,8 +155,12 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   await p.click('#chatBtn'); await sleep(250);
   assert(await p.$('#sheet.on .chatpane'), 'chat ouvert en feuille');
   await p.evaluate(() => document.querySelector('#chatNew') && document.querySelector('#chatNew').click()); await sleep(200);
-  await p.type('#askInput', 'Question ?'); await p.click('#askForm button[type=submit]'); await sleep(300);
-  assert((await p.$$('#sheet .msg')).length >= 2, 'chat : question et réponse');
+  await p.evaluate(() => window.__echo(true));
+  await p.type('#askInput', 'Question ?'); await p.click('#askForm button[type=submit]'); await sleep(400);
+  assert((await p.$$('#sheet .msg')).length === 2, 'chat : question et réponse affichées malgré l\'écho Firestore');
+  await p.type('#askInput', 'Deuxième ?'); await p.click('#askForm button[type=submit]'); await sleep(400);
+  assert((await p.$$('#sheet .msg')).length === 4, 'chat : deuxième échange conservé (4 messages)');
+  await p.evaluate(() => window.__echo(false));
   assert(await p.evaluate(() => Object.values(S.chats).filter(t => t.messages.length).length === 1 && window.__writes.some(w => w.name === 'chats')), 'conversation enregistrée et synchronisée');
   await p.click('#chatList'); await sleep(200);
   assert((await p.$$('.chat-list .crow')).length === 1, 'liste des conversations');
