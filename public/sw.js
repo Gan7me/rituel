@@ -1,6 +1,6 @@
 /* Service worker — app shell en cache, fonctionnement hors ligne complet.
    Incrémente VERSION à chaque déploiement pour forcer la mise à jour. */
-const VERSION = 'rituel-v3.13.4';
+const VERSION = 'rituel-v3.14.0';
 const SHELL = [
   './',
   './index.html',
@@ -41,8 +41,8 @@ self.addEventListener('activate', e => {
 self.addEventListener('fetch', e => {
   const url = new URL(e.request.url);
   // Jamais de cache pour l'API GitHub (synchro) ni pour les requêtes hors origine.
-  // Photos de démonstration : cache dédié, servies hors ligne une fois vues.
-  if (url.hostname === 'raw.githubusercontent.com') {
+  // Photos des mouvements (même origine, immuables) : cache dédié qui survit aux mises à jour, cache d'abord.
+  if (url.origin === location.origin && url.pathname.includes('/demo/img/')) {
     e.respondWith(caches.open('rituel-demo').then(c => c.match(e.request).then(hit => hit || fetch(e.request).then(res => { if (res && res.ok) c.put(e.request, res.clone()); return res; }))));
     return;
   }

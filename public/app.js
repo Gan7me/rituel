@@ -12,7 +12,7 @@ function humanErr(e){ const c=(e&&e.code)||''; const m=(e&&e.message)||String(e|
   if(/network|Failed to fetch|internet/i.test(m)||!navigator.onLine) return 'Pas de réseau. Le coach a besoin d\'une connexion ; tes séries sont enregistrées et partiront toutes seules.';
   if(/invalid-argument/.test(c)) return 'Le serveur n\'a pas compris la demande (version de l\'app en retard ?). Recharge l\'application depuis Réglages.';
   return m; }
-const APP_VERSION='3.13.4';
+const APP_VERSION='3.14.0';
 let PROGRAM={sessions:[]};
 let WEEKS = [
   {n:1,label:'S1 calibrage',from:'2026-09-07',to:'2026-09-13',rirNote:'RIR 3 · établir les références, tout noter'},
@@ -510,7 +510,7 @@ function autoCloseLogs(){
 function applyProgram(p){
   PROGRAM=p; if(p.weeks&&p.weeks.length) WEEKS=p.weeks; PROGRAM_LOADED=true; ONB_STEP=null;
   const sm=document.querySelector('.brand small'); if(sm) sm.textContent=p.cycleName||'';
-  restoreShell(); autoCloseLogs(); renderCycle(); render(); ensureDemos();
+  restoreShell(); autoCloseLogs(); renderCycle(); render(); ensureDemos(); prefetchDemos();
 }
 function cycleHtml(){
   if(PROGRAM.cycleHtml) return PROGRAM.cycleHtml;
@@ -615,11 +615,15 @@ function exitFocus(){ if(!FOCUS) return; FOCUS=false; document.body.classList.re
 
 
 /* ---------- Démos visuelles des mouvements ---------- */
-const DEMO={base:window.__DEMO_BASE||'https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/',index:null,loading:null,asked:false};
+// Photos servies par l'app elle-même (style uniforme, 480 px, WebP) : mises en cache par le service worker, préchargées pour le programme → disponibles hors ligne.
+const DEMO={base:window.__DEMO_BASE||'demo/img/',index:null,loading:null,asked:false,prefetched:new Set()};
 // Repli local quand le coach n'a pas encore associé les fiches : mots-clés français → fiche.
 const DEMO_GUESS=[[/traction.*(assist|machine)|chin.*assist/i,'Machine_Assisted_Chin-Up'],[/traction|pull[- ]?up/i,'Pullups'],[/chin[- ]?up|supination/i,'Chin-Up'],[/dips?\b/i,'Dips_-_Triceps_Version'],[/hack/i,'Hack_Squat'],[/presse|leg press/i,'Leg_Press'],[/pendulum|belt squat/i,'Hack_Squat'],[/squat.*(avant|front)|front squat/i,'Front_Barbell_Squat'],[/squat.*(goblet)/i,'Goblet_Squat'],[/squat/i,'Barbell_Full_Squat'],[/fente|lunge|split/i,'Dumbbell_Lunges'],[/leg curl.*(couch|allong)|lying leg curl/i,'Lying_Leg_Curls'],[/leg curl|ischio/i,'Seated_Leg_Curl'],[/leg ext|extension.*(jambe|quad)/i,'Leg_Extensions'],[/soulev.*terre.*(jambes? tendues|roumain)|rdl|romanian/i,'Romanian_Deadlift'],[/soulev.*terre|deadlift/i,'Barbell_Deadlift'],[/hip thrust/i,'Barbell_Hip_Thrust'],[/mollet.*(assis)|seated calf/i,'Seated_Calf_Raise'],[/mollet|calf/i,'Standing_Calf_Raises'],[/d[ée]velopp[ée].*(inclin|incline)/i,'Incline_Dumbbell_Press'],[/d[ée]velopp[ée].*(d[ée]clin|decline)/i,'Decline_Barbell_Bench_Press'],[/d[ée]velopp[ée].*(couch|bench).*halt/i,'Dumbbell_Bench_Press'],[/d[ée]velopp[ée].*(couch|bench)|bench press/i,'Barbell_Bench_Press_-_Medium_Grip'],[/d[ée]velopp[ée].*(militaire|[ée]paule|overhead|shoulder)|press.*[ée]paule/i,'Dumbbell_Shoulder_Press'],[/chest press|press.*(pector|poitrine)/i,'Machine_Bench_Press'],[/pec[- ]?deck|butterfly|[ée]cart[ée].*(machine|poulie)|fly/i,'Butterfly'],[/[ée]cart[ée]/i,'Dumbbell_Flyes'],[/crossover|poulie.*(vis|crois)/i,'Cable_Crossover'],[/tirage.*(vertical|haut)|lat ?pull/i,'Wide-Grip_Lat_Pulldown'],[/tirage.*(horizontal|bas)|seated row|rowing.*(poulie|c[âa]ble)/i,'Seated_Cable_Rows'],[/rowing.*(halt|unilat|un bras)|one[- ]arm/i,'One-Arm_Dumbbell_Row'],[/rowing.*(barre|pench)|bent.?over/i,'Bent_Over_Barbell_Row'],[/rowing|row\b/i,'Seated_Cable_Rows'],[/face ?pull/i,'Face_Pull'],[/pull[- ]?over/i,'Straight-Arm_Dumbbell_Pullover'],[/[ée]l[ée]vation.*lat|lateral raise/i,'Side_Lateral_Raise'],[/[ée]l[ée]vation.*(front|avant)/i,'Front_Dumbbell_Raise'],[/oiseau|rear delt|reverse (fly|pec)/i,'Seated_Bent-Over_Rear_Delt_Raise'],[/shrug|haussement/i,'Dumbbell_Shrug'],[/curl.*(marteau|hammer)/i,'Hammer_Curls'],[/curl.*(inclin|incline)/i,'Incline_Dumbbell_Curl'],[/curl.*(pupitre|larry|preacher|scott)/i,'Preacher_Curl'],[/curl.*(poulie|c[âa]ble)/i,'Cable_Hammer_Curls_-_Rope_Attachment'],[/curl.*(barre|ez)/i,'Barbell_Curl'],[/curl/i,'Dumbbell_Bicep_Curl'],[/skull|barre au front|triceps.*(couch|allong)/i,'Lying_Triceps_Press'],[/extension.*(poulie|corde|c[âa]ble)|push ?down|pushdown/i,'Triceps_Pushdown_-_Rope_Attachment'],[/extension.*(nuque|overhead|au[- ]dessus)/i,'Standing_Dumbbell_Triceps_Extension'],[/kick ?back/i,'Tricep_Dumbbell_Kickback'],[/pompes?|push[- ]?up/i,'Pushups'],[/gainage|planche|plank/i,'Plank'],[/crunch.*(poulie|c[âa]ble)/i,'Cable_Crunch'],[/relev[ée].*jambes|leg raise|hanging/i,'Hanging_Leg_Raise'],[/crunch|abdo/i,'Crunches'],[/farmer/i,'Farmers_Walk'],[/suspension.*(barre)|dead ?hang|grip|avant[- ]bras/i,'Wrist_Curl'],[/good ?morning/i,'Good_Morning'],[/kettlebell swing|swing/i,'Kettlebell_Swing'],[/muscle[- ]?up/i,'Pullups']];
 function demoId(ex){ if(!ex) return null; if(ex.demo) return ex.demo; const m=(PROGRAM.demos||{})[ex.id]; if(m) return m; const t=(ex.name||'')+' '+(ex.machine||''); const g=DEMO_GUESS.find(([re])=>re.test(t)); return g?g[1]:null; }
-function demoImg(id,i){ return DEMO.base+encodeURIComponent(id)+'/'+i+'.jpg'; }
+function demoImg(id,i){ return DEMO.base+encodeURIComponent(id)+'_'+i+'.webp'; }
+// Précharge les deux photos de chaque exercice du programme (et des séances sans salle) pour qu'elles soient là sans réseau.
+function prefetchDemos(){ if(!PROGRAM.sessions.length||window.__DEMO_BASE) return; const ids=new Set(); PROGRAM.sessions.forEach(se=>se.exercises.forEach(ex=>{ const id=demoId(ex); if(id) ids.add(id); })); Object.values(S.overrides||{}).forEach(o=>((o.substitute||{}).exercises||[]).forEach(ex=>{ const id=demoId(ex); if(id) ids.add(id); }));
+  const todo=[...ids].filter(id=>!DEMO.prefetched.has(id)); if(!todo.length) return; const run=async()=>{ for(const id of todo){ DEMO.prefetched.add(id); for(const k of [0,1]){ try{ await fetch(demoImg(id,k),{cache:'force-cache'}); }catch(e){} } } }; if('requestIdleCallback' in window) requestIdleCallback(run,{timeout:4000}); else setTimeout(run,1500); }
 function loadDemoIndex(){ if(DEMO.index) return Promise.resolve(DEMO.index); if(!DEMO.loading) DEMO.loading=fetch('demo/index.json').then(r=>r.json()).then(a=>{ DEMO.index={}; a.forEach(x=>DEMO.index[x.i]=x); return DEMO.index; }).catch(()=>{ DEMO.loading=null; return {}; }); return DEMO.loading; }
 // Programme généré avant les fiches : on demande l'association au coach une seule fois, elle est enregistrée dans le programme.
 async function ensureDemos(){ if(DEMO.asked||!USER||!navigator.onLine||!PROGRAM_LOADED||!PROGRAM.sessions.length||PROGRAM.demos||PROGRAM.demosAt) return; DEMO.asked=true; startJob('associe les photos des mouvements',['Parcourt ton programme','Choisit la fiche la plus proche pour chaque exercice'],15000); try{ await callCoach({mode:'demo'}); endJob(true,'Photos associées'); }catch(e){ logErr('demo',e); endJob(false,'Photos : association impossible'); } }
