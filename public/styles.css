@@ -782,3 +782,11 @@ body.hasjob{padding-bottom:calc(var(--tabh) + 120px + env(safe-area-inset-bottom
 .kaisay p{margin:0;background:var(--surface);border-radius:18px 18px 18px 6px;padding:10px 14px;font-size:15px;line-height:1.45;color:var(--ink2);box-shadow:var(--shadow)}
 .wait{display:flex;gap:14px;align-items:center}
 .wait .spin{display:none}
+/* v3.15 — forfait, administration */
+.plancmp{display:grid;gap:8px;margin:10px 0}
+.plancmp div{background:var(--surface2);border-radius:var(--r-sm);padding:12px 14px}
+.plancmp div.pro{background:var(--ink);color:var(--bg)}
+.plancmp b{display:block;font-family:var(--disp);font-size:16px;margin-bottom:2px}
+.plancmp span{font-size:14px;line-height:1.4;opacity:.85}
+.cs-grid.adm{grid-template-columns:repeat(3,1fr)}
+#sheet h4{margin:14px 0 6px;font-size:14px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}

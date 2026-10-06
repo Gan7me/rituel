@@ -5,5 +5,15 @@ service cloud.firestore {
     match /users/{uid}/{document=**} {
       allow read, write: if request.auth != null && request.auth.uid == uid;
     }
+    // Le forfait est posé par le serveur (webhook de paiement) : l'utilisateur peut le lire, jamais l'écrire.
+    match /users/{uid}/meta/billing {
+      allow read: if request.auth != null && request.auth.uid == uid;
+      allow write: if false;
+    }
+    // Rapports d'erreur envoyés par l'app : création seulement, par l'utilisateur concerné, petits documents.
+    match /errors/{id} {
+      allow create: if request.auth != null && request.resource.data.uid == request.auth.uid && request.resource.data.msg is string && request.resource.data.msg.size() < 400;
+      allow read, update, delete: if false;
+    }
   }
 }

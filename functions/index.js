@@ -230,19 +230,53 @@ function applyGuardrails(prog, profile) {
 }
 function nextMonday() { const d = new Date(); const day = d.getDay(); const diff = day === 1 ? 0 : (8 - day) % 7; d.setDate(d.getDate() + diff); return d.toISOString().slice(0, 10); }
 
-const QUOTAS = { program: 6, analyse: 60, chat: 300, substitute: 12, demo: 10 };
+// Forfaits : gratuit (découverte) et premium. Le forfait vient de meta/billing.plan (posé par le webhook de paiement) ; les administrateurs sont premium.
+const ADMIN_EMAILS = ['ganeme.asloune@nexisafe.com'];
+const PLANS = {
+  free: { program: 2, analyse: 8, chat: 30, substitute: 2, demo: 4 },
+  premium: { program: 6, analyse: 60, chat: 300, substitute: 12, demo: 10 }
+};
+const QUOTAS = PLANS.premium; // référence des modes connus
+async function planFor(uid, email) {
+  if (ADMIN_EMAILS.includes(String(email || '').toLowerCase())) return 'premium';
+  const b = await db.collection('users').doc(uid).collection('meta').doc('billing').get();
+  const d = b.exists ? b.data() : {};
+  if (d.plan === 'premium' && (!d.expiresAt || d.expiresAt > Date.now())) return 'premium';
+  return 'free';
+}
 async function refundQuota(uid, mode) { try { await db.collection('users').doc(uid).collection('meta').doc('usage').set({ [mode]: admin.firestore.FieldValue.increment(-1) }, { merge: true }); } catch (e) {} } // par mois et par compte : plafonne le coût IA
-async function checkQuota(uid, mode) {
-  const month = new Date().toISOString().slice(0, 7);
+async function checkQuota(uid, mode, plan) {
+  const month = parisISO().slice(0, 7); const limits = PLANS[plan] || PLANS.free;
   const ref = db.collection('users').doc(uid).collection('meta').doc('usage');
+  const label = { program: 'programmes', analyse: 'analyses', chat: 'questions', substitute: 'séances sans salle', demo: 'fiches' }[mode] || mode;
   return db.runTransaction(async tx => {
     const snap = await tx.get(ref); const d = snap.exists ? snap.data() : {};
     const cur = d.month === month ? d : { month, program: 0, analyse: 0, chat: 0, substitute: 0, demo: 0, tokensIn: 0, tokensOut: 0, costUsd: 0 };
-    if ((cur[mode] || 0) >= QUOTAS[mode]) throw new HttpsError('resource-exhausted', `Quota mensuel atteint pour « ${mode} » (${QUOTAS[mode]}). Il se renouvelle le 1er du mois.`);
+    cur.plan = plan; cur.limits = limits;
+    if ((cur[mode] || 0) >= limits[mode]) throw new HttpsError('resource-exhausted', plan === 'free' ? `QUOTA_FREE:${label}:${limits[mode]}` : `Quota mensuel atteint : ${limits[mode]} ${label}. Il se renouvelle le 1er du mois.`);
     cur[mode] = (cur[mode] || 0) + 1; cur.updatedAt = Date.now();
     tx.set(ref, cur); return cur;
   });
 }
+
+// Tableau de bord administrateur : comptes, programmes, séances et erreurs des 7 derniers jours, coût IA du mois.
+exports.adminStats = onCall({ region: 'europe-west1' }, async (req) => {
+  if (!req.auth || !ADMIN_EMAILS.includes(String(req.auth.token && req.auth.token.email || '').toLowerCase())) throw new HttpsError('permission-denied', 'Réservé à l\'administrateur.');
+  const since = isoDaysAgo(7); const sinceMs = Date.now() - 7 * 86400000; const month = parisISO().slice(0, 7);
+  const users = await db.collection('users').listDocuments();
+  let withProgram = 0, sessions7 = 0, costMonth = 0, calls = 0, premium = 0; const perUser = [];
+  for (const u of users) {
+    const [pg, us, pr, bl, lg] = await Promise.all([u.collection('meta').doc('program').get(), u.collection('meta').doc('usage').get(), u.collection('meta').doc('profile').get(), u.collection('meta').doc('billing').get(), u.collection('logs').where('date', '>=', since).get()]);
+    const hasProg = pg.exists && !!pg.data().sessions; if (hasProg) withProgram++;
+    const usage = us.exists ? us.data() : {}; if (usage.month === month) { costMonth += usage.costUsd || 0; calls += (usage.analyse || 0) + (usage.chat || 0) + (usage.program || 0) + (usage.substitute || 0) + (usage.demo || 0); }
+    const n7 = lg.docs.filter(d => isDone(d.data())).length; sessions7 += n7;
+    const plan = bl.exists && bl.data().plan === 'premium' ? 'premium' : 'free'; if (plan === 'premium') premium++;
+    perUser.push({ uid: u.id.slice(0, 6), name: pr.exists ? (pr.data().name || '') : '', program: hasProg, sessions7: n7, plan, cost: usage.month === month ? Math.round((usage.costUsd || 0) * 100) / 100 : 0, lastMode: usage.lastMode || '' });
+  }
+  const errs = await db.collection('errors').where('t', '>=', sinceMs).orderBy('t', 'desc').limit(100).get();
+  const errors = errs.docs.map(d => d.data()).map(e => ({ t: e.t, uid: String(e.uid || '').slice(0, 6), src: e.src, msg: String(e.msg || '').slice(0, 160), ver: e.ver }));
+  return { users: users.length, withProgram, premium, sessions7, calls, costMonth: Math.round(costMonth * 100) / 100, errors, perUser: perUser.sort((a, b) => b.sessions7 - a.sessions7).slice(0, 50) };
+});
 
 exports.deleteAccount = onCall({ region: 'europe-west1' }, async (req) => {
   if (!req.auth) throw new HttpsError('unauthenticated', 'Connexion requise.');
@@ -268,7 +302,8 @@ async function coachImpl(req) {
   if (!req.auth) throw new HttpsError('unauthenticated', 'Connexion requise.');
   const uid = req.auth.uid; const { mode } = req.data || {};
   if (!QUOTAS[mode]) throw new HttpsError('invalid-argument', 'mode inconnu');
-  await checkQuota(uid, mode);
+  const plan = await planFor(uid, req.auth.token && req.auth.token.email);
+  await checkQuota(uid, mode, plan);
   // Nettoyage : un secret collé depuis Windows peut contenir BOM, octets nuls, retours à la ligne ou guillemets.
   const apiKey = String(ANTHROPIC_API_KEY.value() || '').replace(/[^\x21-\x7E]/g, '').replace(/^["']+|["']+$/g, '');
   if (!/^sk-ant-/.test(apiKey)) throw new HttpsError('failed-precondition', 'Clé API Anthropic absente ou mal formée côté serveur (doit commencer par sk-ant-).');

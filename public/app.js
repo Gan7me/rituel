@@ -1,18 +1,24 @@
 
 /* Journal d'erreurs local (Réglages → Diagnostic) : ce que l'utilisateur voit, on peut le lire. */
-const ERRLOG=[]; function logErr(src,e){ try{ const msg=(e&&(e.message||e.code))||String(e); ERRLOG.unshift({t:Date.now(),src,msg:String(msg).slice(0,300),code:e&&e.code||''}); ERRLOG.splice(30); localStorage.setItem('rituel.errlog',JSON.stringify(ERRLOG)); }catch(x){} }
+const ERRLOG=[]; let ERR_SENT=0;
+function logErr(src,e){ try{ const msg=(e&&(e.message||e.code))||String(e); const rec={t:Date.now(),src,msg:String(msg).slice(0,300),code:e&&e.code||''}; ERRLOG.unshift(rec); ERRLOG.splice(30); localStorage.setItem('rituel.errlog',JSON.stringify(ERRLOG));
+  // Remontée au serveur (collection errors) pour voir les pannes des utilisateurs sans leur demander : 20 max par session, jamais hors ligne.
+  if(typeof USER!=='undefined'&&USER&&typeof fbDb!=='undefined'&&fbDb&&navigator.onLine&&ERR_SENT<20&&!/^(listen|write|resync)/.test(src)){ ERR_SENT++; fbDb.collection('errors').add({uid:USER.uid,t:rec.t,src,msg:rec.msg.slice(0,380),code:rec.code,ver:APP_VERSION,native:!!window.__RITUEL_NATIVE__,ua:navigator.userAgent.slice(0,120)}).catch(()=>{}); }
+ }catch(x){} }
+window.addEventListener('error',ev=>{ try{ logErr('js',ev.error||ev.message); }catch(x){} });
+window.addEventListener('unhandledrejection',ev=>{ try{ logErr('promesse',ev.reason); }catch(x){} });
 try{ (JSON.parse(localStorage.getItem('rituel.errlog')||'[]')||[]).forEach(x=>ERRLOG.push(x)); }catch(e){}
 window.addEventListener('error',e=>logErr('js',e.error||e.message)); window.addEventListener('unhandledrejection',e=>logErr('promise',e.reason));
 function humanErr(e){ const c=(e&&e.code)||''; const m=(e&&e.message)||String(e||'');
   if(/unauthenticated/.test(c)) return 'Reconnecte-toi pour utiliser le coach.';
-  if(/resource-exhausted/.test(c)) return m;
+  if(/resource-exhausted/.test(c)){ const q=/QUOTA_FREE:([^:]+):(\d+)/.exec(m); if(q){ setTimeout(()=>showPaywall(q[1],q[2]),50); return `Limite gratuite atteinte : ${q[2]} ${q[1]} par mois.`; } return m; }
   if(/failed-precondition/.test(c)) return m;
   if(/not-found/.test(c)) return 'Séance introuvable : ouvre-la depuis l\'onglet Séance puis relance.';
   if(/deadline|timeout/i.test(m)) return 'Le coach a mis trop de temps à répondre. Réessaie dans une minute.';
   if(/network|Failed to fetch|internet/i.test(m)||!navigator.onLine) return 'Pas de réseau. Le coach a besoin d\'une connexion ; tes séries sont enregistrées et partiront toutes seules.';
   if(/invalid-argument/.test(c)) return 'Le serveur n\'a pas compris la demande (version de l\'app en retard ?). Recharge l\'application depuis Réglages.';
   return m; }
-const APP_VERSION='3.14.0';
+const APP_VERSION='3.15.0';
 let PROGRAM={sessions:[]};
 let WEEKS = [
   {n:1,label:'S1 calibrage',from:'2026-09-07',to:'2026-09-13',rirNote:'RIR 3 · établir les références, tout noter'},
@@ -158,6 +164,28 @@ window.addEventListener('online',syncStatusIdle); window.addEventListener('offli
 $('#syncChip').onclick=()=>{};
 
 /* ---------- réglages ---------- */
+// Forfait : affiché dans Réglages, et proposé quand une limite gratuite est atteinte. Le paiement arrive avec l'étape suivante (App Store / Play).
+function planInfo(){ const plan=(USAGE&&USAGE.plan)||'free'; const lim=(USAGE&&USAGE.limits)||{program:2,analyse:8,chat:30,substitute:2,demo:4}; return {plan,lim}; }
+function showPaywall(what,limit){
+  const {lim}=planInfo();
+  showSheet(`<div class="chead sm">${coachAvatar('attention')}<h3>Kai a atteint sa limite gratuite</h3></div>
+    <p>${what?`Ce mois-ci tu as utilisé tes ${esc(String(limit))} ${esc(what)} gratuits.`:'Le forfait gratuit couvre la découverte.'} Avec <b>Rituel Premium</b>, Kai te suit sans compter.</p>
+    <div class="plancmp"><div><b>Gratuit</b><span>${lim.analyse} analyses · ${lim.chat} questions · ${lim.program} programmes par mois</span></div><div class="pro"><b>Premium</b><span>Analyses et questions sans limite pratique (60 et 300), nouveau cycle à chaque fin de mésocycle, séances sans salle, Progrès complet, nutrition</span></div></div>
+    <p class="small muted">Lancement de l\'abonnement dans la prochaine version. En attendant, les limites se renouvellent le 1er du mois.</p>
+    <button class="btn fill" id="pwNotify">Me prévenir au lancement</button><button class="btn" onclick="hideSheet()">Plus tard</button>`);
+  const b=$('#pwNotify'); if(b) b.onclick=()=>{ if(USER) col('meta').doc('billing_interest').set({at:Date.now()},{merge:true}).catch(()=>{}); hideSheet(); toast('Noté, tu seras prévenu','ok'); };
+}
+let ADMIN_DATA=null;
+async function showAdmin(){
+  const sh=showSheet(`<h3>Administration</h3><p class="small muted" id="admMsg">Chargement…</p><div id="admBody"></div><button class="btn" onclick="hideSheet()">Fermer</button>`);
+  try{ const fn=fbFn.httpsCallable('adminStats'); const r=await fn({}); ADMIN_DATA=r.data; const d=r.data;
+    const errs=d.errors||[]; const byMsg={}; errs.forEach(e=>{ const k=e.src+' · '+e.msg.slice(0,60); byMsg[k]=(byMsg[k]||0)+1; });
+    $('#admMsg').textContent='7 derniers jours · coût IA du mois';
+    $('#admBody').innerHTML=`<div class="cs-grid adm"><div><b>${d.users}</b><span>comptes</span></div><div><b>${d.withProgram}</b><span>avec programme</span></div><div><b>${d.premium}</b><span>premium</span></div><div><b>${d.sessions7}</b><span>séances 7 j</span></div><div><b>${d.calls}</b><span>appels IA (mois)</span></div><div><b>${(d.costMonth*0.92).toFixed(2).replace('.',',')} €</b><span>coût IA (mois)</span></div></div>
+      <h4>Erreurs (${errs.length})</h4>${errs.length?`<div class="hl2">${Object.entries(byMsg).sort((a,b)=>b[1]-a[1]).slice(0,12).map(([k,n])=>`<div class="hrow"><span class="s" style="white-space:normal">${esc(k)}</span><b>${n}</b></div>`).join('')}</div>`:'<p class="small muted">Aucune erreur remontée.</p>'}
+      <h4>Utilisateurs</h4><div class="hl2">${(d.perUser||[]).map(u=>`<div class="hrow"><span class="d">${esc(u.name||u.uid)}</span><span class="s">${u.program?'programme':'sans programme'} · ${u.sessions7} séance${u.sessions7>1?'s':''} 7 j · ${u.plan}${u.lastMode?' · '+esc(u.lastMode):''}</span><b>${u.cost?u.cost.toFixed(2)+' $':''}</b></div>`).join('')}</div>`;
+  }catch(e){ $('#admMsg').textContent='Échec : '+(e.message||e); }
+}
 function renderReglages(){
   const el=$('#tab-reglages'); if(!el) return;
   const notifState=window.Notification?({granted:'autorisées',denied:'refusées',default:'non demandées'}[Notification.permission]||Notification.permission):'non supporté';
@@ -169,6 +197,9 @@ function renderReglages(){
     <button class="row" id="lexBtn"><span>Lexique</span><span class="muted">RIR, tempo, décharge…</span><i></i></button>
     <button class="row" id="progBtn"><span>Programme en cours</span><span class="muted">${esc(PROGRAM.cycleName||'—')}</span><i></i></button>
   </div>
+  <div class="grp"><div class="grp-t">Forfait</div>
+    <button class="row" id="planBtn"><span>${planInfo().plan==='premium'?'Premium':'Gratuit'}</span><span class="muted">${planInfo().plan==='premium'?'Kai sans compter':`${USAGE?(USAGE.analyse||0):0}/${planInfo().lim.analyse} analyses · ${USAGE?(USAGE.chat||0):0}/${planInfo().lim.chat} questions`}</span><i></i></button>
+    ${USER&&/^ganeme\.asloune@nexisafe\.com$/i.test(USER.email||'')?`<button class="row" id="adminBtn"><span>Administration</span><span class="muted">comptes, erreurs, coûts</span><i></i></button>`:''}</div>
   <div class="grp"><div class="grp-t">Coach ce mois-ci</div>
     <div class="row"><span>Usage</span><span class="muted">${usage}</span></div>
     ${USAGE?`<div class="row"><span>Détail</span><span class="muted">${USAGE.analyse||0} analyses · ${USAGE.chat||0} questions · ${USAGE.program||0} programme${(USAGE.program||0)>1?'s':''}</span></div>`:''}
@@ -192,6 +223,8 @@ function renderReglages(){
   const so=$('#signOut'); if(so) so.onclick=()=>{ if(confirm('Se déconnecter ? Tes données restent sur ton compte.')) signOut(); };
   const db_=$('#delBtn'); if(db_) db_.onclick=async()=>{ if(!confirm('Supprimer définitivement ton compte, ton programme et tout ton journal ? Cette action est irréversible.')) return; if(prompt('Tape SUPPRIMER pour confirmer')!=='SUPPRIMER') return; try{ const fn=fbFn.httpsCallable('deleteAccount'); await fn({}); try{ localStorage.clear(); }catch(e){} alert('Compte supprimé.'); location.reload(); }catch(e){ alert('Échec : '+(e.message||e)+'. Si le message parle de connexion récente, déconnecte-toi, reconnecte-toi puis réessaie.'); } };
   const vb=$('#verifBtn'); if(vb) vb.onclick=async()=>{ try{ await USER.sendEmailVerification(); vb.textContent='lien envoyé'; }catch(e){ vb.textContent='échec : '+e.message; } };
+  const pb=$('#planBtn'); if(pb) pb.onclick=()=>showPaywall();
+  const adb=$('#adminBtn'); if(adb) adb.onclick=showAdmin;
   $('#profBtn').onclick=()=>{ if(!USER) return; const sheet=showSheet(`<h3>Mon profil</h3>`+profileForm(PROFILE||{})); bindProfileForm(()=>{ hideSheet(); toast('Profil enregistré','ok'); renderReglages(); }, sheet); };
   $('#progBtn').onclick=()=>document.querySelector('.tabs button[data-tab="programme"]').click();
   $('#diagBtn').onclick=()=>{ const recent=Object.values(S.logs).filter(l=>Object.keys(l.sets||{}).length||l.done).sort((a,b)=>a.date<b.date?1:-1).slice(0,8).map(l=>`${l.date} ${l.session} ${l.done?'terminée':'en cours'} ${Object.values(l.sets||{}).flat().filter(x=>x&&x.done).length} séries`).join('\n');
@@ -241,7 +274,8 @@ async function callCoach(payload){
   if(!USER) throw new Error('Connecte-toi pour utiliser le Coach.');
   if(!navigator.onLine) throw new Error('Le Coach a besoin du réseau.');
   const fn=fbFn.httpsCallable('coach',{timeout:120000});
-  const res=await fn(payload); return res.data;
+  try{ const res=await fn(payload); return res.data; }
+  catch(e){ const c=String((e&&e.code)||''); if(/unavailable|deadline-exceeded|internal/.test(c)&&!/Anthropic|coach a renvoyé|illisible/i.test((e&&e.message)||'')){ await new Promise(r=>setTimeout(r,1500)); const res=await fn(payload); return res.data; } throw e; }
 }
 async function analyseSession(logKeyStr){
   if(COACH.busy) return; COACH.busy=true; renderCoach();

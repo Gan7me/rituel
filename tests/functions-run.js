@@ -115,6 +115,19 @@ const call = (uid, data) => fns.coach({ auth: { uid }, data });
   assert(p2.sessions.every(se => se.exercises.length <= 6 && se.exercises.every(e => e.rir.every(r => r >= 2))), 'garde-fous débutant appliqués (≤ 6 exercices, RIR ≥ 2)');
   assert(!Object.keys(store).some(k => k.startsWith(`users/${uid2}/logs/`)), 'aucune donnée de l\'utilisateur 1 chez l\'utilisateur 2');
 
+  console.log('Forfaits et administration');
+  store[`users/${uid2}/meta/usage`].analyse = 8; let e4 = null;
+  store[`users/${uid2}/logs/${today}_s1`] = { date: today, session: 's1', week: 1, done: true, sets: { 's1-1': [{ w: 20, r: 10, rir: 2, done: true }] }, updatedAt: 1 };
+  try { await call(uid2, { mode: 'analyse', logKey: `${today}_s1` }); } catch (e) { e4 = e; }
+  assert(e4 && /QUOTA_FREE:analyses:8/.test(e4.message), 'forfait gratuit : 8 analyses puis message de limite (' + (e4 && e4.message) + ')');
+  store[`users/${uid2}/meta/billing`] = { plan: 'premium', expiresAt: Date.now() + 86400000 };
+  const a2 = await call(uid2, { mode: 'analyse', logKey: `${today}_s1` });
+  assert(a2 && a2.analysis, 'forfait premium : l\'analyse passe au-delà de la limite gratuite');
+  let e5 = null; try { await fns.adminStats({ auth: { uid: uid2, token: { email: 'x@y.z' } }, data: {} }); } catch (e) { e5 = e; }
+  assert(e5 && e5.code === 'permission-denied', 'administration refusée à un utilisateur ordinaire');
+  store['errors/e1'] = { uid, t: Date.now(), src: 'analyse', msg: 'Test erreur', ver: '3.15.0' };
+  const st = await fns.adminStats({ auth: { uid: 'admin', token: { email: 'ganeme.asloune@nexisafe.com' } }, data: {} });
+  assert(st.users === 2 && st.withProgram === 2 && st.premium === 1 && st.errors.length === 1 && st.costMonth > 0, 'tableau de bord : comptes, programmes, premium, erreurs, coût');
   const calls = await (await fetch('http://127.0.0.1:4011/__calls')).json();
   console.log(`\n${failures} échec(s) · ${calls.length} appels au modèle simulé`);
   process.exit(failures ? 1 : 0);
