@@ -1,14 +1,18 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    function owner(uid) { return request.auth != null && request.auth.uid == uid; }
     // Chaque utilisateur ne voit et n'écrit que son propre sous-arbre.
-    match /users/{uid}/{document=**} {
-      allow read, write: if request.auth != null && request.auth.uid == uid;
+    match /users/{uid} {
+      allow read, write: if owner(uid);
     }
-    // Le forfait est posé par le serveur (webhook de paiement) : l'utilisateur peut le lire, jamais l'écrire.
-    match /users/{uid}/meta/billing {
-      allow read: if request.auth != null && request.auth.uid == uid;
-      allow write: if false;
+    // Documents de profil : lecture libre pour le propriétaire ; le forfait (billing) n'est écrit que par le serveur (webhook de paiement).
+    match /users/{uid}/meta/{doc} {
+      allow read: if owner(uid);
+      allow write: if owner(uid) && doc != 'billing';
+    }
+    match /users/{uid}/{coll}/{doc=**} {
+      allow read, write: if owner(uid) && coll != 'meta';
     }
     // Rapports d'erreur envoyés par l'app : création seulement, par l'utilisateur concerné, petits documents.
     match /errors/{id} {

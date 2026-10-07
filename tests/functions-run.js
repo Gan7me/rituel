@@ -32,7 +32,7 @@ const fakeDb = { collection: n => colRef(n), async runTransaction(fn) { const tx
 const fakeAdmin = { initializeApp() {}, firestore: Object.assign(() => fakeDb, { FieldValue: { increment: n => ({ [INC]: n }), arrayRemove: (...a) => ({ [ARR_RM]: a }), delete: () => ({ [DEL]: true }) } }), auth: () => ({ deleteUser: async () => {} }) };
 class HttpsError extends Error { constructor(code, msg) { super(msg); this.code = code; } }
 const handlers = {};
-const fakeHttps = { HttpsError, onCall: (opts, fn) => { const h = typeof opts === 'function' ? opts : fn; return h; } };
+const fakeHttps = { HttpsError, onCall: (opts, fn) => { const h = typeof opts === 'function' ? opts : fn; return h; }, onRequest: (opts, fn) => fn };
 const fakeSched = { onSchedule: (opts, fn) => fn };
 const fakeParams = { defineSecret: () => ({ value: () => 'sk-ant-test-local-000000000000000000000000' }), defineString: (n, o) => ({ value: () => (o && o.default) || 'auto' }) };
 const origLoad = Module._load;
@@ -128,6 +128,19 @@ const call = (uid, data) => fns.coach({ auth: { uid }, data });
   store['errors/e1'] = { uid, t: Date.now(), src: 'analyse', msg: 'Test erreur', ver: '3.15.0' };
   const st = await fns.adminStats({ auth: { uid: 'admin', token: { email: 'ganeme.asloune@nexisafe.com' } }, data: {} });
   assert(st.users === 2 && st.withProgram === 2 && st.premium === 1 && st.errors.length === 1 && st.costMonth > 0, 'tableau de bord : comptes, programmes, premium, erreurs, coût');
+  console.log('Abonnement (webhook)');
+  const uid3 = 'user_test_3'; store[`users/${uid3}/meta/profile`] = { name: 'Trois', level: 'intermediaire', goals: ['force'], gear: ['salle'], days: 3, minutes: 60 };
+  await fns._applyBillingEvent({ type: 'INITIAL_PURCHASE', app_user_id: uid3, product_id: 'rituel_premium_mensuel', store: 'APP_STORE', expiration_at_ms: Date.now() + 30 * 86400000, purchased_at_ms: Date.now() });
+  assert(store[`users/${uid3}/meta/billing`].plan === 'premium', 'achat initial → premium');
+  store[`users/${uid3}/meta/usage`] = { month: new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Paris' }).slice(0, 7), chat: 31 };
+  const c3 = await call(uid3, { mode: 'chat', messages: [{ role: 'user', content: 'test premium' }] });
+  assert(c3 && c3.text, 'abonné premium : au-delà de la limite gratuite, le chat passe');
+  await fns._applyBillingEvent({ type: 'CANCELLATION', app_user_id: uid3, expiration_at_ms: Date.now() + 10 * 86400000 });
+  assert(store[`users/${uid3}/meta/billing`].plan === 'premium' && store[`users/${uid3}/meta/billing`].cancelledAt, 'résiliation : premium conservé jusqu\'à l\'échéance');
+  await fns._applyBillingEvent({ type: 'EXPIRATION', app_user_id: uid3, expiration_at_ms: Date.now() - 1000 });
+  assert(store[`users/${uid3}/meta/billing`].plan === 'free', 'expiration → retour au gratuit');
+  const r3 = await fns._applyBillingEvent({ type: 'RENEWAL', app_user_id: '$RCAnonymousID:abc' });
+  assert(r3.skipped, 'événement anonyme ignoré');
   const calls = await (await fetch('http://127.0.0.1:4011/__calls')).json();
   console.log(`\n${failures} échec(s) · ${calls.length} appels au modèle simulé`);
   process.exit(failures ? 1 : 0);

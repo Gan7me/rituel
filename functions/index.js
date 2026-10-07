@@ -2,7 +2,7 @@
    Porte la clé Anthropic côté serveur, lit le journal de l'utilisateur dans Firestore,
    appelle Claude et enregistre l'analyse. Deux modes : "analyse" (après une séance)
    et "chat" (question libre). L'utilisateur doit être authentifié. */
-const { onCall, HttpsError } = require('firebase-functions/v2/https');
+const { onCall, onRequest, HttpsError } = require('firebase-functions/v2/https');
 const { onSchedule } = require('firebase-functions/v2/scheduler');
 const { defineSecret, defineString } = require('firebase-functions/params');
 const admin = require('firebase-admin');
@@ -11,6 +11,7 @@ const program = require('./program.json');
 admin.initializeApp();
 const db = admin.firestore();
 const ANTHROPIC_API_KEY = defineSecret('ANTHROPIC_API_KEY');
+const REVENUECAT_WEBHOOK_SECRET = defineSecret('REVENUECAT_WEBHOOK_SECRET');
 const MODEL = defineString('COACH_MODEL', { default: 'auto' });
 // Base de l'API (surchargée par l'émulateur de test, qui pointe vers un modèle simulé).
 const API_BASE = process.env.ANTHROPIC_BASE_URL || 'https://api.anthropic.com';
@@ -277,6 +278,31 @@ exports.adminStats = onCall({ region: 'europe-west1' }, async (req) => {
   const errors = errs.docs.map(d => d.data()).map(e => ({ t: e.t, uid: String(e.uid || '').slice(0, 6), src: e.src, msg: String(e.msg || '').slice(0, 160), ver: e.ver }));
   return { users: users.length, withProgram, premium, sessions7, calls, costMonth: Math.round(costMonth * 100) / 100, errors, perUser: perUser.sort((a, b) => b.sessions7 - a.sessions7).slice(0, 50) };
 });
+
+// Webhook RevenueCat : seule source de vérité du forfait. L'app_user_id est l'uid Firebase (posé par la coquille à la connexion).
+// Configuration côté RevenueCat : URL de cette fonction, en-tête Authorization = Bearer <REVENUECAT_WEBHOOK_SECRET>.
+const PREMIUM_EVENTS = ['INITIAL_PURCHASE', 'RENEWAL', 'UNCANCELLATION', 'PRODUCT_CHANGE', 'NON_RENEWING_PURCHASE', 'TRANSFER'];
+const END_EVENTS = ['EXPIRATION', 'BILLING_ISSUE'];
+async function applyBillingEvent(ev) {
+  const uid = String(ev.app_user_id || ''); if (!uid || /^\$RCAnonymousID/.test(uid)) return { skipped: 'anonyme' };
+  const ref = db.collection('users').doc(uid).collection('meta').doc('billing');
+  const base = { store: ev.store || '', productId: ev.product_id || '', environment: ev.environment || '', lastEvent: ev.type, updatedAt: Date.now() };
+  if (PREMIUM_EVENTS.includes(ev.type)) { await ref.set({ ...base, plan: 'premium', expiresAt: ev.expiration_at_ms || null, since: ev.purchased_at_ms || Date.now() }, { merge: true }); return { plan: 'premium' }; }
+  if (ev.type === 'CANCELLATION') { await ref.set({ ...base, cancelledAt: Date.now(), expiresAt: ev.expiration_at_ms || null }, { merge: true }); return { plan: 'premium', cancelled: true }; } // reste premium jusqu'à l'échéance
+  if (END_EVENTS.includes(ev.type)) { await ref.set({ ...base, plan: 'free', expiresAt: ev.expiration_at_ms || Date.now() }, { merge: true }); return { plan: 'free' }; }
+  if (ev.type === 'SUBSCRIPTION_PAUSED') { await ref.set({ ...base, plan: 'free' }, { merge: true }); return { plan: 'free' }; }
+  await ref.set(base, { merge: true }); return { noted: ev.type };
+}
+exports.revenuecatWebhook = onRequest({ region: 'europe-west1', secrets: [REVENUECAT_WEBHOOK_SECRET] }, async (req, res) => {
+  const secret = String(REVENUECAT_WEBHOOK_SECRET.value() || '').trim();
+  const auth = String(req.get('authorization') || '');
+  if (!secret || auth !== 'Bearer ' + secret) { res.status(401).send('non autorisé'); return; }
+  const ev = (req.body && req.body.event) || null;
+  if (!ev || !ev.type) { res.status(400).send('événement manquant'); return; }
+  try { const r = await applyBillingEvent(ev); console.log(`[billing] ${ev.type} uid=${String(ev.app_user_id || '').slice(0, 6)} → ${JSON.stringify(r)}`); res.status(200).json(r); }
+  catch (e) { console.error('[billing] erreur', e && e.message); res.status(500).send('erreur'); }
+});
+exports._applyBillingEvent = applyBillingEvent;
 
 exports.deleteAccount = onCall({ region: 'europe-west1' }, async (req) => {
   if (!req.auth) throw new HttpsError('unauthenticated', 'Connexion requise.');

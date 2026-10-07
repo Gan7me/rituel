@@ -2,7 +2,7 @@
   "expo": {
     "name": "Rituel",
     "slug": "rituel",
-    "version": "3.13.2",
+    "version": "3.16.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "scheme": "rituel",
@@ -66,6 +66,10 @@
       "webUrl": "https://rituel-6b365.web.app",
       "eas": {
         "projectId": "3e1b316a-757c-4229-a194-762584bda052"
+      },
+      "revenuecat": {
+        "ios": "",
+        "android": ""
       }
     }
   }

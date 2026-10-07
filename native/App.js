@@ -13,6 +13,17 @@ import * as KeepAwake from 'expo-keep-awake';
 import * as SplashScreen from 'expo-splash-screen';
 import Constants from 'expo-constants';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+// Abonnements (App Store / Google Play) via RevenueCat. Sans clé configurée, tout reste inactif et le web garde son écran « me prévenir ».
+let Purchases = null; try { Purchases = require('react-native-purchases').default; } catch (e) { Purchases = null; }
+const RC_KEYS = (Constants.expoConfig && Constants.expoConfig.extra && Constants.expoConfig.extra.revenuecat) || {};
+const RC_KEY = Platform.OS === 'ios' ? RC_KEYS.ios : RC_KEYS.android;
+let rcReady = false;
+async function rcInit(uid) {
+  if (!Purchases || !RC_KEY) return false;
+  try { if (!rcReady) { Purchases.configure({ apiKey: RC_KEY, appUserID: uid || null }); rcReady = true; } else if (uid) { await Purchases.logIn(uid); } return true; } catch (e) { return false; }
+}
+function pkgInfo(p) { const pr = p.product || {}; return { id: p.identifier, type: p.packageType, title: pr.title, price: pr.priceString, period: pr.subscriptionPeriod || '', intro: pr.introPrice ? pr.introPrice.priceString : null }; }
+function isPremium(info) { const e = info && info.entitlements && info.entitlements.active; return !!(e && (e.premium || Object.keys(e).length)); }
 
 const WEB_URL = (Constants.expoConfig && Constants.expoConfig.extra && Constants.expoConfig.extra.webUrl) || 'https://rituel-6b365.web.app';
 const HOST = new URL(WEB_URL).host;
@@ -85,6 +96,31 @@ function Shell() {
         break;
       }
       case 'open': { if (m.url) Linking.openURL(m.url).catch(() => {}); break; }
+      case 'user': { // le web signale l'utilisateur connecté : on relie l'abonnement à son identifiant Firebase
+        const ok = await rcInit(m.uid);
+        if (ok) { try { const info = await Purchases.getCustomerInfo(); send({ type: 'entitlement', premium: isPremium(info) }); } catch (e) {} }
+        send({ type: 'billingReady', available: ok });
+        break;
+      }
+      case 'getOfferings': {
+        if (!(await rcInit(m.uid))) { send({ type: 'offerings', packages: [] }); break; }
+        try { const o = await Purchases.getOfferings(); const cur = o && o.current; send({ type: 'offerings', packages: cur ? cur.availablePackages.map(pkgInfo) : [] }); }
+        catch (e) { send({ type: 'offerings', packages: [], error: String(e && e.message || e) }); }
+        break;
+      }
+      case 'purchase': {
+        if (!(await rcInit(m.uid))) { send({ type: 'purchaseResult', ok: false, error: 'indisponible' }); break; }
+        try { const o = await Purchases.getOfferings(); const pkg = o && o.current && o.current.availablePackages.find(p => p.identifier === m.packageId); if (!pkg) throw new Error('offre introuvable');
+          const r = await Purchases.purchasePackage(pkg); send({ type: 'purchaseResult', ok: true, premium: isPremium(r.customerInfo) }); }
+        catch (e) { send({ type: 'purchaseResult', ok: false, cancelled: !!(e && e.userCancelled), error: String(e && e.message || e) }); }
+        break;
+      }
+      case 'restore': {
+        if (!(await rcInit(m.uid))) { send({ type: 'purchaseResult', ok: false, error: 'indisponible' }); break; }
+        try { const info = await Purchases.restorePurchases(); send({ type: 'purchaseResult', ok: true, restored: true, premium: isPremium(info) }); }
+        catch (e) { send({ type: 'purchaseResult', ok: false, error: String(e && e.message || e) }); }
+        break;
+      }
       default: break;
     }
   }, [send]);

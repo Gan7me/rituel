@@ -790,3 +790,13 @@ body.hasjob{padding-bottom:calc(var(--tabh) + 120px + env(safe-area-inset-bottom
 .plancmp span{font-size:14px;line-height:1.4;opacity:.85}
 .cs-grid.adm{grid-template-columns:repeat(3,1fr)}
 #sheet h4{margin:14px 0 6px;font-size:14px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+/* v3.16 — offres d'abonnement */
+.offers{display:grid;gap:8px;margin:10px 0 6px}
+.offer{display:grid;grid-template-columns:1fr auto;gap:2px 12px;align-items:center;text-align:left;background:var(--surface2);border-radius:var(--r-sm);padding:12px 14px;border:2px solid transparent}
+.offer.best{border-color:var(--accent);background:var(--accent-soft)}
+.offer .ol{font-weight:700;font-size:15.5px}
+.offer .ol em{font-style:normal;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#fff;background:var(--accent);padding:2px 7px;border-radius:999px;margin-left:6px;vertical-align:1px}
+.offer b{grid-column:2;grid-row:1 / span 2;font-family:var(--disp);font-size:18px;font-weight:800;white-space:nowrap}
+.offer .os{grid-column:1;font-size:13px;color:var(--muted)}
+.offer.busy{opacity:.6}
+#sheet .link{width:auto;margin:6px auto 0;display:block}

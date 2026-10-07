@@ -18,7 +18,7 @@ function humanErr(e){ const c=(e&&e.code)||''; const m=(e&&e.message)||String(e|
   if(/network|Failed to fetch|internet/i.test(m)||!navigator.onLine) return 'Pas de réseau. Le coach a besoin d\'une connexion ; tes séries sont enregistrées et partiront toutes seules.';
   if(/invalid-argument/.test(c)) return 'Le serveur n\'a pas compris la demande (version de l\'app en retard ?). Recharge l\'application depuis Réglages.';
   return m; }
-const APP_VERSION='3.15.0';
+const APP_VERSION='3.16.0';
 let PROGRAM={sessions:[]};
 let WEEKS = [
   {n:1,label:'S1 calibrage',from:'2026-09-07',to:'2026-09-13',rirNote:'RIR 3 · établir les références, tout noter'},
@@ -31,9 +31,14 @@ const esc = s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'
 const todayISO = ()=>{const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');};
 const fmtD = iso=>{const [y,m,d]=iso.split('-');return `${d}/${m}`;};
 /* Pont natif (coquille Expo) : présent uniquement dans l'app iOS/Android. */
-const NATIVE = !!(window.ReactNativeWebView);
+let NATIVE = !!(window.ReactNativeWebView);
 function native(msg){ if(!NATIVE) return; try{ window.ReactNativeWebView.postMessage(JSON.stringify(msg)); }catch(e){} }
+const BILLING={available:false,packages:null,premium:null};
 function onNativeMessage(ev){ let m; try{ m=JSON.parse(ev.data); }catch(e){ return; } if(!m||!m.type) return;
+  if(m.type==='billingReady'){ BILLING.available=!!m.available; if(BILLING.available&&USER) native({type:'getOfferings',uid:USER.uid}); }
+  if(m.type==='offerings'){ BILLING.packages=m.packages||[]; if($('#pwOffers')) renderOffers(); }
+  if(m.type==='entitlement'){ BILLING.premium=!!m.premium; }
+  if(m.type==='purchaseResult'){ onPurchaseResult(m); }
   if(m.type==='pushToken'&&m.token){ PUSH_TOKEN=m.token; PUSH_PLATFORM=m.platform||''; savePushToken(); }
   if(m.type==='notificationOpened'){ const b=document.querySelector('.tabs button[data-tab="coach"]'); if(b&&!b.hidden) b.click(); }
   if(m.type==='resume'&&$('#timer')&&$('#timer').classList.contains('on')) tick(); }
@@ -123,7 +128,7 @@ async function onAuth(){
   try{ localStorage.setItem('rituel.hadUser',USER?'1':'0'); }catch(e){}
   native({type:'ready'});
   if(!USER){ PROGRAM_LOADED=false; showGate(); syncStatusIdle(); return; }
-  restoreShell(); setSync('pend','connexion…'); listenMeta(); savePushToken();
+  restoreShell(); setSync('pend','connexion…'); listenMeta(); savePushToken(); native({type:'user',uid:USER.uid});
   // 1. pousser le local vers Firestore (fusion par updatedAt, jamais d'écrasement du plus récent)
   await pushLocalToRemote();
   // 2. écouter Firestore : la source de vérité devient le cloud (copie locale gérée par Firestore)
@@ -165,16 +170,31 @@ $('#syncChip').onclick=()=>{};
 
 /* ---------- réglages ---------- */
 // Forfait : affiché dans Réglages, et proposé quand une limite gratuite est atteinte. Le paiement arrive avec l'étape suivante (App Store / Play).
-function planInfo(){ const plan=(USAGE&&USAGE.plan)||'free'; const lim=(USAGE&&USAGE.limits)||{program:2,analyse:8,chat:30,substitute:2,demo:4}; return {plan,lim}; }
+function planInfo(){ const plan=BILLING.premium?'premium':((USAGE&&USAGE.plan)||'free'); const lim=(USAGE&&USAGE.limits)||{program:2,analyse:8,chat:30,substitute:2,demo:4}; return {plan,lim}; }
 function showPaywall(what,limit){
   const {lim}=planInfo();
   showSheet(`<div class="chead sm">${coachAvatar('attention')}<h3>Kai a atteint sa limite gratuite</h3></div>
     <p>${what?`Ce mois-ci tu as utilisé tes ${esc(String(limit))} ${esc(what)} gratuits.`:'Le forfait gratuit couvre la découverte.'} Avec <b>Rituel Premium</b>, Kai te suit sans compter.</p>
     <div class="plancmp"><div><b>Gratuit</b><span>${lim.analyse} analyses · ${lim.chat} questions · ${lim.program} programmes par mois</span></div><div class="pro"><b>Premium</b><span>Analyses et questions sans limite pratique (60 et 300), nouveau cycle à chaque fin de mésocycle, séances sans salle, Progrès complet, nutrition</span></div></div>
-    <p class="small muted">Lancement de l\'abonnement dans la prochaine version. En attendant, les limites se renouvellent le 1er du mois.</p>
-    <button class="btn fill" id="pwNotify">Me prévenir au lancement</button><button class="btn" onclick="hideSheet()">Plus tard</button>`);
-  const b=$('#pwNotify'); if(b) b.onclick=()=>{ if(USER) col('meta').doc('billing_interest').set({at:Date.now()},{merge:true}).catch(()=>{}); hideSheet(); toast('Noté, tu seras prévenu','ok'); };
+    <div id="pwOffers"></div><button class="btn" onclick="hideSheet()">Plus tard</button>`);
+  renderOffers(); if(BILLING.available&&!BILLING.packages&&USER) native({type:'getOfferings',uid:USER.uid});
 }
+// Offres : prix réels de l'App Store / Google Play quand la coquille les fournit ; sinon « me prévenir ».
+function renderOffers(){ const el=$('#pwOffers'); if(!el) return;
+  if(!NATIVE||!BILLING.available){ el.innerHTML=`<p class="small muted">${NATIVE?'Abonnement bientôt disponible dans cette version.':'L\'abonnement se prend dans l\'app iPhone ou Android.'} En attendant, les limites se renouvellent le 1er du mois.</p><button class="btn fill" id="pwNotify">Me prévenir au lancement</button>`;
+    const b=$('#pwNotify'); if(b) b.onclick=()=>{ if(USER) col('meta').doc('billing_interest').set({at:Date.now()},{merge:true}).catch(()=>{}); hideSheet(); toast('Noté, tu seras prévenu','ok'); }; return; }
+  if(!BILLING.packages){ el.innerHTML=`<p class="small muted center">Chargement des offres…</p>`; return; }
+  if(!BILLING.packages.length){ el.innerHTML=`<p class="small muted">Aucune offre disponible pour le moment.</p><button class="btn" id="pwRestore">Restaurer mes achats</button>`; const r=$('#pwRestore'); if(r) r.onclick=()=>{ native({type:'restore',uid:USER.uid}); toast('Restauration…'); }; return; }
+  const label=p=>p.type==='ANNUAL'?'Annuel':p.type==='MONTHLY'?'Mensuel':p.type==='WEEKLY'?'Hebdomadaire':(p.title||p.id);
+  const sub=p=>p.type==='ANNUAL'?'2 mois offerts par rapport au mensuel':p.intro?('Puis '+p.price+' · essai '+p.intro):'Sans engagement, résiliable à tout moment';
+  el.innerHTML=`<div class="offers">${BILLING.packages.map(p=>`<button class="offer ${p.type==='ANNUAL'?'best':''}" data-pkg="${esc(p.id)}"><span class="ol">${esc(label(p))}${p.type==='ANNUAL'?' <em>Le plus choisi</em>':''}</span><b>${esc(p.price||'')}</b><span class="os">${esc(sub(p))}</span></button>`).join('')}</div><button class="link" id="pwRestore">Restaurer mes achats</button><p class="small muted">Paiement géré par ${/iPhone|iPad/.test(navigator.userAgent)?'l\'App Store':'Google Play'}. Renouvellement automatique, résiliable dans les réglages de ton compte.</p>`;
+  el.querySelectorAll('[data-pkg]').forEach(b=>b.onclick=()=>{ b.disabled=true; b.classList.add('busy'); native({type:'purchase',uid:USER.uid,packageId:b.dataset.pkg}); });
+  const r=$('#pwRestore'); if(r) r.onclick=()=>{ native({type:'restore',uid:USER.uid}); toast('Restauration…'); };
+}
+function onPurchaseResult(m){ if(m.ok&&m.premium){ BILLING.premium=true; hideSheet(); toast(m.restored?'Abonnement restauré':'Bienvenue dans Rituel Premium','ok'); renderReglages(); }
+  else if(m.ok&&!m.premium){ toast(m.restored?'Aucun abonnement actif à restaurer':'Achat non confirmé'); if($('#pwOffers')) renderOffers(); }
+  else if(m.cancelled){ if($('#pwOffers')) renderOffers(); }
+  else { toast('Paiement impossible : '+(m.error||'réessaie')); logErr('achat',m.error||'échec'); if($('#pwOffers')) renderOffers(); } }
 let ADMIN_DATA=null;
 async function showAdmin(){
   const sh=showSheet(`<h3>Administration</h3><p class="small muted" id="admMsg">Chargement…</p><div id="admBody"></div><button class="btn" onclick="hideSheet()">Fermer</button>`);
