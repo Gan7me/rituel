@@ -13,6 +13,22 @@ import * as KeepAwake from 'expo-keep-awake';
 import * as SplashScreen from 'expo-splash-screen';
 import Constants from 'expo-constants';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+// Apple Santé (HealthKit) : lecture du poids, écriture des séances comme entraînements de force. Module optionnel : sans lui, le web n'affiche pas l'option.
+let HK = null; try { HK = require('@kingstinct/react-native-healthkit'); } catch (e) { HK = null; }
+async function hkAvailable() { try { return !!HK && Platform.OS === 'ios' && (await HK.isHealthDataAvailable()); } catch (e) { return false; } }
+async function hkAuthorize() {
+  await HK.requestAuthorization(['HKQuantityTypeIdentifierBodyMass', 'HKWorkoutTypeIdentifier'], ['HKQuantityTypeIdentifierBodyMass', 'HKWorkoutTypeIdentifier', 'HKQuantityTypeIdentifierActiveEnergyBurned']);
+}
+async function hkReadWeight(days) {
+  const from = new Date(Date.now() - (days || 90) * 86400000);
+  const samples = await HK.queryQuantitySamples('HKQuantityTypeIdentifierBodyMass', { from, unit: 'kg', ascending: false, limit: 200 });
+  return (samples || []).map(s => ({ date: new Date(s.startDate).toISOString().slice(0, 10), kg: Math.round(s.quantity * 10) / 10, at: new Date(s.startDate).getTime() }));
+}
+async function hkWriteWorkout(w) {
+  const start = new Date(w.start), end = new Date(w.end);
+  const totals = w.kcal ? { energyBurned: w.kcal, energyBurnedUnit: 'kcal' } : {};
+  await HK.saveWorkoutSample('HKWorkoutActivityTypeTraditionalStrengthTraining', [], start, end, totals, { HKMetadataKeyWorkoutBrandName: 'Rituel', title: w.title || 'Séance Rituel' });
+}
 // Abonnements (App Store / Google Play) via RevenueCat. Sans clé configurée, tout reste inactif et le web garde son écran « me prévenir ».
 let Purchases = null; try { Purchases = require('react-native-purchases').default; } catch (e) { Purchases = null; }
 const RC_KEYS = (Constants.expoConfig && Constants.expoConfig.extra && Constants.expoConfig.extra.revenuecat) || {};
@@ -96,6 +112,17 @@ function Shell() {
         break;
       }
       case 'open': { if (m.url) Linking.openURL(m.url).catch(() => {}); break; }
+      case 'health': {
+        const avail = await hkAvailable();
+        if (!avail) { send({ type: 'healthResult', action: m.action, ok: false, available: false }); break; }
+        try {
+          if (m.action === 'status') send({ type: 'healthResult', action: 'status', ok: true, available: true });
+          else if (m.action === 'authorize') { await hkAuthorize(); send({ type: 'healthResult', action: 'authorize', ok: true, available: true }); }
+          else if (m.action === 'readWeight') { const samples = await hkReadWeight(m.days); send({ type: 'healthResult', action: 'readWeight', ok: true, available: true, samples }); }
+          else if (m.action === 'writeWorkout') { await hkWriteWorkout(m.workout || {}); send({ type: 'healthResult', action: 'writeWorkout', ok: true, available: true }); }
+        } catch (e) { send({ type: 'healthResult', action: m.action, ok: false, available: true, error: String(e && e.message || e) }); }
+        break;
+      }
       case 'user': { // le web signale l'utilisateur connecté : on relie l'abonnement à son identifiant Firebase
         const ok = await rcInit(m.uid);
         if (ok) { try { const info = await Purchases.getCustomerInfo(); send({ type: 'entitlement', premium: isPremium(info) }); } catch (e) {} }

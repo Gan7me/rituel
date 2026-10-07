@@ -57,6 +57,32 @@ function exerciseIndex(prog) {
   return idx;
 }
 
+// Faits calculés pour l'analyse : le modèle lit des chiffres déjà comparés (prescription, aujourd'hui, dernière fois, fourchette atteinte, e1RM), il ne les recalcule pas.
+function e1rm(w, r) { if (!w || !r) return 0; return r === 1 ? w : w * (1 + r / 30); }
+function rangeOf(reps) { const m = String(reps || '').match(/(\d+)\s*[-–à]\s*(\d+)/); if (m) return [Number(m[1]), Number(m[2])]; const n = parseInt(reps); return isNaN(n) ? null : [n, n]; }
+function computeFacts(log, prevLogs, idx, week) {
+  const lines = [];
+  for (const [exId, sets] of Object.entries(log.sets || {})) {
+    const ex = idx[exId]; if (!ex || ex.mode === 'emom') continue;
+    const done = (sets || []).filter(s => s && s.done); if (!done.length) continue;
+    const range = rangeOf(ex.reps); const rirTarget = Array.isArray(ex.rir) ? ex.rir[Math.max(0, (week || 1) - 1)] : null;
+    const top = done.reduce((m, s) => (e1rm(s.w, s.r) > e1rm(m.w, m.r) ? s : m), done[0]);
+    const prev = prevLogs.map(l => (l.sets || {})[exId]).map(a => (a || []).filter(s => s && s.done)).find(a => a.length);
+    const prevTop = prev ? prev.reduce((m, s) => (e1rm(s.w, s.r) > e1rm(m.w, m.r) ? s : m), prev[0]) : null;
+    const allInRange = range ? done.every(s => s.r != null && s.r >= range[0]) : null; const allTop = range ? done.every(s => s.r != null && s.r >= range[1]) : null;
+    const rirs = done.map(s => s.rir).filter(x => x != null); const minRir = rirs.length ? Math.min(...rirs) : null;
+    const d = prevTop && top.w && prevTop.w ? Math.round(100 * (e1rm(top.w, top.r) - e1rm(prevTop.w, prevTop.r)) / e1rm(prevTop.w, prevTop.r)) : null;
+    let verdict = 'données incomplètes';
+    if (range && top.w) {
+      if (allTop && (minRir == null || minRir >= (rirTarget ?? 0))) verdict = 'haut de fourchette atteint sur toutes les séries au RIR prescrit → +2,5 % la prochaine fois';
+      else if (allInRange) verdict = 'dans la fourchette, haut non atteint partout → même charge, viser le haut de fourchette';
+      else verdict = 'sous le bas de fourchette sur au moins une série → charge trop haute ou fatigue, à confirmer';
+      if (minRir != null && rirTarget != null && minRir < rirTarget - 1) verdict += ' ; RIR plus bas que prévu (' + minRir + ' pour ' + rirTarget + ')';
+    }
+    lines.push(`- ${ex.name} : prescrit ${ex.sets}×${ex.reps}${rirTarget != null ? ' RIR ' + rirTarget : ''} · fait ${done.map(s => `${s.w != null ? s.w + 'kg×' : ''}${s.r ?? '?'}${s.rir != null ? ' RIR' + s.rir : ''}`).join(', ')} · meilleure série ${top.w ? top.w + ' kg × ' + top.r : (top.r + ' reps')} (e1RM ${Math.round(e1rm(top.w, top.r))} kg)${prevTop ? ` · dernière fois ${prevTop.w ? prevTop.w + ' kg × ' + prevTop.r : prevTop.r + ' reps'} (e1RM ${Math.round(e1rm(prevTop.w, prevTop.r))} kg${d != null ? ', ' + (d > 0 ? '+' : '') + d + ' %' : ''})` : ' · première fois'} · ${verdict}`);
+  }
+  return lines.join('\n');
+}
 function fmtLog(log, idx) {
   const lines = [];
   for (const [exId, sets] of Object.entries(log.sets || {})) {
@@ -303,6 +329,7 @@ exports.revenuecatWebhook = onRequest({ region: 'europe-west1', secrets: [REVENU
   catch (e) { console.error('[billing] erreur', e && e.message); res.status(500).send('erreur'); }
 });
 exports._applyBillingEvent = applyBillingEvent;
+exports._computeFacts = computeFacts;
 
 exports.deleteAccount = onCall({ region: 'europe-west1' }, async (req) => {
   if (!req.auth) throw new HttpsError('unauthenticated', 'Connexion requise.');
@@ -378,7 +405,10 @@ async function coachImpl(req) {
     const doneSets = Object.values(log.sets || {}).flat().filter(s => s && s.done).length;
     if (!doneSets) throw new HttpsError('failed-precondition', 'Aucune série enregistrée pour cette séance : rien à analyser.');
     const guide = `Consignes d'analyse. Tu es le coach de cet athlète, pas un rapport automatique : tu lis la séance comme un préparateur physique qui connaît son histoire. Exercice sauté : il l'a décidé, tu ne le comptes pas comme un manque de données, tu demandes seulement pourquoi si ça se répète. Charge aberrante d'une séance à l'autre (écart > 30 % sur le même exercice) : tu ne la juges pas, tu la fais confirmer dans « questions » (unité, machine différente, erreur de saisie) et tu neutralises cet exercice dans tes décisions. Compare chaque exercice à sa prescription et à la dernière référence (charge, reps, RIR). Si l'athlète écrit que c'était facile, ou si les reps dépassent le haut de fourchette au RIR prescrit, tu augmentes la charge (règle : +2,5 % quand le haut de fourchette est atteint partout, +5 % si la note dit "facile" et que les RIR déclarés sont ≥ 3) et tu le dis exercice par exercice. Si une charge manque, tu le signales et tu demandes de la noter. Tu ne fais pas de généralités : chaque phrase s'appuie sur une donnée de la séance ou de l'historique. Tu livres des conclusions, pas ton raisonnement : pas de « attention », « en fait », « donc » en cascade, pas d'auto-correction. Attention aux fourchettes : 12 reps sur 12-15 est le bas de la fourchette. Propose un ajustement pour chaque exercice où les données le justifient.`;
-    const user = `Programme :\n${programSummary}\n\n${context}\n\n## Séance à analyser\n${log.date} · ${sessionName} · S${log.week}${log.done ? '' : ' (non terminée)'}\n${fmtLog(log, idx)}${log.notes ? '\nNote de l\'athlète : ' + log.notes : ''}\n\n${guide}`;
+    const prevSnap = await db.collection('users').doc(uid).collection('logs').orderBy('date', 'desc').limit(40).get().catch(() => ({ docs: [] }));
+    const prevLogs = prevSnap.docs.map(d => d.data()).filter(l => l.session === log.session && l.date < log.date).slice(0, 4);
+    const facts = computeFacts(log, prevLogs, idx, log.week);
+    const user = `Programme :\n${programSummary}\n\n${context}\n\n## Séance à analyser\n${log.date} · ${sessionName} · S${log.week}${log.done ? '' : ' (non terminée)'}\n${fmtLog(log, idx)}${log.notes ? '\nNote de l\'athlète : ' + log.notes : ''}\n\n## Faits calculés (fiables, à utiliser tels quels, ne recalcule pas)\n${facts || '(aucun)'}\n\n${guide}`;
     const parsed = await claudeJSON(apiKey, model, SYSTEM, [{ role: 'user', content: user }], ANALYSIS_SCHEMA, 3500);
     parsed.exercises = (parsed.exercises || []).filter(e => e && idx[e.exId]).map(e => ({ exId: e.exId, name: idx[e.exId].name, done: String(e.done || ''), read: String(e.read || ''), status: ['ok', 'up', 'hold', 'warn'].includes(e.status) ? e.status : 'ok' }));
     parsed.analysis = String(parsed.verdict || '');

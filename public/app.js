@@ -18,7 +18,7 @@ function humanErr(e){ const c=(e&&e.code)||''; const m=(e&&e.message)||String(e|
   if(/network|Failed to fetch|internet/i.test(m)||!navigator.onLine) return 'Pas de réseau. Le coach a besoin d\'une connexion ; tes séries sont enregistrées et partiront toutes seules.';
   if(/invalid-argument/.test(c)) return 'Le serveur n\'a pas compris la demande (version de l\'app en retard ?). Recharge l\'application depuis Réglages.';
   return m; }
-const APP_VERSION='3.16.0';
+const APP_VERSION='3.17.0';
 let PROGRAM={sessions:[]};
 let WEEKS = [
   {n:1,label:'S1 calibrage',from:'2026-09-07',to:'2026-09-13',rirNote:'RIR 3 · établir les références, tout noter'},
@@ -39,16 +39,17 @@ function onNativeMessage(ev){ let m; try{ m=JSON.parse(ev.data); }catch(e){ retu
   if(m.type==='offerings'){ BILLING.packages=m.packages||[]; if($('#pwOffers')) renderOffers(); }
   if(m.type==='entitlement'){ BILLING.premium=!!m.premium; }
   if(m.type==='purchaseResult'){ onPurchaseResult(m); }
+  if(m.type==='healthResult'){ onHealthResult(m); }
   if(m.type==='pushToken'&&m.token){ PUSH_TOKEN=m.token; PUSH_PLATFORM=m.platform||''; savePushToken(); }
   if(m.type==='notificationOpened'){ const b=document.querySelector('.tabs button[data-tab="coach"]'); if(b&&!b.hidden) b.click(); }
-  if(m.type==='resume'&&$('#timer')&&$('#timer').classList.contains('on')) tick(); }
+  if(m.type==='resume'){ if($('#timer')&&$('#timer').classList.contains('on')) tick(); if(S.health&&Date.now()-(S.healthAt||0)>6*3600000) healthSync(); } }
 let PUSH_TOKEN=null, PUSH_PLATFORM='';
 function savePushToken(){ if(!PUSH_TOKEN||!USER||!fbDb) return; try{ const FV=firebase.firestore.FieldValue; col('meta').doc('push').set({expo:FV&&FV.arrayUnion?FV.arrayUnion(PUSH_TOKEN):[PUSH_TOKEN],platform:PUSH_PLATFORM,updatedAt:Date.now()},{merge:true}).catch(()=>{}); }catch(e){} }
 window.addEventListener('message',onNativeMessage); document.addEventListener('message',onNativeMessage);
 
 /* ---------- state ---------- */
 const KEY='rituel.v1';
-let S = {logs:{}, bw:{}, tests:{}, chats:{}, overrides:{}, weekOverride:null, session:null, wake:true, openEx:null};
+let S = {logs:{}, bw:{}, tests:{}, chats:{}, overrides:{}, weekOverride:null, session:null, wake:true, openEx:null, health:false, healthAt:0};
 try{ const raw=localStorage.getItem(KEY); if(raw) S=Object.assign(S,JSON.parse(raw)); }catch(e){}
 function save(){ const j=JSON.stringify(S); try{ localStorage.setItem(KEY, j); }catch(e){} idbSet(j); }
 function idb(){ return new Promise((res,rej)=>{ const r=indexedDB.open('rituel',1); r.onupgradeneeded=()=>r.result.createObjectStore('kv'); r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error); }); }
@@ -128,7 +129,7 @@ async function onAuth(){
   try{ localStorage.setItem('rituel.hadUser',USER?'1':'0'); }catch(e){}
   native({type:'ready'});
   if(!USER){ PROGRAM_LOADED=false; showGate(); syncStatusIdle(); return; }
-  restoreShell(); setSync('pend','connexion…'); listenMeta(); savePushToken(); native({type:'user',uid:USER.uid});
+  restoreShell(); setSync('pend','connexion…'); listenMeta(); savePushToken(); native({type:'user',uid:USER.uid}); healthStatus(); if(S.health&&Date.now()-(S.healthAt||0)>6*3600000) setTimeout(healthSync,3000);
   // 1. pousser le local vers Firestore (fusion par updatedAt, jamais d'écrasement du plus récent)
   await pushLocalToRemote();
   // 2. écouter Firestore : la source de vérité devient le cloud (copie locale gérée par Firestore)
@@ -169,6 +170,20 @@ window.addEventListener('online',syncStatusIdle); window.addEventListener('offli
 $('#syncChip').onclick=()=>{};
 
 /* ---------- réglages ---------- */
+/* ---------- Apple Santé : poids importé, séances exportées ---------- */
+const HEALTH={available:null,busy:false,last:null};
+function healthStatus(){ if(NATIVE&&HEALTH.available===null) native({type:'health',action:'status'}); }
+function healthEnable(){ HEALTH.busy=true; renderReglages(); native({type:'health',action:'authorize'}); }
+function healthSync(){ if(!NATIVE||!S.health||HEALTH.busy) return; HEALTH.busy=true; native({type:'health',action:'readWeight',days:120}); }
+function onHealthResult(m){
+  HEALTH.busy=false; HEALTH.available=!!m.available;
+  if(m.action==='status'){ renderReglages(); return; }
+  if(m.action==='authorize'){ if(m.ok){ S.health=true; save(); toast('Apple Santé connecté','ok'); healthSync(); } else { S.health=false; save(); toast(m.available?'Autorisation refusée':'Apple Santé indisponible'); } renderReglages(); return; }
+  if(m.action==='readWeight'){ if(!m.ok){ logErr('santé',m.error||'lecture impossible'); return; } let n=0; (m.samples||[]).forEach(x=>{ if(!x.date||!x.kg) return; const cur=S.bw[x.date]; if(cur&&cur.source!=='health') return; if(cur&&cur.kg===x.kg) return; S.bw[x.date]={date:x.date,kg:x.kg,source:'health',updatedAt:Date.now()}; writeDoc('bw',x.date,S.bw[x.date]); n++; }); S.healthAt=Date.now(); save(); if(n){ toast(n===1?'1 pesée importée d\'Apple Santé':n+' pesées importées d\'Apple Santé','ok'); renderSuivi(); renderHome(); } renderReglages(); return; }
+  if(m.action==='writeWorkout'){ if(m.ok) toast('Séance ajoutée à Apple Santé','ok'); else logErr('santé',m.error||'écriture impossible'); }
+}
+// Appelé à la fin d'une séance : durée réelle de la première série validée à la clôture.
+function healthExportSession(log){ if(!NATIVE||!S.health||!log) return; const ts=Object.values(log.sets||{}).flat().filter(x=>x&&x.done&&x.t).map(x=>x.t); if(!ts.length) return; const start=Math.min(...ts)-5*60000, end=Math.max(Date.now(),Math.max(...ts)+60000); const ses=PROGRAM.sessions.find(x=>x.id===log.session); const mins=(end-start)/60000; const kcal=Math.round(mins*((PROFILE&&PROFILE.weight)||70)*0.09); native({type:'health',action:'writeWorkout',workout:{start,end,kcal,title:'Rituel · '+(ses?ses.name:log.session)}}); }
 // Forfait : affiché dans Réglages, et proposé quand une limite gratuite est atteinte. Le paiement arrive avec l'étape suivante (App Store / Play).
 function planInfo(){ const plan=BILLING.premium?'premium':((USAGE&&USAGE.plan)||'free'); const lim=(USAGE&&USAGE.limits)||{program:2,analyse:8,chat:30,substitute:2,demo:4}; return {plan,lim}; }
 function showPaywall(what,limit){
@@ -226,6 +241,7 @@ function renderReglages(){
   </div>
   <div class="grp"><div class="grp-t">Séance</div>
     <label class="row"><span>Écran allumé pendant la séance</span><input type="checkbox" class="sw" id="wakeOpt" ${S.wake!==false?'checked':''}></label>
+    ${NATIVE&&HEALTH.available!==false?`<button class="row" id="healthBtn"><span>Apple Santé</span><span class="muted">${HEALTH.busy?'…':S.health?('connecté'+(S.healthAt?' · synchro '+new Date(S.healthAt).toLocaleDateString('fr-FR',{day:'numeric',month:'short'}):'')):'poids importé, séances exportées'}</span><i></i></button>`:''}
     ${NATIVE?`<div class="row"><span>Notifications</span><span class="muted">${PUSH_TOKEN?'activées':'gérées par le téléphone'}</span></div>`:`<button class="row" id="notifBtn"><span>Notifications de fin de repos</span><span class="muted">${notifState}</span><i></i></button>`}
   </div>
   <div class="grp"><div class="grp-t">Données</div>
@@ -243,6 +259,7 @@ function renderReglages(){
   const so=$('#signOut'); if(so) so.onclick=()=>{ if(confirm('Se déconnecter ? Tes données restent sur ton compte.')) signOut(); };
   const db_=$('#delBtn'); if(db_) db_.onclick=async()=>{ if(!confirm('Supprimer définitivement ton compte, ton programme et tout ton journal ? Cette action est irréversible.')) return; if(prompt('Tape SUPPRIMER pour confirmer')!=='SUPPRIMER') return; try{ const fn=fbFn.httpsCallable('deleteAccount'); await fn({}); try{ localStorage.clear(); }catch(e){} alert('Compte supprimé.'); location.reload(); }catch(e){ alert('Échec : '+(e.message||e)+'. Si le message parle de connexion récente, déconnecte-toi, reconnecte-toi puis réessaie.'); } };
   const vb=$('#verifBtn'); if(vb) vb.onclick=async()=>{ try{ await USER.sendEmailVerification(); vb.textContent='lien envoyé'; }catch(e){ vb.textContent='échec : '+e.message; } };
+  const hb=$('#healthBtn'); if(hb) hb.onclick=()=>{ if(S.health){ showSheet(`<h3>Apple Santé</h3><p>Ton poids est importé automatiquement (les pesées saisies à la main gardent la priorité) et chaque séance terminée est enregistrée comme entraînement de force : elle compte dans tes anneaux et apparaît sur ta montre.</p><div class="row2"><button class="btn fill" id="hsNow">Synchroniser maintenant</button><button class="btn" id="hsOff">Déconnecter</button></div>`); $('#hsNow').onclick=()=>{ hideSheet(); healthSync(); toast('Synchronisation…'); }; $('#hsOff').onclick=()=>{ S.health=false; save(); hideSheet(); renderReglages(); toast('Apple Santé déconnecté'); }; } else healthEnable(); };
   const pb=$('#planBtn'); if(pb) pb.onclick=()=>showPaywall();
   const adb=$('#adminBtn'); if(adb) adb.onclick=showAdmin;
   $('#profBtn').onclick=()=>{ if(!USER) return; const sheet=showSheet(`<h3>Mon profil</h3>`+profileForm(PROFILE||{})); bindProfileForm(()=>{ hideSheet(); toast('Profil enregistré','ok'); renderReglages(); }, sheet); };
@@ -861,7 +878,7 @@ function renderSeance(){
   const so=$('#subOff'); if(so) so.onclick=()=>{ if(!USER) return; col('overrides').doc(curSession().id).set({substitute:firebase.firestore.FieldValue.delete(),updatedAt:Date.now()},{merge:true}).catch(()=>{}); toast('Séance prévue rétablie'); };
   $('#notes').onchange=e=>{ log.notes=e.target.value; touch(log); toast('Note enregistrée'); };
   updateElapsed(log);
-  $('#endBtn').onclick=()=>{ log.done=!log.done; touch(log); stopTimer(); if(log.done){ releaseWake(); S.openEx=null; save(); toast('Séance enregistrée','ok'); if(FOCUS){ FOCUS=false; document.body.classList.remove('focus'); } if(USER&&navigator.onLine){ analyseSession(logKey(log.date,log.session)); document.querySelector('.tabs button[data-tab="coach"]').click(); } } renderSeance(); if(log.done) window.scrollTo({top:0}); };
+  $('#endBtn').onclick=()=>{ log.done=!log.done; touch(log); stopTimer(); if(log.done){ releaseWake(); S.openEx=null; save(); toast('Séance enregistrée','ok'); healthExportSession(log); if(FOCUS){ FOCUS=false; document.body.classList.remove('focus'); } if(USER&&navigator.onLine){ analyseSession(logKey(log.date,log.session)); document.querySelector('.tabs button[data-tab="coach"]').click(); } } renderSeance(); if(log.done) window.scrollTo({top:0}); };
 }
 
 let elapsedTimer=0;

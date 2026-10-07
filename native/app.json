@@ -2,7 +2,7 @@
   "expo": {
     "name": "Rituel",
     "slug": "rituel",
-    "version": "3.16.0",
+    "version": "3.17.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "scheme": "rituel",
@@ -22,7 +22,13 @@
         "WKAppBoundDomains": [
           "rituel-6b365.web.app",
           "rituel-6b365.firebaseapp.com"
-        ]
+        ],
+        "NSHealthShareUsageDescription": "Rituel lit ton poids dans Apple Santé pour suivre ta tendance sans ressaisie.",
+        "NSHealthUpdateUsageDescription": "Rituel enregistre tes séances de musculation dans Apple Santé."
+      },
+      "entitlements": {
+        "com.apple.developer.healthkit": true,
+        "com.apple.developer.healthkit.access": []
       }
     },
     "android": {
@@ -59,6 +65,14 @@
           "icon": "./assets/adaptive-monochrome.png",
           "color": "#D8382B",
           "defaultChannel": "rituel"
+        }
+      ],
+      [
+        "@kingstinct/react-native-healthkit",
+        {
+          "NSHealthShareUsageDescription": false,
+          "NSHealthUpdateUsageDescription": false,
+          "background": false
         }
       ]
     ],

@@ -1,6 +1,6 @@
 {
   "name": "rituel-native",
-  "version": "3.16.0",
+  "version": "3.17.0",
   "main": "index.js",
   "private": true,
   "scripts": {
@@ -24,6 +24,7 @@
     "react-native": "0.86.3",
     "react-native-safe-area-context": "~5.7.0",
     "react-native-webview": "13.16.1",
-    "react-native-purchases": "^9.0.0"
+    "react-native-purchases": "^9.0.0",
+    "@kingstinct/react-native-healthkit": "^9.0.0"
   }
 }
