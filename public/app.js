@@ -18,7 +18,7 @@ function humanErr(e){ const c=(e&&e.code)||''; const m=(e&&e.message)||String(e|
   if(/network|Failed to fetch|internet/i.test(m)||!navigator.onLine) return 'Pas de réseau. Le coach a besoin d\'une connexion ; tes séries sont enregistrées et partiront toutes seules.';
   if(/invalid-argument/.test(c)) return 'Le serveur n\'a pas compris la demande (version de l\'app en retard ?). Recharge l\'application depuis Réglages.';
   return m; }
-const APP_VERSION='3.19.1';
+const APP_VERSION='3.19.2';
 let PROGRAM={sessions:[]};
 let WEEKS = [
   {n:1,label:'S1 calibrage',from:'2026-09-07',to:'2026-09-13',rirNote:'RIR 3 · établir les références, tout noter'},
@@ -699,14 +699,30 @@ const BADGE_ICON={
   star:'M24 8 L28.5 18.5 L40 19.5 L31 27 L34 38 L24 32 L14 38 L17 27 L8 19.5 L19.5 18.5 Z'
 };
 let BADGE_UID=0;
+// Écussons façon médailles : forme par famille, jante métallique, émail dégradé, icône embossée, paliers en points.
+const BADGE_SHAPE={ses:'medal',pr:'shield',pull:'hex',reg:'ring',cyc:'star'};
 function badgeSvg(b,size,locked){
-  const [c1,c2]=BADGE_FAM[b.fam]||BADGE_FAM.ses; const id='bg'+(++BADGE_UID); const tier=b.tier||1;
-  const ring=locked?'var(--line)':tier>=5?'#E6C45A':tier>=3?'#C9CDD6':'rgba(255,255,255,.55)';
-  return `<svg viewBox="0 0 48 48" width="${size}" height="${size}" class="badge ${locked?'lock':''}" aria-hidden="true"><defs><linearGradient id="${id}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${locked?'#C7CBD2':c1}"/><stop offset="1" stop-color="${locked?'#8E949D':c2}"/></linearGradient></defs>
-    <path d="M24 2 L41 11 V31 L24 46 L7 31 V11 Z" fill="url(#${id})"/><path d="M24 5.5 L38 13 V29.5 L24 42 L10 29.5 V13 Z" fill="none" stroke="${ring}" stroke-width="1.6" opacity=".9"/>
-    <path d="M24 2 L41 11 V18 Q24 10 7 18 V11 Z" fill="#fff" opacity=".16"/>
-    <path d="${BADGE_ICON[b.icon]||BADGE_ICON.star}" fill="#fff" opacity="${locked?.55:.96}"/>
-    ${tier>1?[...Array(Math.min(tier,5))].map((_,i)=>`<circle cx="${24-(tier-1)*2.6+i*5.2}" cy="40" r="1.5" fill="#fff" opacity=".85"/>`).join(''):''}</svg>`;
+  const [c1,c2]=BADGE_FAM[b.fam]||BADGE_FAM.ses; const u='b'+(++BADGE_UID); const tier=b.tier||1; const shape=BADGE_SHAPE[b.fam]||'medal';
+  const metal=locked?['#D9DCE1','#9AA0A8','#6E747C']:tier>=5?['#FFF1B8','#E2B93B','#9A7210']:tier>=3?['#F7F8FA','#C3C8D1','#7E8590']:['#E9C9A9','#B9865A','#7A5232'];
+  const e1=locked?'#B9BEC6':c1, e2=locked?'#7C838C':c2;
+  const outer={medal:'M50 4 A46 46 0 1 1 49.9 4 Z',shield:'M50 4 L90 16 V50 C90 74 72 90 50 97 C28 90 10 74 10 50 V16 Z',hex:'M50 3 L91 26 V74 L50 97 L9 74 V26 Z',ring:'M50 4 A46 46 0 1 1 49.9 4 Z',star:'M50 3 L62 30 L91 33 L69 52 L76 81 L50 66 L24 81 L31 52 L9 33 L38 30 Z'}[shape];
+  const inner={medal:'M50 14 A36 36 0 1 1 49.9 14 Z',shield:'M50 13 L82 23 V50 C82 69 68 82 50 88 C32 82 18 69 18 50 V23 Z',hex:'M50 13 L82 31 V69 L50 87 L18 69 V31 Z',ring:'M50 16 A34 34 0 1 1 49.9 16 Z',star:'M50 14 L59 34 L81 36 L64 51 L69 73 L50 62 L31 73 L36 51 L19 36 L41 34 Z'}[shape];
+  const icon=BADGE_ICON[b.icon]||BADGE_ICON.star; // dessinée dans un repère 48×48, centrée
+  const dots=tier>1?[...Array(Math.min(tier,5))].map((_,i)=>`<circle cx="${50-(tier-1)*4+i*8}" cy="${shape==='star'?60:shape==='shield'?76:80}" r="2.4" fill="url(#${u}m)" stroke="${metal[2]}" stroke-width=".5"/>`).join(''):'';
+  return `<svg viewBox="0 0 100 100" width="${size}" height="${size}" class="badge ${locked?'lock':''}" aria-hidden="true"><defs>
+    <linearGradient id="${u}m" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${metal[0]}"/><stop offset=".5" stop-color="${metal[1]}"/><stop offset="1" stop-color="${metal[2]}"/></linearGradient>
+    <linearGradient id="${u}m2" x1="1" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${metal[0]}"/><stop offset=".5" stop-color="${metal[1]}"/><stop offset="1" stop-color="${metal[2]}"/></linearGradient>
+    <radialGradient id="${u}e" cx=".35" cy=".3" r=".8"><stop offset="0" stop-color="${e1}"/><stop offset="1" stop-color="${e2}"/></radialGradient>
+    <linearGradient id="${u}g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".55"/><stop offset=".55" stop-color="#fff" stop-opacity="0"/></linearGradient>
+    <filter id="${u}s" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="#000" flood-opacity="${locked?.12:.28}"/></filter>
+    <clipPath id="${u}c"><path d="${inner}"/></clipPath></defs>
+    ${shape==='medal'&&!locked?`<path d="M36 70 L28 98 L40 93 L50 100 L60 93 L72 98 L64 70 Z" fill="${c2}"/><path d="M44 72 L50 100 L56 72 Z" fill="${c1}" opacity=".8"/>`:''}
+    <g filter="url(#${u}s)"><path d="${outer}" fill="url(#${u}m)"/><path d="${outer}" fill="none" stroke="${metal[2]}" stroke-width="1" opacity=".5"/>
+    <path d="${inner}" fill="url(#${u}m2)" transform="translate(50 50) scale(1.07) translate(-50 -50)" opacity=".9"/>
+    <path d="${inner}" fill="url(#${u}e)"/><path d="${inner}" fill="none" stroke="#000" stroke-opacity=".18" stroke-width="2"/>
+    <g clip-path="url(#${u}c)"><ellipse cx="42" cy="26" rx="34" ry="18" fill="url(#${u}g)"/></g>
+    <g transform="translate(26 ${shape==='star'?24:22}) scale(1)"><path d="${icon}" fill="#000" opacity=".25" transform="translate(0 1.5)"/><path d="${icon}" fill="#fff" opacity="${locked?.5:.95}"/></g>
+    ${dots}</g></svg>`;
 }
 function rankSvg(stage,size){
   const [c1,c2]=stage>=5?['#FFE08A','#C98A00']:stage>=4?['#D7DCE6','#7F8794']:stage>=3?['#FF9A7A','#B62C21']:stage>=2?['#8FD0A8','#1E8E5A']:['#C9CFD8','#6B7280']; const id='rk'+(++BADGE_UID);
@@ -723,13 +739,18 @@ function progressFacts(){
   let stage=1; RANKS.forEach((st,i)=>{ if(xp>=st.xp) stage=i+1; });
   const next=RANKS[stage]||null, prev=RANKS[stage-1];
   const f={sessions,prs,pull,fullWeeks,maxTon,tests:tests.length,cycles,xp,stage,stageName:RANKS[stage-1].name,next,pct:next?Math.round(100*(xp-prev.xp)/(next.xp-prev.xp)):100};
-  f.unlocked=BADGES.filter(b=>b.test(f)).map(b=>b.id); f.nextBadge=BADGES.find(b=>!f.unlocked.includes(b.id))||null; return f;
+  f.unlocked=BADGES.filter(b=>b.test(f)).map(b=>b.id); f.nextBadge=BADGES.find(b=>!f.unlocked.includes(b.id))||null;
+  S.badgeDates=S.badgeDates||{}; let nd=false; f.unlocked.forEach(id=>{ if(!S.badgeDates[id]){ S.badgeDates[id]=todayISO(); nd=true; } }); if(nd) save(); return f;
 }
 function showBadges(){
-  const f=progressFacts(); const seen=S.badgesSeen||[];
-  showSheet(`<div class="rkhead">${rankSvg(f.stage,64)}<div><span class="eyebrow">Rang ${f.stage} sur ${RANKS.length}</span><h3>${esc(f.stageName)}</h3><div class="xpbar"><i style="width:${f.pct}%"></i></div><p class="small muted">${f.xp} XP${f.next?` · ${f.next.xp-f.xp} avant « ${esc(f.next.name)} »`:' · rang maximal'}</p></div></div>
-    <div class="bgrid">${BADGES.map(b=>{ const ok=f.unlocked.includes(b.id); return `<div class="bcell ${ok?'':'lock'}">${badgeSvg(b,56,!ok)}<b>${esc(b.name)}</b><small>${ok?'obtenu':esc(b.how)}</small></div>`; }).join('')}</div>
-    <p class="small muted">Expérience : séance terminée 10, record 15, test de tractions 5, semaine complète 25. ${f.unlocked.length}/${BADGES.length} badges.</p><button class="btn" onclick="hideSheet()">Fermer</button>`);
+  const f=progressFacts(); const seen=S.badgesSeen||[]; const FAMN={ses:'Séances',pr:'Records',pull:'Tractions',reg:'Régularité',cyc:'Cycle'};
+  const got=BADGES.filter(b=>f.unlocked.includes(b.id)).sort((x,y)=>(S.badgeDates[y.id]||'')<(S.badgeDates[x.id]||'')?-1:1); const latest=got[0];
+  const dateOf=b=>S.badgeDates[b.id]?new Date(S.badgeDates[b.id]+'T12:00:00').toLocaleDateString('fr-FR',{day:'numeric',month:'long',year:'numeric'}):'';
+  showSheet(`<div class="rkhead">${rankSvg(f.stage,64)}<div><span class="eyebrow">Rang ${f.stage} sur ${RANKS.length}</span><h3>${esc(f.stageName)}</h3><div class="xpbar"><i style="width:${f.pct}%"></i></div><p class="small muted">${f.xp} XP${f.next?` · ${f.next.xp-f.xp} avant « ${esc(f.next.name)} »`:' · rang maximal'} · ${got.length}/${BADGES.length} badges</p></div></div>
+    ${latest?`<div class="bhero">${badgeSvg(latest,132,false)}<b>${esc(latest.name)}</b><span>${esc(latest.how)}</span><small>${esc(dateOf(latest))}</small></div>`:''}
+    ${['ses','pr','pull','reg','cyc'].map(fam=>`<h4>${FAMN[fam]}</h4><div class="bgrid">${BADGES.filter(b=>b.fam===fam).map(b=>{ const ok=f.unlocked.includes(b.id); return `<button class="bcell ${ok?'':'lock'}" data-badge="${b.id}">${badgeSvg(b,64,!ok)}<b>${esc(b.name)}</b><small>${ok?esc(dateOf(b)):esc(b.how)}</small></button>`; }).join('')}</div>`).join('')}
+    <p class="small muted">Expérience : séance terminée 10, record 15, test de tractions 5, semaine complète 25.</p><button class="btn" onclick="hideSheet()">Fermer</button>`);
+  document.querySelectorAll('[data-badge]').forEach(el=>el.onclick=()=>{ const b=BADGES.find(x=>x.id===el.dataset.badge); const ok=f.unlocked.includes(b.id); const sh=document.querySelector('#sheet .sheet-card'); const d=document.createElement('div'); d.className='bzoom'; d.innerHTML=`${badgeSvg(b,220,!ok)}<b>${esc(b.name)}</b><span>${esc(b.how)}</span><small>${ok?'Obtenu le '+esc(dateOf(b)):'Pas encore obtenu'}</small>`; d.onclick=()=>d.remove(); sh.appendChild(d); });
   if(f.unlocked.some(id=>!seen.includes(id))){ S.badgesSeen=f.unlocked.slice(); save(); renderHome(); }
 }
 
