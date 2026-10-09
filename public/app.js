@@ -251,8 +251,9 @@ function renderReglages(){
   const tests=Object.values(S.tests||{}).sort((x,y)=>x.date<y.date?1:-1); const pull=tests[0]?tests[0].reps:null;
   const nDone=Object.values(S.logs).filter(l=>l.done).length;
   const goals={force:'Force',masse:'Muscle',seche:'Sèche',endurance:'Endurance',puissance:'Puissance',tractions:'Tractions',jambes:'Jambes',bras:'Bras & pecs',sante:'Santé',perf:'Performance'};
-  el.innerHTML=`<div class="phero prof"><button class="pav av" id="profAvatar" aria-label="Mon avatar">${avatarSvg(72)}</button><h2>${esc(name||'Mon profil')}</h2><p class="small muted">${P.level?LV[P.level]+' · ':''}${P.age?P.age+' ans · ':''}${P.height?P.height+' cm':''}</p>
+  el.innerHTML=`<div class="phero prof"><button class="pav rk" id="profAvatar" aria-label="Mes badges">${rankSvg(progressFacts().stage,76)}</button><h2>${esc(name||'Mon profil')}</h2><p class="small muted">${P.level?LV[P.level]+' · ':''}${P.age?P.age+' ans · ':''}${P.height?P.height+' cm':''}</p>
     <div class="pills">${(P.goals||[]).slice(0,4).map(g=>`<span class="pill">${esc(goals[g]||g)}</span>`).join('')}<span class="pill ${pi.plan==='premium'?'prem':''}">${pi.plan==='premium'?'Premium':'Gratuit'}</span></div>
+    ${(()=>{ const f=progressFacts(); const got=BADGES.filter(b=>f.unlocked.includes(b.id)); return got.length?`<button class="brow center" id="profBadges">${got.slice(-6).map(b=>badgeSvg(b,34,false)).join('')}${got.length>6?`<span class="small muted">+${got.length-6}</span>`:''}</button>`:''; })()}
     <div class="pstats"><div><b>${kg?String(kg).replace('.',','):'—'}</b><span>kg</span></div><div><b>${pull!=null?pull:'—'}</b><span>tractions${P.pullGoal?' / '+P.pullGoal:''}</span></div><div><b>${nDone}</b><span>séance${nDone>1?'s':''}</span></div></div>
     <div class="row2"><button class="btn sm" id="profBtn">Modifier le profil</button>${pi.plan!=='premium'?`<button class="btn fill sm" id="planBtn">Passer Premium</button>`:''}</div></div>
   <div class="grp"><div class="grp-t">Entraînement</div>
@@ -284,7 +285,7 @@ function renderReglages(){
   const hb=$('#healthBtn'); if(hb) hb.onclick=()=>{ if(S.health){ showSheet(`<h3>Apple Santé</h3><p>Ton poids est importé automatiquement (les pesées saisies à la main gardent la priorité) et chaque séance terminée est enregistrée comme entraînement de force : elle compte dans tes anneaux et apparaît sur ta montre.</p><div class="row2"><button class="btn fill" id="hsNow">Synchroniser maintenant</button><button class="btn" id="hsOff">Déconnecter</button></div>`); $('#hsNow').onclick=()=>{ hideSheet(); healthSync(); toast('Synchronisation…'); }; $('#hsOff').onclick=()=>{ S.health=false; save(); hideSheet(); renderReglages(); toast('Apple Santé déconnecté'); }; } else healthEnable(); };
   const pb=$('#planBtn'); if(pb) pb.onclick=()=>showPlan();
   const pr=$('#planRow'); if(pr) pr.onclick=()=>showPlan();
-  const pa=$('#profAvatar'); if(pa) pa.onclick=showAvatarSheet;
+  const pa=$('#profAvatar'); if(pa) pa.onclick=showBadges; const pb2=$('#profBadges'); if(pb2) pb2.onclick=showBadges;
   const ts=$('#themeSeg'); if(ts) ts.querySelectorAll('button').forEach(b=>b.onclick=()=>{ S.theme=b.dataset.theme; save(); applyTheme(); renderReglages(); });
   const adb=$('#adminBtn'); if(adb) adb.onclick=showAdmin;
   $('#profBtn').onclick=()=>{ if(!USER) return; const sheet=showSheet(`<h3>Mon profil</h3>`+profileForm(PROFILE||{})); bindProfileForm(()=>{ hideSheet(); toast('Profil enregistré','ok'); renderReglages(); }, sheet); };
@@ -667,76 +668,69 @@ $('#tStop').onclick=stopTimer; $('#tPlus').onclick=()=>{T.end+=30000;T.total+=30
 document.addEventListener('visibilitychange',()=>{ if(!document.hidden&&$('#timer').classList.contains('on')) tick(); });
 
 
-/* ---------- Avatar évolutif : un personnage qui se renforce avec les séances, les records et les semaines complètes ---------- */
-const AV_STAGES=[{xp:0,name:'Recrue'},{xp:60,name:'Solide'},{xp:180,name:'Costaud'},{xp:400,name:'Athlète'},{xp:800,name:'Élite'}];
-const AV_GEAR=[
-  {id:'bandeau',name:'Bandeau',how:'10 séances terminées',test:f=>f.sessions>=10},
-  {id:'gants',name:'Gants',how:'Premier record',test:f=>f.prs>=1},
-  {id:'lunettes',name:'Lunettes',how:'25 séances terminées',test:f=>f.sessions>=25},
-  {id:'chaine',name:'Chaîne',how:'3 records',test:f=>f.prs>=3},
-  {id:'ceinture',name:'Ceinture',how:'45 tractions au test',test:f=>f.pull>=45},
-  {id:'cape',name:'Cape',how:'4 semaines complètes',test:f=>f.fullWeeks>=4},
-  {id:'couronne',name:'Couronne',how:'Stade Élite',test:f=>f.stage>=5}
+/* ---------- Rang et badges : récompenses sur des jalons réels (séances, records, tractions, régularité) ---------- */
+const RANKS=[{xp:0,name:'Recrue'},{xp:60,name:'Solide'},{xp:180,name:'Costaud'},{xp:400,name:'Athlète'},{xp:800,name:'Élite'}];
+// Palette par famille : séances = rouge, records = or, tractions = bleu, régularité = vert, cycle = violet.
+const BADGES=[
+  {id:'s1',name:'Première séance',how:'1 séance terminée',fam:'ses',icon:'bolt',test:f=>f.sessions>=1},
+  {id:'s10',name:'Dix séances',how:'10 séances terminées',fam:'ses',icon:'bolt',tier:2,test:f=>f.sessions>=10},
+  {id:'s25',name:'Vingt-cinq',how:'25 séances terminées',fam:'ses',icon:'bolt',tier:3,test:f=>f.sessions>=25},
+  {id:'s50',name:'Cinquante',how:'50 séances terminées',fam:'ses',icon:'bolt',tier:4,test:f=>f.sessions>=50},
+  {id:'s100',name:'Centurion',how:'100 séances terminées',fam:'ses',icon:'bolt',tier:5,test:f=>f.sessions>=100},
+  {id:'pr1',name:'Premier record',how:'1 record personnel',fam:'pr',icon:'trophy',test:f=>f.prs>=1},
+  {id:'pr5',name:'Cinq records',how:'5 records personnels',fam:'pr',icon:'trophy',tier:3,test:f=>f.prs>=5},
+  {id:'pr15',name:'Collectionneur',how:'15 records personnels',fam:'pr',icon:'trophy',tier:5,test:f=>f.prs>=15},
+  {id:'t1',name:'Premier test',how:'1 test de tractions',fam:'pull',icon:'bar',test:f=>f.tests>=1},
+  {id:'t45',name:'45 tractions',how:'45 tractions d\'affilée',fam:'pull',icon:'bar',tier:2,test:f=>f.pull>=45},
+  {id:'t55',name:'55 tractions',how:'55 tractions d\'affilée',fam:'pull',icon:'bar',tier:3,test:f=>f.pull>=55},
+  {id:'t70',name:'70 tractions',how:'70 tractions d\'affilée',fam:'pull',icon:'bar',tier:5,test:f=>f.pull>=70},
+  {id:'w1',name:'Semaine pleine',how:'1 semaine complète',fam:'reg',icon:'flame',test:f=>f.fullWeeks>=1},
+  {id:'w4',name:'Un mois sans faille',how:'4 semaines complètes',fam:'reg',icon:'flame',tier:3,test:f=>f.fullWeeks>=4},
+  {id:'w12',name:'Trimestre de fer',how:'12 semaines complètes',fam:'reg',icon:'flame',tier:5,test:f=>f.fullWeeks>=12},
+  {id:'c1',name:'Cycle bouclé',how:'1 mésocycle terminé',fam:'cyc',icon:'star',tier:2,test:f=>f.cycles>=1},
+  {id:'ton',name:'Dix tonnes',how:'10 t soulevées en une semaine',fam:'cyc',icon:'star',tier:4,test:f=>f.maxTon>=10000}
 ];
-const AV_HAIR=[['court','Court'],['rase','Rasé'],['boucle','Bouclé'],['long','Long']];
-const AV_SKIN=['#F3D3B6','#E0B48C','#C58C5C','#8D5A3A','#5B3A26'];
-const AV_COLORS=['#D8382B','#1E6FD9','#1E8E5A','#7A3FD1','#E0A200','#0F1216'];
-function avatarFacts(){
+const BADGE_FAM={ses:['#FF7A5C','#C8321F'],pr:['#FFD86B','#C98A00'],pull:['#6FB4FF','#1E55C8'],reg:['#5FE0A0','#167A4A'],cyc:['#C08BFF','#6A2DD1']};
+const BADGE_ICON={
+  bolt:'M26 8 L14 26 H23 L20 40 L34 20 H25 Z',
+  trophy:'M15 10 H33 V18 A9 9 0 0 1 24 27 A9 9 0 0 1 15 18 Z M11 12 H15 V18 A4 4 0 0 1 11 16 Z M33 12 H37 V16 A4 4 0 0 1 33 18 Z M21 27 H27 V32 H30 V36 H18 V32 H21 Z',
+  bar:'M10 15 H38 V18 H10 Z M14 18 H17 V26 A7 7 0 0 0 31 26 V18 H34 V26 A10 10 0 0 1 14 26 Z',
+  flame:'M24 8 C24 16 15 18 15 27 A9 9 0 0 0 33 27 C33 22 30 20 29 17 C28 21 26 22 25 22 C27 18 25 12 24 8 Z',
+  star:'M24 8 L28.5 18.5 L40 19.5 L31 27 L34 38 L24 32 L14 38 L17 27 L8 19.5 L19.5 18.5 Z'
+};
+let BADGE_UID=0;
+function badgeSvg(b,size,locked){
+  const [c1,c2]=BADGE_FAM[b.fam]||BADGE_FAM.ses; const id='bg'+(++BADGE_UID); const tier=b.tier||1;
+  const ring=locked?'var(--line)':tier>=5?'#E6C45A':tier>=3?'#C9CDD6':'rgba(255,255,255,.55)';
+  return `<svg viewBox="0 0 48 48" width="${size}" height="${size}" class="badge ${locked?'lock':''}" aria-hidden="true"><defs><linearGradient id="${id}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${locked?'#C7CBD2':c1}"/><stop offset="1" stop-color="${locked?'#8E949D':c2}"/></linearGradient></defs>
+    <path d="M24 2 L41 11 V31 L24 46 L7 31 V11 Z" fill="url(#${id})"/><path d="M24 5.5 L38 13 V29.5 L24 42 L10 29.5 V13 Z" fill="none" stroke="${ring}" stroke-width="1.6" opacity=".9"/>
+    <path d="M24 2 L41 11 V18 Q24 10 7 18 V11 Z" fill="#fff" opacity=".16"/>
+    <path d="${BADGE_ICON[b.icon]||BADGE_ICON.star}" fill="#fff" opacity="${locked?.55:.96}"/>
+    ${tier>1?[...Array(Math.min(tier,5))].map((_,i)=>`<circle cx="${24-(tier-1)*2.6+i*5.2}" cy="40" r="1.5" fill="#fff" opacity=".85"/>`).join(''):''}</svg>`;
+}
+function rankSvg(stage,size){
+  const [c1,c2]=stage>=5?['#FFE08A','#C98A00']:stage>=4?['#D7DCE6','#7F8794']:stage>=3?['#FF9A7A','#B62C21']:stage>=2?['#8FD0A8','#1E8E5A']:['#C9CFD8','#6B7280']; const id='rk'+(++BADGE_UID);
+  const chev=[...Array(stage)].map((_,i)=>`<path d="M15 ${19+i*5} L24 ${14+i*5} L33 ${19+i*5}" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" opacity="${.95-i*.08}"/>`).join('');
+  return `<svg viewBox="0 0 48 48" width="${size}" height="${size}" class="rank" aria-hidden="true"><defs><linearGradient id="${id}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${c1}"/><stop offset="1" stop-color="${c2}"/></linearGradient></defs><circle cx="24" cy="24" r="22" fill="url(#${id})"/><circle cx="24" cy="24" r="19" fill="none" stroke="#fff" stroke-width="1.2" opacity=".45"/>${chev}</svg>`;
+}
+function progressFacts(){
   const logs=Object.values(S.logs).filter(l=>l.done); const sessions=logs.length;
-  let prs=0, fullWeeks=0; try{ const st=suiviStats(); fullWeeks=st.weeks.filter(w=>!w.future&&w.done>=w.planned).length; }catch(e){}
-  const best={}; Object.values(S.logs).sort((x,y)=>x.date<y.date?-1:1).forEach(l=>Object.entries(l.sets||{}).forEach(([exId,arr])=>{ let day=0; (arr||[]).forEach(st=>{ if(!st||!st.done||!st.w||!st.r) return; const v=e1rm(st.w,st.r); if(v>day) day=v; }); if(!day) return; if(best[exId]==null) best[exId]=day; else if(day>best[exId]+0.01){ best[exId]=day; prs++; } }));
+  let fullWeeks=0, maxTon=0; try{ const ws=suiviStats().weeks.filter(w=>!w.future); fullWeeks=ws.filter(w=>w.done>=w.planned).length; maxTon=Math.max(0,...ws.map(w=>w.tonnage||0)); }catch(e){}
+  let prs=0; const best={}; Object.values(S.logs).sort((x,y)=>x.date<y.date?-1:1).forEach(l=>Object.entries(l.sets||{}).forEach(([exId,arr])=>{ let day=0; (arr||[]).forEach(st=>{ if(!st||!st.done||!st.w||!st.r) return; const v=e1rm(st.w,st.r); if(v>day) day=v; }); if(!day) return; if(best[exId]==null) best[exId]=day; else if(day>best[exId]+0.01){ best[exId]=day; prs++; } }));
   const tests=Object.values(S.tests||{}); const pull=tests.length?Math.max(...tests.map(t=>t.reps||0)):0;
+  const cycles=(S.cyclesDone||0)+(cycleOver()?1:0);
   const xp=sessions*10+prs*15+tests.length*5+fullWeeks*25;
-  let stage=1; AV_STAGES.forEach((st,i)=>{ if(xp>=st.xp) stage=i+1; });
-  const next=AV_STAGES[stage]||null; const prev=AV_STAGES[stage-1];
-  const f={sessions,prs,pull,fullWeeks,tests:tests.length,xp,stage,stageName:AV_STAGES[stage-1].name,next,pct:next?Math.round(100*(xp-prev.xp)/(next.xp-prev.xp)):100};
-  f.unlocked=AV_GEAR.filter(g=>g.test(f)).map(g=>g.id); return f;
+  let stage=1; RANKS.forEach((st,i)=>{ if(xp>=st.xp) stage=i+1; });
+  const next=RANKS[stage]||null, prev=RANKS[stage-1];
+  const f={sessions,prs,pull,fullWeeks,maxTon,tests:tests.length,cycles,xp,stage,stageName:RANKS[stage-1].name,next,pct:next?Math.round(100*(xp-prev.xp)/(next.xp-prev.xp)):100};
+  f.unlocked=BADGES.filter(b=>b.test(f)).map(b=>b.id); f.nextBadge=BADGES.find(b=>!f.unlocked.includes(b.id))||null; return f;
 }
-function avatarCfg(){ const a=(PROFILE&&PROFILE.avatar)||S.avatar||{}; return {hair:a.hair||'court',skin:a.skin||AV_SKIN[1],color:a.color||AV_COLORS[0],wear:a.wear||[]}; }
-function avatarSvg(size,cfg,facts,opts){
-  const c=cfg||avatarCfg(), f=facts||avatarFacts(), o=opts||{}; const st=f.stage; const wear=(o.wear||c.wear).filter(id=>f.unlocked.includes(id)||o.preview);
-  const sh=22+st*5, arm=6+st*1.6, chest=20+st*3, neck=7+st*0.8; const dark=o.mood==='rest'; const ink='#0F1216';
-  const has=id=>wear.includes(id);
-  let g=`<svg viewBox="0 0 120 150" width="${size}" height="${size*1.25}" class="avsvg st${st}" aria-hidden="true">`;
-  if(has('cape')) g+=`<path d="M${60-sh} 62 Q60 150 ${60+sh} 62 L${60+sh+6} 120 L${60-sh-6} 120 Z" fill="${c.color}" opacity=".55"/>`;
-  g+=`<ellipse cx="60" cy="142" rx="${sh+6}" ry="4" fill="${ink}" opacity=".08"/>`;
-  // jambes
-  g+=`<rect x="${60-chest*0.55}" y="96" width="${chest*0.45}" height="42" rx="7" fill="${ink}"/><rect x="${60+chest*0.1}" y="96" width="${chest*0.45}" height="42" rx="7" fill="${ink}"/>`;
-  // torse
-  g+=`<path d="M${60-sh} 58 Q60 50 ${60+sh} 58 L${60+chest*0.75} 100 L${60-chest*0.75} 100 Z" fill="${c.color}"/>`;
-  if(has('ceinture')) g+=`<rect x="${60-chest*0.8}" y="92" width="${chest*1.6}" height="8" rx="3" fill="#E0A200"/><rect x="56" y="91" width="8" height="10" rx="2" fill="#FFF3B0"/>`;
-  if(has('chaine')) g+=`<path d="M${60-neck} 58 Q60 ${64+st} ${60+neck} 58" fill="none" stroke="#E0A200" stroke-width="2.5"/>`;
-  // bras
-  g+=`<path d="M${60-sh+2} 60 Q${60-sh-arm*1.6} 78 ${60-sh-arm*0.6} 98" fill="none" stroke="${c.skin}" stroke-width="${arm*2}" stroke-linecap="round"/><path d="M${60+sh-2} 60 Q${60+sh+arm*1.6} 78 ${60+sh+arm*0.6} 98" fill="none" stroke="${c.skin}" stroke-width="${arm*2}" stroke-linecap="round"/>`;
-  if(has('gants')) g+=`<circle cx="${60-sh-arm*0.6}" cy="100" r="${arm+1}" fill="${ink}"/><circle cx="${60+sh+arm*0.6}" cy="100" r="${arm+1}" fill="${ink}"/>`;
-  // cou + tête
-  g+=`<rect x="${60-neck}" y="42" width="${neck*2}" height="18" fill="${c.skin}"/><circle cx="60" cy="32" r="19" fill="${c.skin}"/>`;
-  if(c.hair==='court') g+=`<path d="M41 30 Q60 6 79 30 Q70 20 60 22 Q50 20 41 30Z" fill="${ink}"/>`;
-  else if(c.hair==='boucle') g+=`<path d="M40 30 Q44 6 60 10 Q76 6 80 30 Q74 16 60 18 Q46 16 40 30Z" fill="${ink}"/><circle cx="43" cy="22" r="5" fill="${ink}"/><circle cx="77" cy="22" r="5" fill="${ink}"/><circle cx="60" cy="12" r="5" fill="${ink}"/>`;
-  else if(c.hair==='long') g+=`<path d="M41 30 Q60 6 79 30 L80 52 Q60 46 40 52Z" fill="${ink}"/>`;
-  g+=`<circle cx="53" cy="33" r="2" fill="${ink}"/><circle cx="67" cy="33" r="2" fill="${ink}"/>${dark?`<path d="M54 41 Q60 39 66 41" fill="none" stroke="${ink}" stroke-width="1.8" stroke-linecap="round"/>`:`<path d="M53 40 Q60 45 67 40" fill="none" stroke="${ink}" stroke-width="1.8" stroke-linecap="round"/>`}`;
-  if(has('bandeau')) g+=`<rect x="41" y="20" width="38" height="6" rx="3" fill="${c.color}"/>`;
-  if(has('lunettes')) g+=`<rect x="46" y="29" width="11" height="8" rx="3" fill="none" stroke="${ink}" stroke-width="2"/><rect x="63" y="29" width="11" height="8" rx="3" fill="none" stroke="${ink}" stroke-width="2"/><path d="M57 33 L63 33" stroke="${ink}" stroke-width="2"/>`;
-  if(has('couronne')) g+=`<path d="M46 16 L50 6 L56 13 L60 3 L64 13 L70 6 L74 16 Z" fill="#E0A200"/>`;
-  return g+'</svg>';
-}
-function saveAvatar(a){ S.avatar=a; save(); if(USER&&fbDb) col('meta').doc('profile').set({avatar:a},{merge:true}).catch(()=>{}); if(PROFILE) PROFILE.avatar=a; }
-function showAvatarSheet(){
-  const f=avatarFacts(); let c=Object.assign({},avatarCfg());
-  const sh=showSheet(`<div id="avWrap"></div>`);
-  const paint=()=>{ sh.querySelector('#avWrap').innerHTML=`<div class="avhead">${avatarSvg(96,c,f)}<div><span class="eyebrow">Stade ${f.stage} · ${esc(f.stageName)}</span><h3>Ton avatar</h3><div class="xpbar"><i style="width:${f.pct}%"></i></div><p class="small muted">${f.xp} XP${f.next?` · ${f.next.xp-f.xp} avant « ${esc(f.next.name)} »`:' · stade maximal'}</p></div></div>
-    <h4>Cheveux</h4><div class="chips">${AV_HAIR.map(([v,l])=>`<button class="chip ${c.hair===v?'sel':''}" data-hair="${v}">${l}</button>`).join('')}</div>
-    <h4>Peau</h4><div class="swatches">${AV_SKIN.map(v=>`<button class="sw2 ${c.skin===v?'sel':''}" data-skin="${v}" style="background:${v}"></button>`).join('')}</div>
-    <h4>Tenue</h4><div class="swatches">${AV_COLORS.map(v=>`<button class="sw2 ${c.color===v?'sel':''}" data-color="${v}" style="background:${v}"></button>`).join('')}</div>
-    <h4>Accessoires</h4><div class="gear">${AV_GEAR.map(g=>{ const ok=f.unlocked.includes(g.id), on=c.wear.includes(g.id); return `<button class="grow ${ok?'':'lock'} ${on?'on':''}" data-gear="${g.id}" ${ok?'':'disabled'}><span class="gi">${avatarSvg(28,Object.assign({},c,{wear:[g.id]}),f,{wear:[g.id],preview:true})}</span><span class="gt"><b>${g.name}</b><small>${ok?(on?'porté':'débloqué'):g.how}</small></span></button>`; }).join('')}</div>
-    <p class="small muted">Il gagne de l'expérience avec chaque séance terminée (10), chaque record (15), chaque test de tractions (5) et chaque semaine complète (25).</p>
-    <button class="btn fill" id="avSave">Enregistrer</button>`;
-    sh.querySelectorAll('[data-hair]').forEach(b=>b.onclick=()=>{ c.hair=b.dataset.hair; paint(); });
-    sh.querySelectorAll('[data-skin]').forEach(b=>b.onclick=()=>{ c.skin=b.dataset.skin; paint(); });
-    sh.querySelectorAll('[data-color]').forEach(b=>b.onclick=()=>{ c.color=b.dataset.color; paint(); });
-    sh.querySelectorAll('[data-gear]').forEach(b=>b.onclick=()=>{ const id=b.dataset.gear; c.wear=c.wear.includes(id)?c.wear.filter(x=>x!==id):c.wear.concat(id); paint(); });
-    sh.querySelector('#avSave').onclick=()=>{ saveAvatar(c); hideSheet(); toast('Avatar enregistré','ok'); renderHome(); renderReglages(); }; };
-  paint();
+function showBadges(){
+  const f=progressFacts(); const seen=S.badgesSeen||[];
+  showSheet(`<div class="rkhead">${rankSvg(f.stage,64)}<div><span class="eyebrow">Rang ${f.stage} sur ${RANKS.length}</span><h3>${esc(f.stageName)}</h3><div class="xpbar"><i style="width:${f.pct}%"></i></div><p class="small muted">${f.xp} XP${f.next?` · ${f.next.xp-f.xp} avant « ${esc(f.next.name)} »`:' · rang maximal'}</p></div></div>
+    <div class="bgrid">${BADGES.map(b=>{ const ok=f.unlocked.includes(b.id); return `<div class="bcell ${ok?'':'lock'}">${badgeSvg(b,56,!ok)}<b>${esc(b.name)}</b><small>${ok?'obtenu':esc(b.how)}</small></div>`; }).join('')}</div>
+    <p class="small muted">Expérience : séance terminée 10, record 15, test de tractions 5, semaine complète 25. ${f.unlocked.length}/${BADGES.length} badges.</p><button class="btn" onclick="hideSheet()">Fermer</button>`);
+  if(f.unlocked.some(id=>!seen.includes(id))){ S.badgesSeen=f.unlocked.slice(); save(); renderHome(); }
 }
 
 /* ---------- Aujourd'hui ---------- */
@@ -750,8 +744,8 @@ function renderHome(){
   const name=(PROFILE&&PROFILE.name)||(USER&&USER.displayName&&USER.displayName.split(' ')[0])||'';
   const dayLabel=new Date().toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long'});
   const isRest=!PROGRAM.sessions.find(x=>x.day===new Date().getDay());
-  const over=cycleOver(); const af=avatarFacts();
-  let h=`<div class="hello"><div><p class="eyebrow">${esc(dayLabel)}</p><h2>${esc(hello)}${name?' '+esc(name):''}</h2></div><button class="avbtn" id="homeAvatar" aria-label="Mon avatar">${avatarSvg(44,null,af,{mood:done?'happy':isRest?'rest':''})}</button></div>`;
+  const over=cycleOver(); const af=progressFacts(); const newB=af.unlocked.filter(id=>!(S.badgesSeen||[]).includes(id));
+  let h=`<div class="hello"><div><p class="eyebrow">${esc(dayLabel)}</p><h2>${esc(hello)}${name?' '+esc(name):''}</h2></div><button class="avbtn ${newB.length?'new':''}" id="homeAvatar" aria-label="Mes badges">${rankSvg(af.stage,44)}</button></div>`;
   if(over) h+=`<div class="card cycend"><div class="card-h"><b>Cycle terminé</b><span class="muted">${fmtD(WEEKS[WEEKS.length-1].to)}</span></div><p>Les ${WEEKS.length} semaines de « ${esc(String(PROGRAM.cycleName||'').split(' · ')[0])} » sont faites. Kai construit le suivant à partir de ton journal.</p><div class="row2"><button class="btn fill sm" id="homeNewCycle">Nouveau cycle avec Kai</button></div></div>`;
   // carte séance du jour
   h+=`<div class="today ${done?'done':''}"><div class="t-top"><span class="eyebrow">${isRest&&!started&&!done?'Pas de séance prévue':'Séance du jour'} · S${wk} ${esc(String(W.label||'').replace(/^S\d+\s*/,''))}</span>${sub?'<span class="tag">sans salle</span>':''}</div>
@@ -766,7 +760,8 @@ function renderHome(){
   const weekDone=Object.values(S.logs).filter(l=>l.done&&l.date>=a&&l.date<=addDays(a,6)).length;
   h+=`<div class="card wk"><div class="card-h"><b>Cette semaine</b><span class="muted">${weekDone}/${PROGRAM.sessions.length} séances · ${fmtD(a)} au ${fmtD(addDays(a,6))}</span></div><div class="dots">${dots}</div></div>`;
   // avatar + progression
-  h+=`<button class="card avcard" id="homeAvatar2"><div class="card-h"><b>Stade ${af.stage} · ${esc(af.stageName)}</b><span class="muted">${af.xp} XP</span></div><div class="xpbar"><i style="width:${af.pct}%"></i></div><p class="small muted">${af.next?`${af.next.xp-af.xp} XP avant « ${esc(af.next.name)} »`:'Stade maximal atteint'}${(()=>{ const nx=AV_GEAR.find(g=>!af.unlocked.includes(g.id)); return nx?` · prochain accessoire : ${esc(nx.name.toLowerCase())} (${esc(nx.how)})`:''; })()}</p></button>`;
+  const recent=BADGES.filter(b=>af.unlocked.includes(b.id)).slice(-4);
+  h+=`<button class="card avcard" id="homeAvatar2"><div class="card-h"><b>${rankSvg(af.stage,22)} ${esc(af.stageName)}${newB.length?` <em class="pstar">${newB.length} nouveau${newB.length>1?'x':''}</em>`:''}</b><span class="muted">${af.unlocked.length}/${BADGES.length} badges</span></div><div class="xpbar"><i style="width:${af.pct}%"></i></div><div class="brow">${recent.map(b=>badgeSvg(b,40,false)).join('')}${af.nextBadge?badgeSvg(af.nextBadge,40,true):''}<span class="small muted">${af.nextBadge?`Prochain : ${esc(af.nextBadge.name.toLowerCase())} · ${esc(af.nextBadge.how)}`:'Tous les badges obtenus'}</span></div></button>`;
   // chiffres : mois, tonnage semaine, série
   const month=date.slice(0,7); const nMonth=Object.values(S.logs).filter(l=>l.done&&l.date.startsWith(month)).length;
   let ton=0; Object.values(S.logs).filter(l=>l.date>=a&&l.date<=addDays(a,6)).forEach(l=>Object.values(l.sets||{}).flat().forEach(x=>{ if(x&&x.done) ton+=(x.w||0)*(x.r||0); }));
@@ -791,7 +786,7 @@ function renderHome(){
   const ng=$('#homeNogym'); if(ng) ng.onclick=()=>{ go(); setTimeout(()=>{ const b=$('#subBtn'); if(b) b.click(); },50); };
   const hc=$('#homeCoach'); if(hc) hc.onclick=()=>showTab('coach');
   const nc=$('#homeNewCycle'); if(nc) nc.onclick=regenerateProgram;
-  ['#homeAvatar','#homeAvatar2'].forEach(q=>{ const b=$(q); if(b) b.onclick=showAvatarSheet; });
+  ['#homeAvatar','#homeAvatar2'].forEach(q=>{ const b=$(q); if(b) b.onclick=showBadges; });
   el.querySelectorAll('.tr[data-view]').forEach(b=>b.onclick=()=>{ SUIVI_VIEW=b.dataset.view; renderSuivi(); showTab('suivi'); });
   el.querySelectorAll('.dot[data-day]').forEach(b=>b.onclick=()=>{ if(!b.dataset.day) return; S.session=b.dataset.day; S.sessionDate=todayISO(); save(); showTab('seance'); });
   const bq=$('#bwQuick'); if(bq) bq.onsubmit=e=>{ e.preventDefault(); const kg=parseFloat(bq.querySelector('input').value.replace(',','.')); if(isNaN(kg)||kg<30||kg>250) return; S.bw[date]={date,kg,updatedAt:Date.now()}; save(); writeDoc('bw',date,S.bw[date]); toast('Pesée notée','ok'); renderHome(); renderSuivi(); };

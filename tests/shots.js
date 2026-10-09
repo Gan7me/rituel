@@ -39,7 +39,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   const shot = async (name, fn) => { if (fn) await fn(); await sleep(450); await p.evaluate(() => { const j = document.querySelector('#jobbar'); if (j) j.classList.remove('on'); document.body.classList.remove('hasjob'); }); await p.screenshot({ path: path.join(OUT, name + '.png') }); console.log('·', name); };
   await shot('home', () => p.evaluate(() => showTab('home')));
   await shot('home-bas', () => p.evaluate(() => window.scrollTo({ top: 99999 })));
-  await shot('avatar', () => p.evaluate(() => showAvatarSheet()));
+  await shot('badges', () => p.evaluate(() => showBadges()));
   await p.evaluate(() => hideSheet());
   await shot('abonnement', () => p.evaluate(() => showPlan()));
   await p.evaluate(() => hideSheet());

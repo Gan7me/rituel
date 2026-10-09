@@ -228,14 +228,13 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   await p.evaluate(() => document.querySelector('#themeSeg [data-theme="auto"]').click()); await sleep(100);
   assert(await p.evaluate(() => !document.documentElement.dataset.theme), 'apparence auto rétablie');
   await p.evaluate(() => document.querySelector('#profAvatar').click()); await sleep(150);
-  assert(await p.evaluate(() => !!document.querySelector('#avSave') && document.querySelectorAll('[data-gear]').length === 7), 'feuille avatar : accessoires listés');
-  await p.evaluate(() => { document.querySelector('[data-color="#1E6FD9"]').click(); document.querySelector('#avSave').click(); }); await sleep(150);
-  assert(await p.evaluate(() => S.avatar && S.avatar.color === '#1E6FD9' && document.querySelector('#profAvatar svg').innerHTML.includes('#1E6FD9')), 'avatar personnalisé et enregistré');
+  assert(await p.evaluate(() => document.querySelectorAll('.bcell').length === BADGES.length && document.querySelectorAll('.bcell:not(.lock)').length >= 1 && !!document.querySelector('.rkhead .rank')), 'feuille badges : rang et jalons, au moins un badge obtenu');
+  await p.evaluate(() => hideSheet()); await sleep(100);
   await p.click('#profBtn'); await sleep(250);
   assert(await p.$('#sheet.on #profForm'), 'profil éditable en feuille');
   await p.click('#sheet .sheet-bg'); await sleep(150);
   await p.click('.tabs button[data-tab="home"]'); await sleep(200);
-  assert(await p.evaluate(() => !!document.querySelector('#homeAvatar svg') && document.querySelectorAll('.tiles3 .tr').length === 3 && !!document.querySelector('#bwQuick') && !!document.querySelector('#tQuick')), 'accueil : avatar, chiffres, saisie rapide');
+  assert(await p.evaluate(() => !!document.querySelector('#homeAvatar .rank') && document.querySelectorAll('.avcard .badge').length >= 1 && document.querySelectorAll('.tiles3 .tr').length === 3 && !!document.querySelector('#bwQuick') && !!document.querySelector('#tQuick')), 'accueil : rang, badges, chiffres, saisie rapide');
   await p.evaluate(() => { const f = document.querySelector('#bwQuick'); f.querySelector('input').value = '68.4'; f.requestSubmit(); }); await sleep(150);
   assert(await p.evaluate(() => S.bw[todayISO()] && S.bw[todayISO()].kg === 68.4), 'pesée rapide enregistrée depuis l\'accueil');
 
