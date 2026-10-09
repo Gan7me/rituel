@@ -297,15 +297,27 @@ exports.adminStats = onCall({ region: 'europe-west1' }, async (req) => {
     const hasProg = pg.exists && !!pg.data().sessions; if (hasProg) withProgram++;
     const usage = us.exists ? us.data() : {}; if (usage.month === month) { costMonth += usage.costUsd || 0; calls += (usage.analyse || 0) + (usage.chat || 0) + (usage.program || 0) + (usage.substitute || 0) + (usage.demo || 0); }
     const n7 = lg.docs.filter(d => isDone(d.data())).length; sessions7 += n7;
-    const plan = bl.exists && bl.data().plan === 'premium' ? 'premium' : 'free'; if (plan === 'premium') premium++;
-    perUser.push({ uid: u.id.slice(0, 6), name: pr.exists ? (pr.data().name || '') : '', program: hasProg, sessions7: n7, plan, cost: usage.month === month ? Math.round((usage.costUsd || 0) * 100) / 100 : 0, lastMode: usage.lastMode || '' });
+    const plan = bl.exists && bl.data().plan === 'premium' && (!bl.data().expiresAt || bl.data().expiresAt > Date.now()) ? 'premium' : 'free'; if (plan === 'premium') premium++;
+    let email = ''; try { email = (await admin.auth().getUser(u.id)).email || ''; } catch (e) {}
+    const bd = bl.exists ? bl.data() : {};
+    perUser.push({ uid: u.id.slice(0, 6), uidFull: u.id, email, admin: ADMIN_EMAILS.includes(email.toLowerCase()), name: pr.exists ? (pr.data().name || '') : '', program: hasProg, sessions7: n7, plan: ADMIN_EMAILS.includes(email.toLowerCase()) ? 'premium' : plan, source: bd.source || '', store: bd.store || '', expiresAt: bd.expiresAt || null, cost: usage.month === month ? Math.round((usage.costUsd || 0) * 100) / 100 : 0, lastMode: usage.lastMode || '' });
   }
   const errs = await db.collection('errors').where('t', '>=', sinceMs).orderBy('t', 'desc').limit(100).get();
   const errors = errs.docs.map(d => d.data()).map(e => ({ t: e.t, uid: String(e.uid || '').slice(0, 6), src: e.src, msg: String(e.msg || '').slice(0, 160), ver: e.ver }));
   return { users: users.length, withProgram, premium, sessions7, calls, costMonth: Math.round(costMonth * 100) / 100, errors, perUser: perUser.sort((a, b) => b.sessions7 - a.sessions7).slice(0, 50) };
 });
 
-// Webhook RevenueCat : seule source de vérité du forfait. L'app_user_id est l'uid Firebase (posé par la coquille à la connexion).
+// Forfait posé à la main par l'administrateur (Premium offert pour N mois, ou retiré). Un abonnement payant repasse par le webhook.
+exports.adminSetPlan = onCall({ region: 'europe-west1' }, async (req) => {
+  if (!req.auth || !ADMIN_EMAILS.includes(String(req.auth.token && req.auth.token.email || '').toLowerCase())) throw new HttpsError('permission-denied', 'Réservé à l\'administrateur.');
+  const uid = String((req.data || {}).uid || ''); const plan = (req.data || {}).plan === 'premium' ? 'premium' : 'free'; const months = Math.max(0, Math.min(36, parseInt((req.data || {}).months) || 0));
+  if (!uid) throw new HttpsError('invalid-argument', 'uid manquant');
+  const ref = db.collection('users').doc(uid).collection('meta').doc('billing');
+  if (plan === 'premium') { const exp = new Date(); exp.setMonth(exp.getMonth() + (months || 1)); await ref.set({ plan: 'premium', source: 'admin', store: '', expiresAt: exp.getTime(), since: Date.now(), updatedAt: Date.now() }, { merge: true }); console.log(`[billing] admin premium uid=${uid.slice(0, 6)} ${months || 1} mois`); return { plan, expiresAt: exp.getTime() }; }
+  await ref.set({ plan: 'free', source: 'admin', expiresAt: Date.now(), updatedAt: Date.now() }, { merge: true }); console.log(`[billing] admin free uid=${uid.slice(0, 6)}`); return { plan };
+});
+
+// Webhook RevenueCat : source de vérité du forfait payant. L'app_user_id est l'uid Firebase (posé par la coquille à la connexion).
 // Configuration côté RevenueCat : URL de cette fonction, en-tête Authorization = Bearer <REVENUECAT_WEBHOOK_SECRET>.
 const PREMIUM_EVENTS = ['INITIAL_PURCHASE', 'RENEWAL', 'UNCANCELLATION', 'PRODUCT_CHANGE', 'NON_RENEWING_PURCHASE', 'TRANSFER'];
 const END_EVENTS = ['EXPIRATION', 'BILLING_ISSUE'];

@@ -18,7 +18,7 @@ function humanErr(e){ const c=(e&&e.code)||''; const m=(e&&e.message)||String(e|
   if(/network|Failed to fetch|internet/i.test(m)||!navigator.onLine) return 'Pas de réseau. Le coach a besoin d\'une connexion ; tes séries sont enregistrées et partiront toutes seules.';
   if(/invalid-argument/.test(c)) return 'Le serveur n\'a pas compris la demande (version de l\'app en retard ?). Recharge l\'application depuis Réglages.';
   return m; }
-const APP_VERSION='3.18.0';
+const APP_VERSION='3.19.0';
 let PROGRAM={sessions:[]};
 let WEEKS = [
   {n:1,label:'S1 calibrage',from:'2026-09-07',to:'2026-09-13',rirNote:'RIR 3 · établir les références, tout noter'},
@@ -51,6 +51,7 @@ window.addEventListener('message',onNativeMessage); document.addEventListener('m
 const KEY='rituel.v1';
 let S = {logs:{}, bw:{}, tests:{}, chats:{}, overrides:{}, weekOverride:null, session:null, wake:true, openEx:null, health:false, healthAt:0};
 try{ const raw=localStorage.getItem(KEY); if(raw) S=Object.assign(S,JSON.parse(raw)); }catch(e){}
+function applyTheme(){ const t=S.theme||'auto'; const r=document.documentElement; if(t==='auto') delete r.dataset.theme; else r.dataset.theme=t; const dark=t==='dark'||(t==='auto'&&matchMedia('(prefers-color-scheme: dark)').matches); document.querySelectorAll('meta[name="theme-color"]').forEach(m=>m.setAttribute('content',dark?'#0B0D10':'#F4F5F7')); native({type:'theme',dark}); }
 function save(){ const j=JSON.stringify(S); try{ localStorage.setItem(KEY, j); }catch(e){} idbSet(j); }
 function idb(){ return new Promise((res,rej)=>{ const r=indexedDB.open('rituel',1); r.onupgradeneeded=()=>r.result.createObjectStore('kv'); r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error); }); }
 function idbSet(j){ try{ idb().then(d=>{ d.transaction('kv','readwrite').objectStore('kv').put(j,KEY); }).catch(()=>{}); }catch(e){} }
@@ -69,7 +70,7 @@ function weekFor(iso){ return Math.max(1,Math.min(WEEKS.length,weekRaw(iso))); }
 function cycleOver(){ return weekRaw(todayISO())>WEEKS.length; }
 function curWeek(){ return S.weekOverride||weekFor(todayISO()); }
 function sessionForDay(){ const d=new Date().getDay(); return PROGRAM.sessions.find(s=>s.day===d)||null; }
-function curSession(){ return PROGRAM.sessions.find(s=>s.id===S.session)||sessionForDay()||PROGRAM.sessions[0]; }
+function curSession(){ const keep=S.sessionDate===todayISO(); return (keep&&PROGRAM.sessions.find(s=>s.id===S.session))||sessionForDay()||PROGRAM.sessions[0]; }
 
 function rx(ex, wk){ // prescription for a week (cycle de 3 à 6 semaines, la dernière en décharge)
   const L=WEEKS.length, last=wk>=L;
@@ -185,7 +186,7 @@ function onHealthResult(m){
 // Appelé à la fin d'une séance : durée réelle de la première série validée à la clôture.
 function healthExportSession(log){ if(!NATIVE||!S.health||!log) return; const ts=Object.values(log.sets||{}).flat().filter(x=>x&&x.done&&x.t).map(x=>x.t); if(!ts.length) return; const start=Math.min(...ts)-5*60000, end=Math.max(Date.now(),Math.max(...ts)+60000); const ses=PROGRAM.sessions.find(x=>x.id===log.session); const mins=(end-start)/60000; const kcal=Math.round(mins*((PROFILE&&PROFILE.weight)||70)*0.09); native({type:'health',action:'writeWorkout',workout:{start,end,kcal,title:'Rituel · '+(ses?ses.name:log.session)}}); }
 // Forfait : affiché dans Réglages, et proposé quand une limite gratuite est atteinte. Le paiement arrive avec l'étape suivante (App Store / Play).
-function planInfo(){ const plan=BILLING.premium?'premium':((USAGE&&USAGE.plan)||'free'); const lim=(USAGE&&USAGE.limits)||{program:2,analyse:8,chat:30,substitute:2,demo:4}; return {plan,lim}; }
+function planInfo(){ const bd=BILLING.doc||{}; const docPrem=bd.plan==='premium'&&(!bd.expiresAt||bd.expiresAt>Date.now()); const isAdmin=!!(USER&&/^ganeme\.asloune@nexisafe\.com$/i.test(USER.email||'')); const plan=(BILLING.premium||docPrem||isAdmin)?'premium':((USAGE&&USAGE.plan)||'free'); const lim=(USAGE&&USAGE.limits)||{program:2,analyse:8,chat:30,substitute:2,demo:4}; return {plan,lim}; }
 function showPaywall(what,limit){
   const {lim}=planInfo();
   showSheet(`<div class="chead sm">${coachAvatar('attention')}<h3>Kai a atteint sa limite gratuite</h3></div>
@@ -210,6 +211,23 @@ function onPurchaseResult(m){ if(m.ok&&m.premium){ BILLING.premium=true; hideShe
   else if(m.ok&&!m.premium){ toast(m.restored?'Aucun abonnement actif à restaurer':'Achat non confirmé'); if($('#pwOffers')) renderOffers(); }
   else if(m.cancelled){ if($('#pwOffers')) renderOffers(); }
   else { toast('Paiement impossible : '+(m.error||'réessaie')); logErr('achat',m.error||'échec'); if($('#pwOffers')) renderOffers(); } }
+// Écran Abonnement : forfait, consommation du mois, offres ou gestion.
+function showPlan(){
+  const pi=planInfo(); const u=USAGE&&USAGE.month===new Date().toISOString().slice(0,7)?USAGE:{}; const bd=BILLING.doc||{};
+  const bar=(k,l)=>{ const n=u[k]||0, m=pi.lim[k]||1; const pct=Math.min(100,Math.round(100*n/m)); return `<div class="qrow"><span>${l}</span><div class="qbar"><i style="width:${pct}%" class="${pct>=100?'full':pct>=75?'warn':''}"></i></div><b>${n}/${m}</b></div>`; };
+  const src=bd.source==='admin'?'offert':bd.store==='APP_STORE'?'App Store':bd.store==='PLAY_STORE'?'Google Play':bd.store?bd.store:'';
+  const exp=bd.expiresAt?new Date(bd.expiresAt).toLocaleDateString('fr-FR',{day:'numeric',month:'long',year:'numeric'}):null;
+  const manageUrl=/iPhone|iPad/.test(navigator.userAgent)?'https://apps.apple.com/account/subscriptions':'https://play.google.com/store/account/subscriptions';
+  const prem=pi.plan==='premium';
+  const sh=showSheet(`<div class="plan-h ${prem?'prem':''}"><span class="eyebrow">Ton forfait</span><h3>${prem?'Rituel Premium':'Rituel Gratuit'}</h3><p class="small">${prem?(src?`${src}${exp?(bd.cancelledAt?' · se termine le ':' · renouvellement le ')+exp:''}`:'actif'):'Pour découvrir Kai. Les compteurs se remettent à zéro le 1er du mois.'}</p></div>
+    <h4>Ce mois-ci</h4><div class="quotas">${bar('analyse','Analyses de séance')}${bar('chat','Questions à Kai')}${bar('program','Nouveaux cycles')}${bar('substitute','Séances sans salle')}</div>
+    ${prem?`<h4>Inclus</h4><ul class="incl"><li>Analyse de chaque séance et charges ajustées</li><li>Questions à Kai sans compter</li><li>Nouveau cycle à chaque fin de mésocycle</li><li>Séances sans salle, Progrès complet</li></ul>
+      ${bd.store?`<a class="btn" href="${manageUrl}" target="_blank" rel="noopener">Gérer l'abonnement</a>`:''}${NATIVE&&BILLING.available?`<button class="link" id="plRestore">Restaurer mes achats</button>`:''}`
+    :`<div class="plancmp"><div><b>Gratuit</b><span>${pi.lim.analyse} analyses · ${pi.lim.chat} questions · ${pi.lim.program} programmes par mois</span></div><div class="pro"><b>Premium</b><span>60 analyses, 300 questions, 6 cycles par mois, séances sans salle, Progrès complet</span></div></div><div id="pwOffers"></div>`}
+    <button class="btn" onclick="hideSheet()">Fermer</button>`);
+  if(!prem){ renderOffers(); if(BILLING.available&&!BILLING.packages&&USER) native({type:'getOfferings',uid:USER.uid}); }
+  const r=sh.querySelector('#plRestore'); if(r) r.onclick=()=>{ native({type:'restore',uid:USER.uid}); toast('Restauration…'); };
+}
 let ADMIN_DATA=null;
 async function showAdmin(){
   const sh=showSheet(`<h3>Administration</h3><p class="small muted" id="admMsg">Chargement…</p><div id="admBody"></div><button class="btn" onclick="hideSheet()">Fermer</button>`);
@@ -218,7 +236,9 @@ async function showAdmin(){
     $('#admMsg').textContent='7 derniers jours · coût IA du mois';
     $('#admBody').innerHTML=`<div class="cs-grid adm"><div><b>${d.users}</b><span>comptes</span></div><div><b>${d.withProgram}</b><span>avec programme</span></div><div><b>${d.premium}</b><span>premium</span></div><div><b>${d.sessions7}</b><span>séances 7 j</span></div><div><b>${d.calls}</b><span>appels IA (mois)</span></div><div><b>${(d.costMonth*0.92).toFixed(2).replace('.',',')} €</b><span>coût IA (mois)</span></div></div>
       <h4>Erreurs (${errs.length})</h4>${errs.length?`<div class="hl2">${Object.entries(byMsg).sort((a,b)=>b[1]-a[1]).slice(0,12).map(([k,n])=>`<div class="hrow"><span class="s" style="white-space:normal">${esc(k)}</span><b>${n}</b></div>`).join('')}</div>`:'<p class="small muted">Aucune erreur remontée.</p>'}
-      <h4>Utilisateurs</h4><div class="hl2">${(d.perUser||[]).map(u=>`<div class="hrow"><span class="d">${esc(u.name||u.uid)}</span><span class="s">${u.program?'programme':'sans programme'} · ${u.sessions7} séance${u.sessions7>1?'s':''} 7 j · ${u.plan}${u.lastMode?' · '+esc(u.lastMode):''}</span><b>${u.cost?u.cost.toFixed(2)+' $':''}</b></div>`).join('')}</div>`;
+      <h4>Abonnés (${(d.perUser||[]).filter(u=>u.plan==='premium').length})</h4><div class="hl2">${(d.perUser||[]).filter(u=>u.plan==='premium').map(u=>`<div class="hrow"><span class="d">${esc(u.name||u.email||u.uid)}</span><span class="s">${esc(u.email||'')} · ${u.source==='admin'?'offert':esc(u.store||'')}${u.expiresAt?' · jusqu\'au '+new Date(u.expiresAt).toLocaleDateString('fr-FR'):''}</span><b></b></div>`).join('')||'<p class="small muted">Aucun abonné.</p>'}</div>
+      <h4>Utilisateurs</h4><div class="hl2 admu">${(d.perUser||[]).map(u=>`<div class="hrow"><span class="d">${esc(u.name||u.email||u.uid)}${u.admin?' <em class="pstar">admin</em>':''}</span><span class="s">${esc(u.email||'')}<br>${u.program?'programme':'sans programme'} · ${u.sessions7} séance${u.sessions7>1?'s':''} 7 j · ${u.plan}${u.cost?' · '+u.cost.toFixed(2)+' $':''}</span><b>${u.admin?'':u.plan==='premium'?`<button class="btn sm" data-plan="free" data-uid="${esc(u.uidFull)}">Retirer</button>`:`<button class="btn sm" data-plan="premium" data-uid="${esc(u.uidFull)}">Offrir 1 mois</button>`}</b></div>`).join('')}</div>`;
+    $('#admBody').querySelectorAll('[data-plan]').forEach(b=>b.onclick=async()=>{ const months=b.dataset.plan==='premium'?parseInt(prompt('Offrir Premium pour combien de mois ?','1'))||0:0; if(b.dataset.plan==='premium'&&!months) return; b.disabled=true; try{ const fn=fbFn.httpsCallable('adminSetPlan'); await fn({uid:b.dataset.uid,plan:b.dataset.plan,months}); toast(b.dataset.plan==='premium'?'Premium offert':'Premium retiré','ok'); showAdmin(); }catch(e){ b.disabled=false; toast('Échec : '+(e.message||e)); } });
   }catch(e){ $('#admMsg').textContent='Échec : '+(e.message||e); }
 }
 function renderReglages(){
@@ -231,7 +251,7 @@ function renderReglages(){
   const tests=Object.values(S.tests||{}).sort((x,y)=>x.date<y.date?1:-1); const pull=tests[0]?tests[0].reps:null;
   const nDone=Object.values(S.logs).filter(l=>l.done).length;
   const goals={force:'Force',masse:'Muscle',seche:'Sèche',endurance:'Endurance',puissance:'Puissance',tractions:'Tractions',jambes:'Jambes',bras:'Bras & pecs',sante:'Santé',perf:'Performance'};
-  el.innerHTML=`<div class="phero prof"><div class="pav">${esc((name||USER&&USER.email||'?').slice(0,1).toUpperCase())}</div><h2>${esc(name||'Mon profil')}</h2><p class="small muted">${P.level?LV[P.level]+' · ':''}${P.age?P.age+' ans · ':''}${P.height?P.height+' cm':''}</p>
+  el.innerHTML=`<div class="phero prof"><button class="pav av" id="profAvatar" aria-label="Mon avatar">${avatarSvg(72)}</button><h2>${esc(name||'Mon profil')}</h2><p class="small muted">${P.level?LV[P.level]+' · ':''}${P.age?P.age+' ans · ':''}${P.height?P.height+' cm':''}</p>
     <div class="pills">${(P.goals||[]).slice(0,4).map(g=>`<span class="pill">${esc(goals[g]||g)}</span>`).join('')}<span class="pill ${pi.plan==='premium'?'prem':''}">${pi.plan==='premium'?'Premium':'Gratuit'}</span></div>
     <div class="pstats"><div><b>${kg?String(kg).replace('.',','):'—'}</b><span>kg</span></div><div><b>${pull!=null?pull:'—'}</b><span>tractions${P.pullGoal?' / '+P.pullGoal:''}</span></div><div><b>${nDone}</b><span>séance${nDone>1?'s':''}</span></div></div>
     <div class="row2"><button class="btn sm" id="profBtn">Modifier le profil</button>${pi.plan!=='premium'?`<button class="btn fill sm" id="planBtn">Passer Premium</button>`:''}</div></div>
@@ -239,12 +259,13 @@ function renderReglages(){
     <button class="row" id="progBtn"><span>Programme</span><span class="muted">${esc(PROGRAM.cycleName||'—')}</span><i></i></button>
     <button class="row" id="lexBtn"><span>Lexique</span><span class="muted">RIR, tempo, décharge…</span><i></i></button>
     <label class="row"><span>Écran allumé pendant la séance</span><input type="checkbox" class="sw" id="wakeOpt" ${S.wake!==false?'checked':''}></label>
+    <div class="row"><span>Apparence</span><div class="seg" id="themeSeg">${[['auto','Auto'],['light','Clair'],['dark','Sombre']].map(([v,l])=>`<button data-theme="${v}" aria-pressed="${(S.theme||'auto')===v}">${l}</button>`).join('')}</div></div>
     ${NATIVE&&HEALTH.available!==false?`<button class="row" id="healthBtn"><span>Apple Santé</span><span class="muted">${HEALTH.busy?'…':S.health?'connecté':'non connecté'}</span><i></i></button>`:''}
     ${NATIVE?`<div class="row"><span>Notifications</span><span class="muted">${PUSH_TOKEN?'activées':'gérées par le téléphone'}</span></div>`:`<button class="row" id="notifBtn"><span>Notifications de repos</span><span class="muted">${notifState}</span><i></i></button>`}
   </div>
   <div class="grp"><div class="grp-t">Compte</div>
     ${USER?`<div class="row"><span>E-mail</span><span class="muted">${esc(USER.email||'')}</span></div>${USER.providerData&&USER.providerData.some(p=>p.providerId==='password')&&!USER.emailVerified?`<button class="row" id="verifBtn"><span>E-mail non vérifié</span><span class="muted">renvoyer le lien</span><i></i></button>`:''}`:''}
-    ${pi.plan==='premium'?`<button class="row" id="planBtn"><span>Abonnement</span><span class="muted">Premium</span><i></i></button>`:`<div class="row"><span>Kai ce mois-ci</span><span class="muted">${USAGE?(USAGE.analyse||0):0}/${pi.lim.analyse} analyses · ${USAGE?(USAGE.chat||0):0}/${pi.lim.chat} questions</span></div>`}
+    <button class="row" id="planRow"><span>Abonnement</span><span class="muted">${pi.plan==='premium'?'Premium':`Gratuit · ${USAGE?(USAGE.analyse||0):0}/${pi.lim.analyse} analyses`}</span><i></i></button>
     ${USER&&/^ganeme\.asloune@nexisafe\.com$/i.test(USER.email||'')?`<button class="row" id="adminBtn"><span>Administration</span><span class="muted">comptes, erreurs, coûts</span><i></i></button>`:''}
     <button class="row" id="expBtn"><span>Exporter mon journal</span><i></i></button>
     <label class="row" for="impFile"><span>Importer un journal</span><i></i></label><input id="impFile" type="file" accept="application/json" hidden>
@@ -261,7 +282,10 @@ function renderReglages(){
   const db_=$('#delBtn'); if(db_) db_.onclick=async()=>{ if(!confirm('Supprimer définitivement ton compte, ton programme et tout ton journal ? Cette action est irréversible.')) return; if(prompt('Tape SUPPRIMER pour confirmer')!=='SUPPRIMER') return; try{ const fn=fbFn.httpsCallable('deleteAccount'); await fn({}); try{ localStorage.clear(); }catch(e){} alert('Compte supprimé.'); location.reload(); }catch(e){ alert('Échec : '+(e.message||e)+'. Si le message parle de connexion récente, déconnecte-toi, reconnecte-toi puis réessaie.'); } };
   const vb=$('#verifBtn'); if(vb) vb.onclick=async()=>{ try{ await USER.sendEmailVerification(); vb.querySelector('.muted').textContent='lien envoyé'; }catch(e){ vb.textContent='échec : '+e.message; } };
   const hb=$('#healthBtn'); if(hb) hb.onclick=()=>{ if(S.health){ showSheet(`<h3>Apple Santé</h3><p>Ton poids est importé automatiquement (les pesées saisies à la main gardent la priorité) et chaque séance terminée est enregistrée comme entraînement de force : elle compte dans tes anneaux et apparaît sur ta montre.</p><div class="row2"><button class="btn fill" id="hsNow">Synchroniser maintenant</button><button class="btn" id="hsOff">Déconnecter</button></div>`); $('#hsNow').onclick=()=>{ hideSheet(); healthSync(); toast('Synchronisation…'); }; $('#hsOff').onclick=()=>{ S.health=false; save(); hideSheet(); renderReglages(); toast('Apple Santé déconnecté'); }; } else healthEnable(); };
-  const pb=$('#planBtn'); if(pb) pb.onclick=()=>showPaywall();
+  const pb=$('#planBtn'); if(pb) pb.onclick=()=>showPlan();
+  const pr=$('#planRow'); if(pr) pr.onclick=()=>showPlan();
+  const pa=$('#profAvatar'); if(pa) pa.onclick=showAvatarSheet;
+  const ts=$('#themeSeg'); if(ts) ts.querySelectorAll('button').forEach(b=>b.onclick=()=>{ S.theme=b.dataset.theme; save(); applyTheme(); renderReglages(); });
   const adb=$('#adminBtn'); if(adb) adb.onclick=showAdmin;
   $('#profBtn').onclick=()=>{ if(!USER) return; const sheet=showSheet(`<h3>Mon profil</h3>`+profileForm(PROFILE||{})); bindProfileForm(()=>{ hideSheet(); toast('Profil enregistré','ok'); renderReglages(); }, sheet); };
   $('#progBtn').onclick=()=>document.querySelector('.tabs button[data-tab="programme"]').click();
@@ -600,7 +624,7 @@ function mdToHtml(md){ return String(md||'').split(/\n{2,}/).map(par=>{ par=par.
 /* écoute du profil et du programme après connexion */
 function listenMeta(){
   unsubs.push(fbDb.collection('users').doc(USER.uid).collection('meta').onSnapshot(snap=>{
-    let prof=null, prog=null; snap.docs.forEach(d=>{ if(d.id==='profile') prof=d.data(); if(d.id==='program') prog=d.data(); if(d.id==='usage') USAGE=d.data(); });
+    let prof=null, prog=null; snap.docs.forEach(d=>{ if(d.id==='profile') prof=d.data(); if(d.id==='program') prog=d.data(); if(d.id==='usage') USAGE=d.data(); if(d.id==='billing') BILLING.doc=d.data(); });
     PROFILE=prof;
     if(prog&&prog.sessions&&prog.sessions.length){ GENERATING=false; applyProgram(prog); }
     else if(snap.metadata.fromCache&&!snap.docs.length){ /* première ouverture hors ligne : attendre le serveur */ }
@@ -643,6 +667,78 @@ $('#tStop').onclick=stopTimer; $('#tPlus').onclick=()=>{T.end+=30000;T.total+=30
 document.addEventListener('visibilitychange',()=>{ if(!document.hidden&&$('#timer').classList.contains('on')) tick(); });
 
 
+/* ---------- Avatar évolutif : un personnage qui se renforce avec les séances, les records et les semaines complètes ---------- */
+const AV_STAGES=[{xp:0,name:'Recrue'},{xp:60,name:'Solide'},{xp:180,name:'Costaud'},{xp:400,name:'Athlète'},{xp:800,name:'Élite'}];
+const AV_GEAR=[
+  {id:'bandeau',name:'Bandeau',how:'10 séances terminées',test:f=>f.sessions>=10},
+  {id:'gants',name:'Gants',how:'Premier record',test:f=>f.prs>=1},
+  {id:'lunettes',name:'Lunettes',how:'25 séances terminées',test:f=>f.sessions>=25},
+  {id:'chaine',name:'Chaîne',how:'3 records',test:f=>f.prs>=3},
+  {id:'ceinture',name:'Ceinture',how:'45 tractions au test',test:f=>f.pull>=45},
+  {id:'cape',name:'Cape',how:'4 semaines complètes',test:f=>f.fullWeeks>=4},
+  {id:'couronne',name:'Couronne',how:'Stade Élite',test:f=>f.stage>=5}
+];
+const AV_HAIR=[['court','Court'],['rase','Rasé'],['boucle','Bouclé'],['long','Long']];
+const AV_SKIN=['#F3D3B6','#E0B48C','#C58C5C','#8D5A3A','#5B3A26'];
+const AV_COLORS=['#D8382B','#1E6FD9','#1E8E5A','#7A3FD1','#E0A200','#0F1216'];
+function avatarFacts(){
+  const logs=Object.values(S.logs).filter(l=>l.done); const sessions=logs.length;
+  let prs=0, fullWeeks=0; try{ const st=suiviStats(); fullWeeks=st.weeks.filter(w=>!w.future&&w.done>=w.planned).length; }catch(e){}
+  const best={}; Object.values(S.logs).sort((x,y)=>x.date<y.date?-1:1).forEach(l=>Object.entries(l.sets||{}).forEach(([exId,arr])=>{ let day=0; (arr||[]).forEach(st=>{ if(!st||!st.done||!st.w||!st.r) return; const v=e1rm(st.w,st.r); if(v>day) day=v; }); if(!day) return; if(best[exId]==null) best[exId]=day; else if(day>best[exId]+0.01){ best[exId]=day; prs++; } }));
+  const tests=Object.values(S.tests||{}); const pull=tests.length?Math.max(...tests.map(t=>t.reps||0)):0;
+  const xp=sessions*10+prs*15+tests.length*5+fullWeeks*25;
+  let stage=1; AV_STAGES.forEach((st,i)=>{ if(xp>=st.xp) stage=i+1; });
+  const next=AV_STAGES[stage]||null; const prev=AV_STAGES[stage-1];
+  const f={sessions,prs,pull,fullWeeks,tests:tests.length,xp,stage,stageName:AV_STAGES[stage-1].name,next,pct:next?Math.round(100*(xp-prev.xp)/(next.xp-prev.xp)):100};
+  f.unlocked=AV_GEAR.filter(g=>g.test(f)).map(g=>g.id); return f;
+}
+function avatarCfg(){ const a=(PROFILE&&PROFILE.avatar)||S.avatar||{}; return {hair:a.hair||'court',skin:a.skin||AV_SKIN[1],color:a.color||AV_COLORS[0],wear:a.wear||[]}; }
+function avatarSvg(size,cfg,facts,opts){
+  const c=cfg||avatarCfg(), f=facts||avatarFacts(), o=opts||{}; const st=f.stage; const wear=(o.wear||c.wear).filter(id=>f.unlocked.includes(id)||o.preview);
+  const sh=22+st*5, arm=6+st*1.6, chest=20+st*3, neck=7+st*0.8; const dark=o.mood==='rest'; const ink='#0F1216';
+  const has=id=>wear.includes(id);
+  let g=`<svg viewBox="0 0 120 150" width="${size}" height="${size*1.25}" class="avsvg st${st}" aria-hidden="true">`;
+  if(has('cape')) g+=`<path d="M${60-sh} 62 Q60 150 ${60+sh} 62 L${60+sh+6} 120 L${60-sh-6} 120 Z" fill="${c.color}" opacity=".55"/>`;
+  g+=`<ellipse cx="60" cy="142" rx="${sh+6}" ry="4" fill="${ink}" opacity=".08"/>`;
+  // jambes
+  g+=`<rect x="${60-chest*0.55}" y="96" width="${chest*0.45}" height="42" rx="7" fill="${ink}"/><rect x="${60+chest*0.1}" y="96" width="${chest*0.45}" height="42" rx="7" fill="${ink}"/>`;
+  // torse
+  g+=`<path d="M${60-sh} 58 Q60 50 ${60+sh} 58 L${60+chest*0.75} 100 L${60-chest*0.75} 100 Z" fill="${c.color}"/>`;
+  if(has('ceinture')) g+=`<rect x="${60-chest*0.8}" y="92" width="${chest*1.6}" height="8" rx="3" fill="#E0A200"/><rect x="56" y="91" width="8" height="10" rx="2" fill="#FFF3B0"/>`;
+  if(has('chaine')) g+=`<path d="M${60-neck} 58 Q60 ${64+st} ${60+neck} 58" fill="none" stroke="#E0A200" stroke-width="2.5"/>`;
+  // bras
+  g+=`<path d="M${60-sh+2} 60 Q${60-sh-arm*1.6} 78 ${60-sh-arm*0.6} 98" fill="none" stroke="${c.skin}" stroke-width="${arm*2}" stroke-linecap="round"/><path d="M${60+sh-2} 60 Q${60+sh+arm*1.6} 78 ${60+sh+arm*0.6} 98" fill="none" stroke="${c.skin}" stroke-width="${arm*2}" stroke-linecap="round"/>`;
+  if(has('gants')) g+=`<circle cx="${60-sh-arm*0.6}" cy="100" r="${arm+1}" fill="${ink}"/><circle cx="${60+sh+arm*0.6}" cy="100" r="${arm+1}" fill="${ink}"/>`;
+  // cou + tête
+  g+=`<rect x="${60-neck}" y="42" width="${neck*2}" height="18" fill="${c.skin}"/><circle cx="60" cy="32" r="19" fill="${c.skin}"/>`;
+  if(c.hair==='court') g+=`<path d="M41 30 Q60 6 79 30 Q70 20 60 22 Q50 20 41 30Z" fill="${ink}"/>`;
+  else if(c.hair==='boucle') g+=`<path d="M40 30 Q44 6 60 10 Q76 6 80 30 Q74 16 60 18 Q46 16 40 30Z" fill="${ink}"/><circle cx="43" cy="22" r="5" fill="${ink}"/><circle cx="77" cy="22" r="5" fill="${ink}"/><circle cx="60" cy="12" r="5" fill="${ink}"/>`;
+  else if(c.hair==='long') g+=`<path d="M41 30 Q60 6 79 30 L80 52 Q60 46 40 52Z" fill="${ink}"/>`;
+  g+=`<circle cx="53" cy="33" r="2" fill="${ink}"/><circle cx="67" cy="33" r="2" fill="${ink}"/>${dark?`<path d="M54 41 Q60 39 66 41" fill="none" stroke="${ink}" stroke-width="1.8" stroke-linecap="round"/>`:`<path d="M53 40 Q60 45 67 40" fill="none" stroke="${ink}" stroke-width="1.8" stroke-linecap="round"/>`}`;
+  if(has('bandeau')) g+=`<rect x="41" y="20" width="38" height="6" rx="3" fill="${c.color}"/>`;
+  if(has('lunettes')) g+=`<rect x="46" y="29" width="11" height="8" rx="3" fill="none" stroke="${ink}" stroke-width="2"/><rect x="63" y="29" width="11" height="8" rx="3" fill="none" stroke="${ink}" stroke-width="2"/><path d="M57 33 L63 33" stroke="${ink}" stroke-width="2"/>`;
+  if(has('couronne')) g+=`<path d="M46 16 L50 6 L56 13 L60 3 L64 13 L70 6 L74 16 Z" fill="#E0A200"/>`;
+  return g+'</svg>';
+}
+function saveAvatar(a){ S.avatar=a; save(); if(USER&&fbDb) col('meta').doc('profile').set({avatar:a},{merge:true}).catch(()=>{}); if(PROFILE) PROFILE.avatar=a; }
+function showAvatarSheet(){
+  const f=avatarFacts(); let c=Object.assign({},avatarCfg());
+  const sh=showSheet(`<div id="avWrap"></div>`);
+  const paint=()=>{ sh.querySelector('#avWrap').innerHTML=`<div class="avhead">${avatarSvg(96,c,f)}<div><span class="eyebrow">Stade ${f.stage} · ${esc(f.stageName)}</span><h3>Ton avatar</h3><div class="xpbar"><i style="width:${f.pct}%"></i></div><p class="small muted">${f.xp} XP${f.next?` · ${f.next.xp-f.xp} avant « ${esc(f.next.name)} »`:' · stade maximal'}</p></div></div>
+    <h4>Cheveux</h4><div class="chips">${AV_HAIR.map(([v,l])=>`<button class="chip ${c.hair===v?'sel':''}" data-hair="${v}">${l}</button>`).join('')}</div>
+    <h4>Peau</h4><div class="swatches">${AV_SKIN.map(v=>`<button class="sw2 ${c.skin===v?'sel':''}" data-skin="${v}" style="background:${v}"></button>`).join('')}</div>
+    <h4>Tenue</h4><div class="swatches">${AV_COLORS.map(v=>`<button class="sw2 ${c.color===v?'sel':''}" data-color="${v}" style="background:${v}"></button>`).join('')}</div>
+    <h4>Accessoires</h4><div class="gear">${AV_GEAR.map(g=>{ const ok=f.unlocked.includes(g.id), on=c.wear.includes(g.id); return `<button class="grow ${ok?'':'lock'} ${on?'on':''}" data-gear="${g.id}" ${ok?'':'disabled'}><span class="gi">${avatarSvg(28,Object.assign({},c,{wear:[g.id]}),f,{wear:[g.id],preview:true})}</span><span class="gt"><b>${g.name}</b><small>${ok?(on?'porté':'débloqué'):g.how}</small></span></button>`; }).join('')}</div>
+    <p class="small muted">Il gagne de l'expérience avec chaque séance terminée (10), chaque record (15), chaque test de tractions (5) et chaque semaine complète (25).</p>
+    <button class="btn fill" id="avSave">Enregistrer</button>`;
+    sh.querySelectorAll('[data-hair]').forEach(b=>b.onclick=()=>{ c.hair=b.dataset.hair; paint(); });
+    sh.querySelectorAll('[data-skin]').forEach(b=>b.onclick=()=>{ c.skin=b.dataset.skin; paint(); });
+    sh.querySelectorAll('[data-color]').forEach(b=>b.onclick=()=>{ c.color=b.dataset.color; paint(); });
+    sh.querySelectorAll('[data-gear]').forEach(b=>b.onclick=()=>{ const id=b.dataset.gear; c.wear=c.wear.includes(id)?c.wear.filter(x=>x!==id):c.wear.concat(id); paint(); });
+    sh.querySelector('#avSave').onclick=()=>{ saveAvatar(c); hideSheet(); toast('Avatar enregistré','ok'); renderHome(); renderReglages(); }; };
+  paint();
+}
+
 /* ---------- Aujourd'hui ---------- */
 function renderHome(){
   const el=$('#tab-home'); if(!el||!PROGRAM.sessions.length) return;
@@ -654,19 +750,33 @@ function renderHome(){
   const name=(PROFILE&&PROFILE.name)||(USER&&USER.displayName&&USER.displayName.split(' ')[0])||'';
   const dayLabel=new Date().toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long'});
   const isRest=!PROGRAM.sessions.find(x=>x.day===new Date().getDay());
-  let h=`<div class="hello"><p class="eyebrow">${esc(dayLabel)}</p><h2>${esc(hello)}${name?' '+esc(name):''}</h2></div>`;
+  const over=cycleOver(); const af=avatarFacts();
+  let h=`<div class="hello"><div><p class="eyebrow">${esc(dayLabel)}</p><h2>${esc(hello)}${name?' '+esc(name):''}</h2></div><button class="avbtn" id="homeAvatar" aria-label="Mon avatar">${avatarSvg(44,null,af,{mood:done?'happy':isRest?'rest':''})}</button></div>`;
+  if(over) h+=`<div class="card cycend"><div class="card-h"><b>Cycle terminé</b><span class="muted">${fmtD(WEEKS[WEEKS.length-1].to)}</span></div><p>Les ${WEEKS.length} semaines de « ${esc(String(PROGRAM.cycleName||'').split(' · ')[0])} » sont faites. Kai construit le suivant à partir de ton journal.</p><div class="row2"><button class="btn fill sm" id="homeNewCycle">Nouveau cycle avec Kai</button></div></div>`;
   // carte séance du jour
-  h+=`<div class="today ${done?'done':''}"><div class="t-top"><span class="eyebrow">${isRest&&!started&&!done?'Pas de séance prévue':'Séance du jour'} · ${esc(W.label)}</span>${sub?'<span class="tag">sans salle</span>':''}</div>
+  h+=`<div class="today ${done?'done':''}"><div class="t-top"><span class="eyebrow">${isRest&&!started&&!done?'Pas de séance prévue':'Séance du jour'} · S${wk} ${esc(String(W.label||'').replace(/^S\d+\s*/,''))}</span>${sub?'<span class="tag">sans salle</span>':''}</div>
     <div class="t-name">${esc(sub?sub.name:ses.name)}</div><div class="t-meta">${esc(ses.sub)} · ${exs.length} exercices · ${esc(ses.duration||'')}</div>
     ${started||done?`<div class="prog"><div class="bar"><i style="width:${Math.round(100*nDone/Math.max(1,exs.length))}%"></i></div><span>${nDone}/${exs.length} exercices · ${nSets} séries</span></div>`:''}
     <div class="t-actions">${done?`<button class="btn" id="homeOpen">Revoir la séance</button>`:`<button class="btn fill" id="homeStart">${started?'Reprendre':'Démarrer'}</button><button class="btn" id="homeOpen">Voir le plan</button>`}</div>
     ${!started&&!done?`<button class="link t-nogym" id="homeNogym">Pas de salle aujourd'hui ?</button>`:''}</div>`;
-  // semaine : pastilles
-  const start=addDays(WEEKS[0].from,0); const k=Math.max(0,Math.floor(Math.round((new Date(date+'T12:00:00')-new Date(WEEKS[0].from+'T12:00:00'))/86400000)/7)); const a=addDays(WEEKS[0].from,k*7);
+  // semaine : pastilles (semaine calendaire courante, lundi → dimanche)
+  const dow=(new Date(date+'T12:00:00').getDay()+6)%7; const a=addDays(date,-dow);
   const dn=['L','M','M','J','V','S','D']; let dots='';
-  for(let i=0;i<7;i++){ const d=addDays(a,i); const dayIdx=(i+1)%7; const planned=PROGRAM.sessions.find(x=>x.day===dayIdx); const did=Object.values(S.logs).some(l=>l.done&&l.date===d); const cls=did?'ok':d<date?(planned?'miss':'rest'):d===date?'now':(planned?'plan':'rest'); dots+=`<div class="dot ${cls}"><i></i><span>${dn[i]}</span></div>`; }
+  for(let i=0;i<7;i++){ const d=addDays(a,i); const dayIdx=(i+1)%7; const planned=PROGRAM.sessions.find(x=>x.day===dayIdx); const did=Object.values(S.logs).some(l=>l.done&&l.date===d); const cls=did?'ok':d<date?(planned?'miss':'rest'):d===date?'now':(planned?'plan':'rest'); dots+=`<button class="dot ${cls}" data-day="${planned?planned.id:''}" data-date="${d}"><i></i><span>${dn[i]}</span></button>`; }
   const weekDone=Object.values(S.logs).filter(l=>l.done&&l.date>=a&&l.date<=addDays(a,6)).length;
-  h+=`<div class="card wk"><div class="card-h"><b>Cette semaine</b><span class="muted">${weekDone}/${PROGRAM.sessions.length} séances</span></div><div class="dots">${dots}</div></div>`;
+  h+=`<div class="card wk"><div class="card-h"><b>Cette semaine</b><span class="muted">${weekDone}/${PROGRAM.sessions.length} séances · ${fmtD(a)} au ${fmtD(addDays(a,6))}</span></div><div class="dots">${dots}</div></div>`;
+  // avatar + progression
+  h+=`<button class="card avcard" id="homeAvatar2"><div class="card-h"><b>Stade ${af.stage} · ${esc(af.stageName)}</b><span class="muted">${af.xp} XP</span></div><div class="xpbar"><i style="width:${af.pct}%"></i></div><p class="small muted">${af.next?`${af.next.xp-af.xp} XP avant « ${esc(af.next.name)} »`:'Stade maximal atteint'}${(()=>{ const nx=AV_GEAR.find(g=>!af.unlocked.includes(g.id)); return nx?` · prochain accessoire : ${esc(nx.name.toLowerCase())} (${esc(nx.how)})`:''; })()}</p></button>`;
+  // chiffres : mois, tonnage semaine, série
+  const month=date.slice(0,7); const nMonth=Object.values(S.logs).filter(l=>l.done&&l.date.startsWith(month)).length;
+  let ton=0; Object.values(S.logs).filter(l=>l.date>=a&&l.date<=addDays(a,6)).forEach(l=>Object.values(l.sets||{}).flat().forEach(x=>{ if(x&&x.done) ton+=(x.w||0)*(x.r||0); }));
+  let streak=0; try{ const ws=suiviStats().weeks.filter(w=>!w.future); for(let i=ws.length-1;i>=0;i--){ if(ws[i].done>0) streak++; else if(i<ws.length-1) break; } }catch(e){}
+  h+=`<div class="tiles3"><button class="tr" data-view="forme"><span class="l">Ce mois</span><b>${nMonth}</b><small>séance${nMonth>1?'s':''}</small></button><button class="tr" data-view="force"><span class="l">Tonnage</span><b>${ton>=1000?(ton/1000).toFixed(1).replace('.',',')+' t':ton+' kg'}</b><small>cette semaine</small></button><button class="tr" data-view="forme"><span class="l">Série</span><b>${streak}</b><small>semaine${streak>1?'s':''} d'affilée</small></button></div>`;
+  // poids et tractions : saisie rapide
+  const bws=Object.values(S.bw||{}).sort((x,y)=>x.date<y.date?-1:1); const lastBw=bws[bws.length-1]; const ago=bws.filter(x=>x.date<=addDays(date,-7)).pop(); const dBw=lastBw&&ago?Math.round((lastBw.kg-ago.kg)*10)/10:null;
+  const tests=Object.values(S.tests||{}).sort((x,y)=>x.date<y.date?-1:1); const lastT=tests[tests.length-1]; const goal=(PROFILE&&PROFILE.pullGoal)||null;
+  h+=`<div class="tiles2"><div class="card qk"><div class="card-h"><b>Poids</b>${dBw!=null?`<i class="${dBw<0?'down':dBw>0?'up':'flat'}">${dBw>0?'+':''}${String(dBw).replace('.',',')} kg / 7 j</i>`:''}</div><div class="qv"><b>${lastBw?String(lastBw.kg).replace('.',','):'—'}</b><span>kg${lastBw?' · '+fmtD(lastBw.date):''}</span></div><form class="qf" id="bwQuick"><input type="number" step="0.1" inputmode="decimal" placeholder="${lastBw?String(lastBw.kg):'69,0'}" aria-label="Poids du jour"><button class="btn sm fill" type="submit">OK</button></form></div>
+    <div class="card qk"><div class="card-h"><b>Tractions</b>${goal?`<span class="muted">objectif ${goal}</span>`:''}</div><div class="qv"><b>${lastT?lastT.reps:'—'}</b><span>${lastT?'le '+fmtD(lastT.date):'pas encore testé'}</span></div>${goal&&lastT?`<div class="xpbar ok"><i style="width:${Math.min(100,Math.round(100*lastT.reps/goal))}%"></i></div>`:''}<form class="qf" id="tQuick"><input type="number" inputmode="numeric" placeholder="reps" aria-label="Tractions d'affilée"><button class="btn sm" type="submit">Noter</button></form></div></div>`;
   // dernier mot du coach
   const last=COACH.items[0];
   if(last){ const txt=last.type==='bilan'||last.type==='cycleEnd'?(last.nextWeek||last.analysis):last.type==='nudge'?last.analysis:(last.nextFocus||last.analysis); h+=`<div class="card coachcard" id="homeCoach" role="button" tabindex="0"><div class="card-h"><b>${coachAvatar(last.adjustments&&last.adjustments.length&&!last.applied?'attention':'idle','xs')} ${esc(COACH_NAME)}</b><span class="muted">${last.createdAt?new Date(last.createdAt).toLocaleDateString('fr-FR',{day:'numeric',month:'short'}):''}</span></div><p>${lexify(esc(String(txt||'').slice(0,180)))}${String(txt||'').length>180?'…':''}</p>${last.adjustments&&last.adjustments.length&&!last.applied?'<span class="tag">charges à appliquer</span>':''}</div>`; }
@@ -675,11 +785,17 @@ function renderHome(){
   const nextS=[1,2,3,4,5,6,7].map(i=>{ const d=(new Date().getDay()+i)%7; return PROGRAM.sessions.find(x=>x.day===d); }).find(Boolean);
   if(nextS&&nextS.id!==ses.id) h+=`<p class="small muted center">Prochaine : ${esc(nextS.dayName)} · ${esc(nextS.name)}</p>`;
   el.innerHTML=h;
-  const go=()=>{ S.session=ses.id; save(); showTab('seance'); };
-  const st=$('#homeStart'); if(st) st.onclick=()=>{ S.session=ses.id; save(); showTab('seance'); enterFocus(); };
+  const go=()=>{ S.session=ses.id; S.sessionDate=todayISO(); save(); showTab('seance'); };
+  const st=$('#homeStart'); if(st) st.onclick=()=>{ S.session=ses.id; S.sessionDate=todayISO(); save(); showTab('seance'); enterFocus(); };
   const op=$('#homeOpen'); if(op) op.onclick=go;
   const ng=$('#homeNogym'); if(ng) ng.onclick=()=>{ go(); setTimeout(()=>{ const b=$('#subBtn'); if(b) b.click(); },50); };
   const hc=$('#homeCoach'); if(hc) hc.onclick=()=>showTab('coach');
+  const nc=$('#homeNewCycle'); if(nc) nc.onclick=regenerateProgram;
+  ['#homeAvatar','#homeAvatar2'].forEach(q=>{ const b=$(q); if(b) b.onclick=showAvatarSheet; });
+  el.querySelectorAll('.tr[data-view]').forEach(b=>b.onclick=()=>{ SUIVI_VIEW=b.dataset.view; renderSuivi(); showTab('suivi'); });
+  el.querySelectorAll('.dot[data-day]').forEach(b=>b.onclick=()=>{ if(!b.dataset.day) return; S.session=b.dataset.day; S.sessionDate=todayISO(); save(); showTab('seance'); });
+  const bq=$('#bwQuick'); if(bq) bq.onsubmit=e=>{ e.preventDefault(); const kg=parseFloat(bq.querySelector('input').value.replace(',','.')); if(isNaN(kg)||kg<30||kg>250) return; S.bw[date]={date,kg,updatedAt:Date.now()}; save(); writeDoc('bw',date,S.bw[date]); toast('Pesée notée','ok'); renderHome(); renderSuivi(); };
+  const tq=$('#tQuick'); if(tq) tq.onsubmit=e=>{ e.preventDefault(); const r=parseInt(tq.querySelector('input').value); if(isNaN(r)||r<0||r>200) return; S.tests[date]={date,reps:r,updatedAt:Date.now()}; save(); writeDoc('tests',date,S.tests[date]); toast('Test noté','ok'); renderHome(); renderSuivi(); };
 }
 /* ---------- mode séance plein écran ---------- */
 let FOCUS=false;
@@ -848,7 +964,7 @@ function renderSeance(){
   el.innerHTML=h;
 
   // events
-  el.querySelectorAll('.days button').forEach(b=>b.onclick=()=>{ const id=b.dataset.s; if(id==='rest'){ el.innerHTML=`<div class="days">${el.querySelector('.days').innerHTML}</div><h2>Dimanche — repos</h2><p>Marche 30 à 60 min, mobilité hanches et épaules 20 min. Pas de tractions.</p>`; el.querySelectorAll('.days button').forEach(x=>x.onclick=()=>{S.session=x.dataset.s==='rest'?S.session:x.dataset.s;S.openEx=null;save();renderSeance();}); return; } S.session=id; S.openEx=null; save(); renderSeance(); window.scrollTo({top:0}); });
+  el.querySelectorAll('.days button').forEach(b=>b.onclick=()=>{ const id=b.dataset.s; if(id==='rest'){ el.innerHTML=`<div class="days">${el.querySelector('.days').innerHTML}</div><h2>Dimanche — repos</h2><p>Marche 30 à 60 min, mobilité hanches et épaules 20 min. Pas de tractions.</p>`; el.querySelectorAll('.days button').forEach(x=>x.onclick=()=>{S.session=x.dataset.s==='rest'?S.session:x.dataset.s;S.openEx=null;save();renderSeance();}); return; } S.session=id; S.sessionDate=todayISO(); S.openEx=null; save(); renderSeance(); window.scrollTo({top:0}); });
   el.querySelectorAll('[data-lex]').forEach(b=>b.onclick=e=>{ e.stopPropagation(); showLex(b.dataset.lex); });
   const fx=$('#fExit'); if(fx) fx.onclick=()=>exitFocus();
   const fe=$('#fEnd'); if(fe) fe.onclick=()=>{ const e2=$('#endBtn'); if(e2) e2.click(); };
@@ -913,7 +1029,7 @@ function updateElapsed(log){
 /* ---------- render: programme ---------- */
 function renderProgramme(){
   if(!$('#tab-programme')) return;
-  const wk=curWeek(), auto=weekFor(todayISO()), today=new Date().getDay();
+  const auto=curWeek(), wk=PROG_WK||auto, today=new Date().getDay();
   const DN=['Dim','Lun','Mar','Mer','Jeu','Ven','Sam'];
   const W=WEEKS[wk-1]||{}; const mono=(W.rirNote||'').split('·')[0].trim();
   if(PROG_OPEN===undefined){ const t=sessionForDay(); PROG_OPEN=t?t.id:(PROGRAM.sessions[0]||{}).id; }
@@ -931,17 +1047,17 @@ function renderProgramme(){
     else if(prio.length) h+=`<div class="pprio">Priorité : ${esc(prio.join(', '))}</div>`;
     h+=`</div>`;
   });
-  if(S.weekOverride) h+=`<p class="small muted center">Semaine forcée · <button class="link" id="wkAuto">Revenir à la semaine réelle</button></p>`;
+  if(PROG_WK&&PROG_WK!==auto) h+=`<p class="small muted center">Aperçu de la semaine ${wk} · <button class="link" id="wkAuto">Revenir à la semaine en cours</button></p>`;
   $('#tab-programme').innerHTML=h;
   const rb=$('#regenBtn'); if(rb) rb.onclick=regenerateProgram;
   $('#cycBtn').onclick=()=>showSheet(`<h3>${esc(PROGRAM.cycleName||'Le cycle')}</h3><div class="doc">${cycleHtml()}</div>`);
-  $('#tab-programme').querySelectorAll('[data-wk]').forEach(b=>b.onclick=()=>{ const n=+b.dataset.wk; S.weekOverride=n===auto?null:n; save(); render(); });
-  const wa=$('#wkAuto'); if(wa) wa.onclick=()=>{ S.weekOverride=null; save(); render(); };
+  $('#tab-programme').querySelectorAll('[data-wk]').forEach(b=>b.onclick=()=>{ const n=+b.dataset.wk; PROG_WK=n===auto?null:n; renderProgramme(); });
+  const wa=$('#wkAuto'); if(wa) wa.onclick=()=>{ PROG_WK=null; renderProgramme(); };
   $('#tab-programme').querySelectorAll('[data-toggle]').forEach(b=>b.onclick=()=>{ PROG_OPEN=PROG_OPEN===b.dataset.toggle?null:b.dataset.toggle; renderProgramme(); });
-  $('#tab-programme').querySelectorAll('[data-go]').forEach(b=>b.onclick=()=>{ S.session=b.dataset.go; save(); showTab('seance'); });
+  $('#tab-programme').querySelectorAll('[data-go]').forEach(b=>b.onclick=()=>{ S.session=b.dataset.go; S.sessionDate=todayISO(); save(); showTab('seance'); });
   $('#tab-programme').querySelectorAll('[data-pex]').forEach(r=>r.onclick=()=>{ const ex=PROGRAM.sessions.flatMap(x=>x.exercises).find(e=>e.id===r.dataset.pex); if(ex) showDemo(ex); });
 }
-let PROG_OPEN;
+let PROG_OPEN, PROG_WK=null;
 
 
 /* ---------- suivi enrichi : groupes musculaires, assiduité, records ---------- */
@@ -1113,6 +1229,7 @@ document.addEventListener('pointerdown',()=>{ if(window.Notification&&Notificati
 /* ---------- démarrage ---------- */
 async function boot(){
   if(!Object.keys(S.logs).length){ const j=await idbGet(); if(j){ try{ const d=JSON.parse(j); if(Object.keys(d.logs||{}).length) S=Object.assign(S,d); }catch(e){} } }
+  applyTheme(); try{ matchMedia('(prefers-color-scheme: dark)').addEventListener('change',applyTheme); }catch(e){}
   try{
     const [p,c]=await Promise.all([fetch('program.json').then(r=>r.json()), fetch('cycle.html').then(r=>r.text())]);
     DEFAULT_PROGRAM=p; DEFAULT_CYCLE_HTML=c;
