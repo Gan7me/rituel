@@ -188,6 +188,8 @@ function Shell() {
           injectedJavaScriptBeforeContentLoaded={injected}
           allowsBackForwardNavigationGestures={false}
           allowsInlineMediaPlayback
+          scalesPageToFit={false}
+          setBuiltInZoomControls={false}
           mediaPlaybackRequiresUserAction={false}
           bounces={false}
           overScrollMode="never"
