@@ -18,12 +18,12 @@ FONT_LAB = '/usr/share/fonts/opentype/inter/Inter-ExtraBold.otf'
 BADGES = [
   ('s1','ses',1,'1','SÉANCE'),('s10','ses',2,'10','SÉANCES'),('s25','ses',3,'25','SÉANCES'),('s50','ses',4,'50','SÉANCES'),('s100','ses',5,'100','SÉANCES'),
   ('pr1','pr',1,'★','RECORD'),('pr5','pr',3,'5','RECORDS'),('pr15','pr',5,'15','RECORDS'),
-  ('t1','pull',1,'↑','TEST'),('t45','pull',2,'45','TRACTIONS'),('t55','pull',3,'55','TRACTIONS'),('t70','pull',5,'70','TRACTIONS'),
+  ('t1','pull',1,'↑','TEST'),('tp10','pull',2,'+10%','PROGRÈS'),('tp25','pull',3,'+25%','PROGRÈS'),('tp50','pull',4,'+50%','PROGRÈS'),('tp100','pull',5,'×2','PROGRÈS'),
   ('w1','reg',1,'7/7','SEMAINE'),('w4','reg',3,'4','SEMAINES'),('w12','reg',5,'12','SEMAINES'),
   ('c1','cyc',2,'∞','CYCLE'),('ton','cyc',4,'10 t','SEMAINE'),
 ]
-RANK_ENAMEL = [(0.45,0.49,0.56),(0.12,0.60,0.38),(0.86,0.22,0.17),(0.16,0.44,0.88),(0.93,0.64,0.12)]
-RANK_METAL = [1,1,3,3,5]
+RANK_ENAMEL = [(0.45,0.49,0.56),(0.12,0.60,0.38),(0.86,0.22,0.17),(0.16,0.44,0.88),(0.93,0.64,0.12),(0.80,0.84,0.90),(0.20,0.10,0.35),(0.08,0.08,0.10)]
+RANK_METAL = [1,1,3,3,5,3,5,5]
 ENAMEL = {'ses':(0.86,0.22,0.17),'pr':(0.93,0.64,0.12),'pull':(0.16,0.44,0.88),'reg':(0.12,0.60,0.38),'cyc':(0.50,0.28,0.82)}
 METAL = {1:(0.82,0.52,0.30),2:(0.82,0.52,0.30),3:(0.84,0.86,0.90),4:(0.84,0.86,0.90),5:(0.97,0.78,0.32)}
 LOCK_METAL = (0.30,0.32,0.36); LOCK_ENAMEL = (0.13,0.14,0.17)
@@ -185,7 +185,15 @@ def render(bid, fam, tier, big, lab, locked):
                 d.arc([P(-0.50, -0.50), P(0.50, 0.50)], start=a0, end=a1, fill=255, width=int(0.07 * R0))
         sg = mask_from_draw(segs); h = h + 0.05 * smooth(sg, N * 0.002); metal = np.clip(metal + sg, 0, 1); enamel = np.clip(enamel - sg, 0, 1)
     # chiffre gravé dans le moyeu
-    if big.startswith('^'):
+    if big.startswith('*'):
+        n = int(big[1:])
+        def stars(d):
+            for k in range(n):
+                cx0 = (k - (n - 1) / 2) * 0.24
+                pts = [P(cx0 + 0.11 * math.cos(math.radians(-90 + i * 36)) * (1 if i % 2 == 0 else 0.42), 0.0 + 0.11 * math.sin(math.radians(-90 + i * 36)) * (1 if i % 2 == 0 else 0.42)) for i in range(10)]
+                d.polygon(pts, fill=255)
+        tm = mask_from_draw(stars)
+    elif big.startswith('^'):
         n = int(big[1:])
         def chev(d):
             for i in range(n):
@@ -229,7 +237,7 @@ def render(bid, fam, tier, big, lab, locked):
     env = np.where(ry > 0.05, 0.80 + 0.20 * np.clip(ry, 0, 1), np.where(ry > -0.05, 0.55 + (ry + 0.05) / 0.10 * 0.25, 0.30 + 0.20 * np.clip(1 + ry, 0, 1)))
     env = env + 0.10 * np.sin(rx * 6) * (np.abs(ry) < 0.4)  # reflets latéraux
     env = np.clip(env, 0, 1)
-    mc = np.array(LOCK_METAL if locked else METAL[tier]); ec = np.array(LOCK_ENAMEL if locked else (RANK_ENAMEL[int(big[1:]) - 1] if fam == 'rank' else ENAMEL[fam]))
+    mc = np.array(LOCK_METAL if locked else METAL[tier]); ec = np.array(LOCK_ENAMEL if locked else (RANK_ENAMEL[(int(big[1:]) - 1) if big.startswith('^') else (int(big[1:]) + 4)] if fam == 'rank' else ENAMEL[fam]))
     spec_m = (0.9 * ndh1 ** 90 + 0.35 * ndh2 ** 40) * (0.35 if locked else 1.0)
     metal_rgb = mc[None, None, :] * (0.25 + 0.75 * env)[..., None] * (0.75 + 0.25 * ndl1)[..., None] + spec_m[..., None] * np.array([1, 1, 0.95])
     diff = 0.50 + 0.60 * ndl1 + 0.18 * ndl2
@@ -256,19 +264,19 @@ def render(bid, fam, tier, big, lab, locked):
 
 if __name__ == '__main__':
     os.makedirs(OUT, exist_ok=True)
-    for i in range(5):
-        render(f'rank{i+1}', 'rank', RANK_METAL[i], f'^{i+1}', '', False).save(os.path.join(OUT, f'rank{i+1}.webp'), 'WEBP', quality=88, method=6); print('· rank', i + 1)
+    for i in range(8):
+        render(f'rank{i+1}', 'rank', RANK_METAL[i], (f'^{i+1}' if i < 5 else f'*{i-4}'), '', False).save(os.path.join(OUT, f'rank{i+1}.webp'), 'WEBP', quality=88, method=6); print('· rank', i + 1)
     for bid, fam, tier, big, lab in BADGES:
         for locked in (False, True):
             im = render(bid, fam, tier, big, lab, locked)
             im.save(os.path.join(OUT, f'{bid}{"_lock" if locked else ""}.webp'), 'WEBP', quality=88, method=6)
         print('·', bid)
     # planche de contrôle
-    sheet = Image.new('RGBA', (SIZE * 6, SIZE * 3), (244, 245, 247, 255))
+    sheet = Image.new('RGBA', (SIZE * 6, SIZE * 4), (244, 245, 247, 255))
     for i, (bid, *_r) in enumerate(BADGES):
         im = Image.open(os.path.join(OUT, f'{bid}{"_lock" if i % 4 == 3 else ""}.webp'))
         sheet.alpha_composite(im, ((i % 6) * SIZE, (i // 6) * SIZE))
-    for i in range(5):
-        im = Image.open(os.path.join(OUT, f'rank{i+1}.webp'))
-        sheet.alpha_composite(im, ((i + 1) * SIZE // 2 + 17 % 6 * SIZE, 2 * SIZE))
+    for i in range(8):
+        im = Image.open(os.path.join(OUT, f'rank{i+1}.webp')).resize((SIZE * 3 // 4, SIZE * 3 // 4), Image.LANCZOS)
+        sheet.alpha_composite(im, (i * SIZE * 3 // 4, 3 * SIZE))
     sheet.convert('RGB').save(os.path.join(OUT, '..', '..', 'tools', 'badges-planche.png'))

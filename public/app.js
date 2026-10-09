@@ -18,7 +18,7 @@ function humanErr(e){ const c=(e&&e.code)||''; const m=(e&&e.message)||String(e|
   if(/network|Failed to fetch|internet/i.test(m)||!navigator.onLine) return 'Pas de réseau. Le coach a besoin d\'une connexion ; tes séries sont enregistrées et partiront toutes seules.';
   if(/invalid-argument/.test(c)) return 'Le serveur n\'a pas compris la demande (version de l\'app en retard ?). Recharge l\'application depuis Réglages.';
   return m; }
-const APP_VERSION='3.21.2';
+const APP_VERSION='3.22.0';
 const ADMIN_RE=/^(ganeme\.asloune@nexisafe\.com|gads@live\.fr)$/i;
 let PROGRAM={sessions:[]};
 let WEEKS = [
@@ -256,7 +256,8 @@ function renderReglages(){
     <div class="pills">${(P.goals||[]).slice(0,4).map(g=>`<span class="pill">${esc(goals[g]||g)}</span>`).join('')}<span class="pill ${pi.plan==='premium'?'prem':''}">${pi.plan==='premium'?'Premium':'Gratuit'}</span></div>
     ${(()=>{ const f=progressFacts(); const got=BADGES.filter(b=>f.unlocked.includes(b.id)); return got.length?`<button class="brow center" id="profBadges">${got.slice(-6).map(b=>badgeSvg(b,34,false)).join('')}${got.length>6?`<span class="small muted">+${got.length-6}</span>`:''}</button>`:''; })()}
     <div class="pstats"><div><b>${kg?String(kg).replace('.',','):'—'}</b><span>kg</span></div><div><b>${pull!=null?pull:'—'}</b><span>tractions${P.pullGoal?' / '+P.pullGoal:''}</span></div><div><b>${nDone}</b><span>séance${nDone>1?'s':''}</span></div></div>
-    <div class="row2"><button class="btn sm" id="profBtn">Modifier le profil</button>${pi.plan!=='premium'?`<button class="btn fill sm" id="planBtn">Passer Premium</button>`:''}</div></div>
+    <div class="row2"><button class="btn sm" id="profBtn">Modifier le profil</button></div></div>
+  <button class="card plancard ${pi.plan==='premium'?'prem':''}" id="planCard"><div class="card-h"><b>${pi.plan==='premium'?'Rituel Premium':'Forfait gratuit'}</b><span>${pi.plan==='premium'?'actif':'voir Premium ›'}</span></div><p>${pi.plan==='premium'?'Kai sans compter : analyses, questions, nouveaux cycles, séances sans salle.':`${USAGE?(USAGE.analyse||0):0}/${pi.lim.analyse} analyses et ${USAGE?(USAGE.chat||0):0}/${pi.lim.chat} questions utilisées ce mois-ci. Premium lève les limites.`}</p></button>
   <div class="grp"><div class="grp-t">Entraînement</div>
     <button class="row" id="progBtn"><span>Programme</span><span class="muted">${esc(PROGRAM.cycleName||'—')}</span><i></i></button>
     <button class="row" id="lexBtn"><span>Lexique</span><span class="muted">RIR, tempo, décharge…</span><i></i></button>
@@ -284,7 +285,7 @@ function renderReglages(){
   const db_=$('#delBtn'); if(db_) db_.onclick=async()=>{ if(!confirm('Supprimer définitivement ton compte, ton programme et tout ton journal ? Cette action est irréversible.')) return; if(prompt('Tape SUPPRIMER pour confirmer')!=='SUPPRIMER') return; try{ const fn=fbFn.httpsCallable('deleteAccount'); await fn({}); try{ localStorage.clear(); }catch(e){} alert('Compte supprimé.'); location.reload(); }catch(e){ alert('Échec : '+(e.message||e)+'. Si le message parle de connexion récente, déconnecte-toi, reconnecte-toi puis réessaie.'); } };
   const vb=$('#verifBtn'); if(vb) vb.onclick=async()=>{ try{ await USER.sendEmailVerification(); vb.querySelector('.muted').textContent='lien envoyé'; }catch(e){ vb.textContent='échec : '+e.message; } };
   const hb=$('#healthBtn'); if(hb) hb.onclick=()=>{ if(S.health){ showSheet(`<h3>Apple Santé</h3><p>Ton poids est importé automatiquement (les pesées saisies à la main gardent la priorité) et chaque séance terminée est enregistrée comme entraînement de force : elle compte dans tes anneaux et apparaît sur ta montre.</p><div class="row2"><button class="btn fill" id="hsNow">Synchroniser maintenant</button><button class="btn" id="hsOff">Déconnecter</button></div>`); $('#hsNow').onclick=()=>{ hideSheet(); healthSync(); toast('Synchronisation…'); }; $('#hsOff').onclick=()=>{ S.health=false; save(); hideSheet(); renderReglages(); toast('Apple Santé déconnecté'); }; } else healthEnable(); };
-  const pb=$('#planBtn'); if(pb) pb.onclick=()=>showPlan();
+  const pb=$('#planBtn'); if(pb) pb.onclick=()=>showPlan(); const pc=$('#planCard'); if(pc) pc.onclick=()=>showPlan();
   const pr=$('#planRow'); if(pr) pr.onclick=()=>showPlan();
   const pa=$('#profAvatar'); if(pa) pa.onclick=()=>showBadges('rang'); const pb2=$('#profBadges'); if(pb2) pb2.onclick=()=>showBadges('medailles');
   const ts=$('#themeSeg'); if(ts) ts.querySelectorAll('button').forEach(b=>b.onclick=()=>{ S.theme=b.dataset.theme; save(); applyTheme(); renderReglages(); });
@@ -670,7 +671,7 @@ document.addEventListener('visibilitychange',()=>{ if(!document.hidden&&$('#time
 
 
 /* ---------- Rang et badges : récompenses sur des jalons réels (séances, records, tractions, régularité) ---------- */
-const RANKS=[{xp:0,name:'Recrue'},{xp:60,name:'Solide'},{xp:180,name:'Costaud'},{xp:400,name:'Athlète'},{xp:800,name:'Élite'}];
+const RANKS=[{xp:0,name:'Recrue'},{xp:60,name:'Solide'},{xp:180,name:'Costaud'},{xp:400,name:'Athlète'},{xp:800,name:'Élite'},{xp:1500,name:'Vétéran'},{xp:2500,name:'Légende'},{xp:4000,name:'Titan'}];
 // Palette par famille : séances = rouge, records = or, tractions = bleu, régularité = vert, cycle = violet.
 const BADGES=[
   {id:'s1',name:'Première séance',how:'1 séance terminée',fam:'ses',icon:'bolt',test:f=>f.sessions>=1,prog:f=>[f.sessions,1]},
@@ -681,10 +682,11 @@ const BADGES=[
   {id:'pr1',name:'Premier record',how:'1 record personnel',fam:'pr',icon:'trophy',test:f=>f.prs>=1,prog:f=>[f.prs,1]},
   {id:'pr5',name:'Cinq records',how:'5 records personnels',fam:'pr',icon:'trophy',tier:3,test:f=>f.prs>=5,prog:f=>[f.prs,5]},
   {id:'pr15',name:'Collectionneur',how:'15 records personnels',fam:'pr',icon:'trophy',tier:5,test:f=>f.prs>=15,prog:f=>[f.prs,15]},
-  {id:'t1',name:'Premier test',how:'1 test de tractions',fam:'pull',icon:'bar',test:f=>f.tests>=1,prog:f=>[f.tests,1]},
-  {id:'t45',name:'45 tractions',how:'45 tractions d\'affilée',fam:'pull',icon:'bar',tier:2,test:f=>f.pull>=45,prog:f=>[f.pull,45]},
-  {id:'t55',name:'55 tractions',how:'55 tractions d\'affilée',fam:'pull',icon:'bar',tier:3,test:f=>f.pull>=55,prog:f=>[f.pull,55]},
-  {id:'t70',name:'70 tractions',how:'70 tractions d\'affilée',fam:'pull',icon:'bar',tier:5,test:f=>f.pull>=70,prog:f=>[f.pull,70]},
+  {id:'t1',name:'Premier test',how:'1 test de référence noté (tractions par défaut)',fam:'pull',icon:'bar',test:f=>f.tests>=1,prog:f=>[f.tests,1]},
+  {id:'tp10',name:'+10 %',how:'10 % de mieux que ton premier test',fam:'pull',icon:'bar',tier:2,test:f=>f.gain>=10,prog:f=>[Math.max(0,f.gain),10]},
+  {id:'tp25',name:'+25 %',how:'25 % de mieux que ton premier test',fam:'pull',icon:'bar',tier:3,test:f=>f.gain>=25,prog:f=>[Math.max(0,f.gain),25]},
+  {id:'tp50',name:'+50 %',how:'50 % de mieux que ton premier test',fam:'pull',icon:'bar',tier:4,test:f=>f.gain>=50,prog:f=>[Math.max(0,f.gain),50]},
+  {id:'tp100',name:'Doublé',how:'Deux fois ton premier test',fam:'pull',icon:'bar',tier:5,test:f=>f.gain>=100,prog:f=>[Math.max(0,f.gain),100]},
   {id:'w1',name:'Semaine pleine',how:'1 semaine complète',fam:'reg',icon:'flame',test:f=>f.fullWeeks>=1,prog:f=>[f.fullWeeks,1]},
   {id:'w4',name:'Un mois sans faille',how:'4 semaines complètes',fam:'reg',icon:'flame',tier:3,test:f=>f.fullWeeks>=4,prog:f=>[f.fullWeeks,4]},
   {id:'w12',name:'Trimestre de fer',how:'12 semaines complètes',fam:'reg',icon:'flame',tier:5,test:f=>f.fullWeeks>=12,prog:f=>[f.fullWeeks,12]},
@@ -700,26 +702,28 @@ function badgeSvg(b,size,locked,facts){
     if(pct>0) ring=`<svg viewBox="0 0 100 100" class="bring" aria-hidden="true"><circle cx="50" cy="50" r="46" fill="none" stroke="${c1}" stroke-opacity=".18" stroke-width="3"/><circle cx="50" cy="50" r="46" fill="none" stroke="${c1}" stroke-width="3.5" stroke-linecap="round" stroke-dasharray="${(L*pct).toFixed(1)} ${L.toFixed(1)}" transform="rotate(-90 50 50)"/></svg>`; }
   return `<span class="badge ${locked?'lock':''}" style="width:${size}px;height:${size}px"><img src="${BADGE_BASE}${b.id}${locked?'_lock':''}.webp" alt="" loading="lazy" decoding="async">${ring}</span>`;
 }
-function rankSvg(stage,size){ return `<span class="rank" style="width:${size}px;height:${size}px"><img src="${BADGE_BASE}rank${Math.max(1,Math.min(5,stage))}.webp" alt="" decoding="async"></span>`; }
+function rankSvg(stage,size){ return `<span class="rank" style="width:${size}px;height:${size}px"><img src="${BADGE_BASE}rank${Math.max(1,Math.min(8,stage))}.webp" alt="" decoding="async"></span>`; }
 function progressFacts(){
   const logs=Object.values(S.logs).filter(l=>l.done); const sessions=logs.length;
   let fullWeeks=0, maxTon=0; try{ const ws=suiviStats().weeks.filter(w=>!w.future); fullWeeks=ws.filter(w=>w.done>=w.planned).length; maxTon=Math.max(0,...ws.map(w=>w.tonnage||0)); }catch(e){}
   let prs=0; const best={}; Object.values(S.logs).sort((x,y)=>x.date<y.date?-1:1).forEach(l=>Object.entries(l.sets||{}).forEach(([exId,arr])=>{ let day=0; (arr||[]).forEach(st=>{ if(!st||!st.done||!st.w||!st.r) return; const v=e1rm(st.w,st.r); if(v>day) day=v; }); if(!day) return; if(best[exId]==null) best[exId]=day; else if(day>best[exId]+0.01){ best[exId]=day; prs++; } }));
-  const tests=Object.values(S.tests||{}); const pull=tests.length?Math.max(...tests.map(t=>t.reps||0)):0;
+  const tests=Object.values(S.tests||{}).sort((x,y)=>x.date<y.date?-1:1); const pull=tests.length?Math.max(...tests.map(t=>t.reps||0)):0; const first=tests.length?(tests[0].reps||0):0; const gain=first>0?Math.round(100*(pull-first)/first):0;
   const cycles=(S.cyclesDone||0)+(cycleOver()?1:0);
-  const xp=sessions*10+prs*15+tests.length*5+fullWeeks*25;
+  const xp=sessions*10+prs*15+tests.length*5+fullWeeks*25+challengeXp();
   let stage=1; RANKS.forEach((st,i)=>{ if(xp>=st.xp) stage=i+1; });
   const next=RANKS[stage]||null, prev=RANKS[stage-1];
-  const f={sessions,prs,pull,fullWeeks,maxTon,tests:tests.length,cycles,xp,stage,stageName:RANKS[stage-1].name,next,pct:next?Math.round(100*(xp-prev.xp)/(next.xp-prev.xp)):100};
+  const f={sessions,prs,pull,first,gain,fullWeeks,maxTon,tests:tests.length,cycles,xp,stage,stageName:RANKS[stage-1].name,next,pct:next?Math.round(100*(xp-prev.xp)/(next.xp-prev.xp)):100};
   f.unlocked=BADGES.filter(b=>b.test(f)).map(b=>b.id); f.nextBadge=BADGES.find(b=>!f.unlocked.includes(b.id))||null;
   S.badgeDates=S.badgeDates||{}; let nd=false; f.unlocked.forEach(id=>{ if(!S.badgeDates[id]){ S.badgeDates[id]=todayISO(); nd=true; } }); if(nd) save(); return f;
 }
 // Cérémonie de déblocage : écran plein, médaille qui tombe en tournant, confettis, partage. Un badge à la fois.
 let UNLOCK_QUEUE=[], UNLOCK_BUSY=false;
-function checkUnlocks(){ const f=progressFacts(); const seen=S.badgesSeen||[]; const fresh=f.unlocked.filter(id=>!seen.includes(id)); if(!fresh.length) return;
+function checkUnlocks(){ syncChallenges(); const f=progressFacts(); const seen=S.badgesSeen||[]; const fresh=f.unlocked.filter(id=>!seen.includes(id));
+  if(S.rankSeen==null){ S.rankSeen=f.stage; save(); } else if(f.stage>S.rankSeen&&!UNLOCK_QUEUE.includes('rank')){ UNLOCK_QUEUE.push('rank'); }
+  if(!fresh.length&&!UNLOCK_QUEUE.length) return;
   if(!S.badgesSeen||S.badgesSeenV!==2){ S.badgesSeen=f.unlocked.slice(); S.badgesSeenV=2; save(); return; } // premier passage (ou anciens identifiants) : l'historique est acquis sans cérémonie
   fresh.forEach(id=>{ if(!UNLOCK_QUEUE.includes(id)) UNLOCK_QUEUE.push(id); }); if(!UNLOCK_BUSY) nextUnlock(); }
-function nextUnlock(){ const id=UNLOCK_QUEUE.shift(); if(!id){ UNLOCK_BUSY=false; return; } UNLOCK_BUSY=true; const b=BADGES.find(x=>x.id===id); S.badgesSeen=(S.badgesSeen||[]).concat(id); save(); showUnlock(b,nextUnlock); }
+function nextUnlock(){ const id=UNLOCK_QUEUE.shift(); if(!id){ UNLOCK_BUSY=false; return; } UNLOCK_BUSY=true; if(id==='rank'){ const f=progressFacts(); S.rankSeen=f.stage; save(); showRankUp(f,nextUnlock); return; } const b=BADGES.find(x=>x.id===id); S.badgesSeen=(S.badgesSeen||[]).concat(id); save(); showUnlock(b,nextUnlock); }
 function showUnlock(b,done){
   const f=progressFacts(); const got=f.unlocked.length;
   const el=document.createElement('div'); el.className='unlock'; el.innerHTML=`<canvas class="confetti"></canvas><div class="uwrap"><p class="eyebrow">Nouveau badge · ${got}/${BADGES.length}</p><div class="ubadge" id="uBadge">${badgeSvg(b,240,false,f)}</div><h2>${esc(b.name)}</h2><p class="uhow">${esc(b.how)}</p><div class="row2"><button class="btn fill" id="uShare">Partager</button><button class="btn" id="uClose">Continuer</button></div></div>`;
@@ -729,6 +733,12 @@ function showUnlock(b,done){
   tilt(el.querySelector('#uBadge'));
   const close=()=>{ el.classList.remove('on'); setTimeout(()=>{ el.remove(); document.body.classList.remove('unlocking'); renderHome(); if(done) done(); },260); };
   el.querySelector('#uClose').onclick=close; el.querySelector('#uShare').onclick=()=>shareBadge(b);
+}
+function showRankUp(f,done){
+  const el=document.createElement('div'); el.className='unlock rankup'; el.innerHTML=`<canvas class="confetti"></canvas><div class="uwrap"><p class="eyebrow">Nouveau rang · ${f.stage} sur ${RANKS.length}</p><div class="ubadge" id="uBadge">${rankSvg(f.stage,240)}</div><h2>${esc(f.stageName)}</h2><p class="uhow">${f.xp} XP${f.next?` · prochain rang « ${esc(f.next.name)} » à ${f.next.xp} XP`:' · rang maximal'}</p><div class="row2"><button class="btn fill" id="uClose">Continuer</button></div></div>`;
+  document.body.appendChild(el); document.body.classList.add('unlocking'); native({type:'haptic',kind:'success'}); try{ navigator.vibrate&&navigator.vibrate([30,40,60,40,90]); }catch(e){}
+  requestAnimationFrame(()=>el.classList.add('on')); confetti(el.querySelector('.confetti'),['#FFD86B','#FFFFFF']); tilt(el.querySelector('#uBadge'));
+  el.querySelector('#uClose').onclick=()=>{ el.classList.remove('on'); setTimeout(()=>{ el.remove(); document.body.classList.remove('unlocking'); renderHome(); if(done) done(); },260); };
 }
 function confetti(cv,colors){ const ctx=cv.getContext('2d'); const W=cv.width=innerWidth*devicePixelRatio, H=cv.height=innerHeight*devicePixelRatio; const cols=[colors[0],colors[1],'#FFD86B','#FFFFFF','#CFD4DC']; const P=[...Array(140)].map(()=>({x:W/2+(Math.random()-.5)*W*0.3,y:H*0.35,vx:(Math.random()-.5)*18*devicePixelRatio,vy:(-14-Math.random()*12)*devicePixelRatio,r:(3+Math.random()*5)*devicePixelRatio,c:cols[Math.floor(Math.random()*cols.length)],a:Math.random()*6.28,va:(Math.random()-.5)*.3,sh:Math.random()<.5}));
   let t=0; const step=()=>{ t++; ctx.clearRect(0,0,W,H); P.forEach(p=>{ p.vy+=0.55*devicePixelRatio; p.vx*=.985; p.x+=p.vx; p.y+=p.vy; p.a+=p.va; ctx.save(); ctx.translate(p.x,p.y); ctx.rotate(p.a); ctx.fillStyle=p.c; ctx.globalAlpha=Math.max(0,1-t/150); if(p.sh) ctx.fillRect(-p.r,-p.r/2,p.r*2,p.r); else { ctx.beginPath(); ctx.arc(0,0,p.r/1.6,0,6.28); ctx.fill(); } ctx.restore(); }); if(t<160&&cv.isConnected) requestAnimationFrame(step); }; setTimeout(()=>requestAnimationFrame(step),350); }
@@ -747,9 +757,26 @@ async function shareBadge(b){ try{ const c=document.createElement('canvas'); c.w
   const blob=await new Promise(r=>c.toBlob(r,'image/png')); const file=new File([blob],'rituel-'+b.id+'.png',{type:'image/png'});
   if(navigator.canShare&&navigator.canShare({files:[file]})) await navigator.share({files:[file],title:b.name,text:`${b.name} · ${b.how} · Rituel`});
   else { const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=file.name; a.click(); } }catch(e){ if(!/abort/i.test(String(e))) toast('Partage impossible ici'); } }
+// Défis de la semaine : trois objectifs courts calculés sur la semaine calendaire, +20 XP chacun quand ils sont tenus.
+function weekKeyOf(iso){ const dow=(new Date(iso+'T12:00:00').getDay()+6)%7; return addDays(iso,-dow); }
+function weeklyChallenges(iso){
+  const monday=weekKeyOf(iso||todayISO()), sunday=addDays(monday,6); const logs=Object.values(S.logs).filter(l=>l.date>=monday&&l.date<=sunday);
+  const planned=Math.max(2,Math.min(PROGRAM.sessions.length||3,5)); const done=logs.filter(l=>l.done).length;
+  const bestBefore={}; Object.values(S.logs).filter(l=>l.date<monday).forEach(l=>Object.entries(l.sets||{}).forEach(([ex,arr])=>(arr||[]).forEach(st=>{ if(st&&st.done&&st.w&&st.r){ const v=e1rm(st.w,st.r); if(!bestBefore[ex]||v>bestBefore[ex]) bestBefore[ex]=v; } })));
+  let prs=0; logs.forEach(l=>Object.entries(l.sets||{}).forEach(([ex,arr])=>{ let day=0; (arr||[]).forEach(st=>{ if(st&&st.done&&st.w&&st.r){ const v=e1rm(st.w,st.r); if(v>day) day=v; } }); if(day&&bestBefore[ex]&&day>bestBefore[ex]+0.01){ prs++; bestBefore[ex]=day; } }));
+  const sets=logs.reduce((t,l)=>t+Object.values(l.sets||{}).flat().filter(x=>x&&x.done).length,0);
+  const bw=Object.values(S.bw||{}).filter(b=>b.date>=monday&&b.date<=sunday).length; const tests=Object.values(S.tests||{}).filter(t=>t.date>=monday&&t.date<=sunday).length;
+  const wk=Math.round((new Date(monday+'T12:00:00')-new Date('2026-01-05T12:00:00'))/604800000);
+  const rot=[{id:'bw',name:'Deux pesées',how:'noter ton poids deux fois',cur:bw,goal:2},{id:'test',name:'Un test',how:'noter un test de référence',cur:tests,goal:1},{id:'sets',name:`${planned*20} séries`,how:'séries validées dans la semaine',cur:sets,goal:planned*20}][Math.abs(wk)%3];
+  const list=[{id:'ses',name:`${planned} séances`,how:'séances terminées cette semaine',cur:done,goal:planned},{id:'pr',name:'Un record',how:'battre un de tes meilleurs e1RM',cur:prs,goal:1},rot];
+  list.forEach(c=>{ c.ok=c.cur>=c.goal; c.pct=Math.min(100,Math.round(100*c.cur/c.goal)); });
+  return {monday,sunday,list};
+}
+function challengeXp(){ let n=0; Object.values(S.challengesDone||{}).forEach(arr=>n+=(arr||[]).length); return n*20; }
+function syncChallenges(){ const w=weeklyChallenges(); S.challengesDone=S.challengesDone||{}; const prev=S.challengesDone[w.monday]||[]; const now=w.list.filter(c=>c.ok).map(c=>c.id); const fresh=now.filter(id=>!prev.includes(id)); if(fresh.length){ S.challengesDone[w.monday]=Array.from(new Set(prev.concat(now))); save(); fresh.forEach(id=>{ const c=w.list.find(x=>x.id===id); toast(`Défi tenu : ${c.name} · +20 XP`,'ok'); }); native({type:'haptic',kind:'success'}); } }
 // Trophées : écran plein avec deux volets, Rang (échelle des 5 rangs, XP) et Médailles (collection) ; détail d'une médaille en écran dédié.
-const FAM_NAME={ses:'Séances',pr:'Records',pull:'Tractions',reg:'Régularité',cyc:'Cycle'};
-const FAM_DESC={ses:'Chaque séance terminée compte. La médaille est un disque de musculation.',pr:'Un record, c\'est une charge ou un nombre de répétitions jamais atteint sur un exercice. La médaille est une kettlebell.',pull:'Tes tests de tractions d\'affilée, notés depuis l\'accueil. La médaille est une tête d\'haltère suspendue à la barre.',reg:'Une semaine complète, c\'est toutes les séances du programme faites dans la semaine. La médaille est un chronomètre.',cyc:'Les mésocycles bouclés et les gros volumes. La médaille est un écusson.'};
+const FAM_NAME={ses:'Séances',pr:'Records',pull:'Progression',reg:'Régularité',cyc:'Cycle'};
+const FAM_DESC={ses:'Chaque séance terminée compte. La médaille est un disque de musculation.',pr:'Un record, c\'est une charge ou un nombre de répétitions jamais atteint sur un exercice. La médaille est une kettlebell.',pull:'Ta progression sur ton test de référence (tractions d\'affilée par défaut, noté depuis l\'accueil), mesurée par rapport à ton premier test : elle vaut pour tout le monde, quel que soit le niveau de départ. La médaille est une tête d\'haltère suspendue à la barre.',reg:'Une semaine complète, c\'est toutes les séances du programme faites dans la semaine. La médaille est un chronomètre.',cyc:'Les mésocycles bouclés et les gros volumes. La médaille est un écusson.'};
 let TROPHY_VIEW='rang';
 function showBadges(view){ if(view) TROPHY_VIEW=view; showTrophies(); }
 function showTrophies(){
@@ -760,7 +787,7 @@ function showTrophies(){
   if(TROPHY_VIEW==='rang'){
     body=`<div class="thero"><div class="tilt" id="tRank">${rankSvg(f.stage,180)}</div><p class="eyebrow">Rang ${f.stage} sur ${RANKS.length}</p><h2>${esc(f.stageName)}</h2><div class="xpbar"><i style="width:${f.pct}%"></i></div><p class="tsub">${f.xp} XP${f.next?` · encore ${f.next.xp-f.xp} XP pour devenir « ${esc(f.next.name)} »`:' · rang maximal'}</p></div>
       <h4>L'échelle des rangs</h4><div class="ladder">${RANKS.map((r,i)=>{ const st=i+1; const cls=st===f.stage?'now':st<f.stage?'done':'todo'; return `<div class="lrow ${cls}">${rankSvg(st,48)}<div><b>${esc(r.name)}</b><small>${st<f.stage?'acquis':st===f.stage?'ton rang actuel':`à ${r.xp} XP · il te manque ${r.xp-f.xp}`}</small></div><span>${r.xp} XP</span></div>`; }).join('')}</div>
-      <h4>Comment gagner de l'XP</h4><div class="xprules"><div><b>+10</b><span>séance terminée</span></div><div><b>+15</b><span>record personnel</span></div><div><b>+5</b><span>test de tractions</span></div><div><b>+25</b><span>semaine complète</span></div></div>
+      <h4>Comment gagner de l'XP</h4><div class="xprules"><div><b>+10</b><span>séance terminée</span></div><div><b>+15</b><span>record personnel</span></div><div><b>+5</b><span>test de référence</span></div><div><b>+25</b><span>semaine complète</span></div><div><b>+20</b><span>défi de la semaine</span></div></div>
       <p class="small muted">Ton compte : ${f.sessions} séance${f.sessions>1?'s':''}, ${f.prs} record${f.prs>1?'s':''}, ${f.tests} test${f.tests>1?'s':''}, ${f.fullWeeks} semaine${f.fullWeeks>1?'s':''} complète${f.fullWeeks>1?'s':''}.</p>`;
   } else {
     body=`<p class="tsub center">${f.unlocked.length} médaille${f.unlocked.length>1?'s':''} sur ${BADGES.length}. Touche une médaille pour la voir en grand.</p>`+['ses','pr','pull','reg','cyc'].map(fam=>`<h4>${FAM_NAME[fam]}</h4><p class="small muted famd">${FAM_DESC[fam]}</p><div class="bgrid">${BADGES.filter(b=>b.fam===fam).map((b,i)=>{ const ok=f.unlocked.includes(b.id); const pr=b.prog?b.prog(f):null; return `<button class="bcell ${ok?'':'lock'}" data-badge="${b.id}" style="animation-delay:${i*60}ms">${badgeSvg(b,84,!ok,f)}<b>${esc(b.name)}</b><small>${ok?esc(dateOf(b)):(pr?`${String(pr[0]).replace('.',',')} / ${pr[1]}`:esc(b.how))}</small></button>`; }).join('')}</div>`).join('');
@@ -811,6 +838,9 @@ function renderHome(){
   for(let i=0;i<7;i++){ const d=addDays(a,i); const dayIdx=(i+1)%7; const planned=PROGRAM.sessions.find(x=>x.day===dayIdx); const did=Object.values(S.logs).some(l=>l.done&&l.date===d); const cls=did?'ok':d<date?(planned?'miss':'rest'):d===date?'now':(planned?'plan':'rest'); dots+=`<button class="dot ${cls}" data-day="${planned?planned.id:''}" data-date="${d}"><i></i><span>${dn[i]}</span></button>`; }
   const weekDone=Object.values(S.logs).filter(l=>l.done&&l.date>=a&&l.date<=addDays(a,6)).length;
   h+=`<div class="card wk"><div class="card-h"><b>Cette semaine</b><span class="muted">${weekDone}/${PROGRAM.sessions.length} séances · ${fmtD(a)} au ${fmtD(addDays(a,6))}</span></div><div class="dots">${dots}</div></div>`;
+  // défis de la semaine
+  const CH=weeklyChallenges(date); const chDone=CH.list.filter(c=>c.ok).length;
+  h+=`<div class="card chal"><div class="card-h"><b>Défis de la semaine</b><span class="muted">${chDone}/3 · +20 XP chacun</span></div>${CH.list.map(c=>`<div class="crow ${c.ok?'ok':''}"><i></i><div><b>${esc(c.name)}</b><small>${esc(c.how)}</small></div><span>${c.ok?'tenu':`${c.cur}/${c.goal}`}</span><div class="cbar"><em style="width:${c.pct}%"></em></div></div>`).join('')}</div>`;
   // avatar + progression
   const recent=BADGES.filter(b=>af.unlocked.includes(b.id)).slice(-4);
   h+=`<button class="card avcard" id="homeAvatar2"><div class="card-h"><b>${rankSvg(af.stage,22)} Rang ${af.stage} · ${esc(af.stageName)}${newB.length?` <em class="pstar">${newB.length} nouveau${newB.length>1?'x':''}</em>`:''}</b><span class="muted">${af.unlocked.length}/${BADGES.length} médailles</span></div><div class="xpbar"><i style="width:${af.pct}%"></i></div><div class="brow">${recent.map(b=>badgeSvg(b,40,false)).join('')}${af.nextBadge?badgeSvg(af.nextBadge,40,true,af):''}<span class="small muted">${af.nextBadge?`Prochain : ${esc(af.nextBadge.name.toLowerCase())} · ${esc(af.nextBadge.how)}`:'Tous les badges obtenus'}</span></div></button>`;
@@ -1108,7 +1138,7 @@ function renderProgramme(){
 let PROG_OPEN, RENDER_UNLOCK_T=null;
 // Semaine active pour toute l'app : choisie à la main (Programme ou pastille de semaine en Séance), sinon calculée.
 function setWeek(n){ const auto=weekFor(todayISO()); S.weekOverride=(n&&n!==auto)?n:null; save(); render(); toast(S.weekOverride?`Semaine ${n} activée`:`Semaine automatique : S${auto}`,'ok'); }
-function showWeekPicker(){ const auto=weekFor(todayISO()), wk=curWeek(); showSheet(`<h3>Semaine du cycle</h3><p class="small muted">La semaine détermine les séries, les répétitions et les consignes de RIR de chaque séance. Calcul automatique : S${auto}${S.weekOverride?' · actuellement fixée à S'+wk:''}.</p><div class="wkpick">${WEEKS.map((w,i)=>`<button class="row" data-pick="${i+1}" aria-pressed="${i+1===wk}"><span><b>S${i+1}</b> · ${esc(String(w.label||'').replace(/^S\d+\s*/,''))}<br><small class="muted">${esc(w.rirNote||'')}</small></span>${i+1===wk?'<i class="chk"></i>':''}</button>`).join('')}</div>${S.weekOverride?`<button class="btn" id="wkAutoBtn">Revenir au calcul automatique (S${auto})</button>`:''}`); document.querySelectorAll('[data-pick]').forEach(b=>b.onclick=()=>{ hideSheet(); setWeek(+b.dataset.pick); }); const a=$('#wkAutoBtn'); if(a) a.onclick=()=>{ hideSheet(); setWeek(null); }; }
+function showWeekPicker(){ const auto=weekFor(todayISO()), wk=curWeek(); showSheet(`<h3>Semaine du cycle</h3><p class="small muted">La semaine détermine les séries, les répétitions et les consignes de RIR de chaque séance. Calcul automatique : S${auto}${S.weekOverride?' · actuellement fixée à S'+wk:''}.</p><div class="wkpick">${WEEKS.map((w,i)=>`<button class="row" data-pick="${i+1}" aria-pressed="${i+1===wk}"><span><b>S${i+1}</b> · ${esc(String(w.label||'').replace(/^S\d+\s*/,''))}<br><small class="muted">${esc(w.rirNote||'')}</small></span>${i+1===wk?'<i class="chkmark"></i>':''}</button>`).join('')}</div>${S.weekOverride?`<button class="btn" id="wkAutoBtn">Revenir au calcul automatique (S${auto})</button>`:''}`); document.querySelectorAll('[data-pick]').forEach(b=>b.onclick=()=>{ hideSheet(); setWeek(+b.dataset.pick); }); const a=$('#wkAutoBtn'); if(a) a.onclick=()=>{ hideSheet(); setWeek(null); }; }
 
 
 /* ---------- suivi enrichi : groupes musculaires, assiduité, records ---------- */

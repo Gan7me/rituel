@@ -964,7 +964,7 @@ body.chatmode #jobbar{bottom:calc(84px + env(safe-area-inset-bottom))}
 .wkpick .row{border:0;background:var(--surface2);border-radius:12px;align-items:flex-start}
 .wkpick .row[aria-pressed="true"]{box-shadow:inset 0 0 0 2px var(--accent)}
 .wkpick small{font-size:12.5px;line-height:1.3;display:block;margin-top:2px}
-.chk{width:9px;height:14px;border-right:2.5px solid var(--accent);border-bottom:2.5px solid var(--accent);transform:rotate(45deg);margin:4px 8px 0 0}
+.chkmark{width:9px;height:14px;border-right:2.5px solid var(--accent);border-bottom:2.5px solid var(--accent);transform:rotate(45deg);margin:4px 8px 0 0}
 .bhero{display:flex;flex-direction:column;align-items:center;text-align:center;padding:14px 0 6px}
 .bhero b{font-family:var(--disp);font-size:18px;font-weight:800;margin-top:8px}
 .bhero span{font-size:13.5px;color:var(--ink2)}
@@ -1047,3 +1047,22 @@ body.unlocking{overflow:hidden}
 .bdprog{color:var(--ink2);font-size:14.5px;margin:4px 0 12px;font-variant-numeric:tabular-nums}
 .bdwrap .xpbar{max-width:240px;margin:0 auto}
 .bdwrap .row2{justify-content:center;margin-top:8px}
+/* défis, carte forfait, rang supérieur */
+.chal .crow{display:grid;grid-template-columns:22px 1fr auto;gap:4px 10px;align-items:center;padding:9px 0;border-top:1px solid var(--line)}
+.chal .crow:first-of-type{border-top:0}
+.chal .crow i{width:18px;height:18px;border-radius:50%;box-shadow:inset 0 0 0 2px var(--line);display:block;position:relative}
+.chal .crow.ok i{background:var(--ok);box-shadow:none}
+.chal .crow.ok i::after{content:"";position:absolute;left:6px;top:3px;width:4px;height:8px;border:solid #fff;border-width:0 2px 2px 0;transform:rotate(45deg)}
+.chal .crow b{display:block;font-size:14.5px}.chal .crow small{display:block;font-size:12px;color:var(--muted)}
+.chal .crow>span{font-size:13px;color:var(--muted);font-variant-numeric:tabular-nums}
+.chal .crow.ok>span{color:var(--ok);font-weight:600}
+.chal .cbar{grid-column:2/4;height:4px;border-radius:999px;background:var(--surface2);overflow:hidden}
+.chal .cbar em{display:block;height:100%;background:var(--accent);border-radius:999px}
+.chal .crow.ok .cbar em{background:var(--ok)}
+.plancard{cursor:pointer;text-align:left}
+.plancard.prem{background:var(--ink);color:var(--bg)}
+.plancard.prem p,.plancard.prem .card-h span{color:color-mix(in srgb,var(--bg) 70%,transparent)}
+.plancard .card-h span{color:var(--accent-ink);font-weight:600;font-size:13.5px}
+.xprules{grid-template-columns:repeat(5,1fr);gap:5px}
+.xprules b{font-size:17px}.xprules span{font-size:10.5px}
+.unlock.rankup{background:radial-gradient(circle at 50% 38%,#3b3418 0,#0F1216 70%)}
