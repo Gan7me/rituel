@@ -18,7 +18,7 @@ function humanErr(e){ const c=(e&&e.code)||''; const m=(e&&e.message)||String(e|
   if(/network|Failed to fetch|internet/i.test(m)||!navigator.onLine) return 'Pas de réseau. Le coach a besoin d\'une connexion ; tes séries sont enregistrées et partiront toutes seules.';
   if(/invalid-argument/.test(c)) return 'Le serveur n\'a pas compris la demande (version de l\'app en retard ?). Recharge l\'application depuis Réglages.';
   return m; }
-const APP_VERSION='3.21.0';
+const APP_VERSION='3.21.1';
 let PROGRAM={sessions:[]};
 let WEEKS = [
   {n:1,label:'S1 calibrage',from:'2026-09-07',to:'2026-09-13',rirNote:'RIR 3 · établir les références, tout noter'},
@@ -285,7 +285,7 @@ function renderReglages(){
   const hb=$('#healthBtn'); if(hb) hb.onclick=()=>{ if(S.health){ showSheet(`<h3>Apple Santé</h3><p>Ton poids est importé automatiquement (les pesées saisies à la main gardent la priorité) et chaque séance terminée est enregistrée comme entraînement de force : elle compte dans tes anneaux et apparaît sur ta montre.</p><div class="row2"><button class="btn fill" id="hsNow">Synchroniser maintenant</button><button class="btn" id="hsOff">Déconnecter</button></div>`); $('#hsNow').onclick=()=>{ hideSheet(); healthSync(); toast('Synchronisation…'); }; $('#hsOff').onclick=()=>{ S.health=false; save(); hideSheet(); renderReglages(); toast('Apple Santé déconnecté'); }; } else healthEnable(); };
   const pb=$('#planBtn'); if(pb) pb.onclick=()=>showPlan();
   const pr=$('#planRow'); if(pr) pr.onclick=()=>showPlan();
-  const pa=$('#profAvatar'); if(pa) pa.onclick=showBadges; const pb2=$('#profBadges'); if(pb2) pb2.onclick=showBadges;
+  const pa=$('#profAvatar'); if(pa) pa.onclick=()=>showBadges('rang'); const pb2=$('#profBadges'); if(pb2) pb2.onclick=()=>showBadges('medailles');
   const ts=$('#themeSeg'); if(ts) ts.querySelectorAll('button').forEach(b=>b.onclick=()=>{ S.theme=b.dataset.theme; save(); applyTheme(); renderReglages(); });
   const adb=$('#adminBtn'); if(adb) adb.onclick=showAdmin;
   $('#profBtn').onclick=()=>{ if(!USER) return; const sheet=showSheet(`<h3>Mon profil</h3>`+profileForm(PROFILE||{})); bindProfileForm(()=>{ hideSheet(); toast('Profil enregistré','ok'); renderReglages(); }, sheet); };
@@ -716,7 +716,7 @@ function progressFacts(){
 // Cérémonie de déblocage : écran plein, médaille qui tombe en tournant, confettis, partage. Un badge à la fois.
 let UNLOCK_QUEUE=[], UNLOCK_BUSY=false;
 function checkUnlocks(){ const f=progressFacts(); const seen=S.badgesSeen||[]; const fresh=f.unlocked.filter(id=>!seen.includes(id)); if(!fresh.length) return;
-  if(!S.badgesSeen){ S.badgesSeen=f.unlocked.slice(); save(); return; } // premier passage : l'historique est acquis sans cérémonie
+  if(!S.badgesSeen||S.badgesSeenV!==2){ S.badgesSeen=f.unlocked.slice(); S.badgesSeenV=2; save(); return; } // premier passage (ou anciens identifiants) : l'historique est acquis sans cérémonie
   fresh.forEach(id=>{ if(!UNLOCK_QUEUE.includes(id)) UNLOCK_QUEUE.push(id); }); if(!UNLOCK_BUSY) nextUnlock(); }
 function nextUnlock(){ const id=UNLOCK_QUEUE.shift(); if(!id){ UNLOCK_BUSY=false; return; } UNLOCK_BUSY=true; const b=BADGES.find(x=>x.id===id); S.badgesSeen=(S.badgesSeen||[]).concat(id); save(); showUnlock(b,nextUnlock); }
 function showUnlock(b,done){
@@ -746,16 +746,42 @@ async function shareBadge(b){ try{ const c=document.createElement('canvas'); c.w
   const blob=await new Promise(r=>c.toBlob(r,'image/png')); const file=new File([blob],'rituel-'+b.id+'.png',{type:'image/png'});
   if(navigator.canShare&&navigator.canShare({files:[file]})) await navigator.share({files:[file],title:b.name,text:`${b.name} · ${b.how} · Rituel`});
   else { const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=file.name; a.click(); } }catch(e){ if(!/abort/i.test(String(e))) toast('Partage impossible ici'); } }
-function showBadges(){
-  const f=progressFacts(); const seen=S.badgesSeen||[]; const FAMN={ses:'Séances',pr:'Records',pull:'Tractions',reg:'Régularité',cyc:'Cycle'};
-  const got=BADGES.filter(b=>f.unlocked.includes(b.id)).sort((x,y)=>(S.badgeDates[y.id]||'')<(S.badgeDates[x.id]||'')?-1:1); const latest=got[0];
-  const dateOf=b=>S.badgeDates[b.id]?new Date(S.badgeDates[b.id]+'T12:00:00').toLocaleDateString('fr-FR',{day:'numeric',month:'long',year:'numeric'}):'';
-  showSheet(`<div class="rkhead">${rankSvg(f.stage,64)}<div><span class="eyebrow">Rang ${f.stage} sur ${RANKS.length}</span><h3>${esc(f.stageName)}</h3><div class="xpbar"><i style="width:${f.pct}%"></i></div><p class="small muted">${f.xp} XP${f.next?` · ${f.next.xp-f.xp} avant « ${esc(f.next.name)} »`:' · rang maximal'} · ${got.length}/${BADGES.length} badges</p></div></div>
-    ${latest?`<div class="bhero"><div class="bspin">${badgeSvg(latest,170,false)}</div><b>${esc(latest.name)}</b><span>${esc(latest.how)}</span><small>${esc(dateOf(latest))}</small></div>`:''}
-    ${['ses','pr','pull','reg','cyc'].map(fam=>`<h4>${FAMN[fam]}</h4><div class="bgrid">${BADGES.filter(b=>b.fam===fam).map(b=>{ const ok=f.unlocked.includes(b.id); const pr=b.prog?b.prog(f):null; return `<button class="bcell ${ok?'':'lock'}" data-badge="${b.id}">${badgeSvg(b,78,!ok,f)}<b>${esc(b.name)}</b><small>${ok?esc(dateOf(b)):(pr?`${String(pr[0]).replace('.',',')} / ${pr[1]}`:esc(b.how))}</small></button>`; }).join('')}</div>`).join('')}
-    <p class="small muted">Expérience : séance terminée 10, record 15, test de tractions 5, semaine complète 25.</p><button class="btn" onclick="hideSheet()">Fermer</button>`);
-  document.querySelectorAll('[data-badge]').forEach(el=>el.onclick=()=>{ const b=BADGES.find(x=>x.id===el.dataset.badge); const ok=f.unlocked.includes(b.id); const sh=document.querySelector('#sheet .sheet-card'); const d=document.createElement('div'); d.className='bzoom'; const pr=b.prog?b.prog(f):null; d.innerHTML=`<div class="bspin">${badgeSvg(b,220,!ok,f)}</div><b>${esc(b.name)}</b><span>${esc(b.how)}</span><small>${ok?'Obtenu le '+esc(dateOf(b)):(pr?`Progression : ${String(pr[0]).replace('.',',')} / ${pr[1]}`:'Pas encore obtenu')}</small>`; d.onclick=e=>{ if(!e.target.closest('.bspin')) d.remove(); }; sh.appendChild(d); tilt(d.querySelector('.bspin')); });
-  if(!UNLOCK_BUSY&&f.unlocked.some(id=>!seen.includes(id))){ S.badgesSeen=f.unlocked.slice(); save(); renderHome(); }
+// Trophées : écran plein avec deux volets, Rang (échelle des 5 rangs, XP) et Médailles (collection) ; détail d'une médaille en écran dédié.
+const FAM_NAME={ses:'Séances',pr:'Records',pull:'Tractions',reg:'Régularité',cyc:'Cycle'};
+const FAM_DESC={ses:'Chaque séance terminée compte. La médaille est un disque de musculation.',pr:'Un record, c\'est une charge ou un nombre de répétitions jamais atteint sur un exercice. La médaille est une kettlebell.',pull:'Tes tests de tractions d\'affilée, notés depuis l\'accueil. La médaille est une tête d\'haltère suspendue à la barre.',reg:'Une semaine complète, c\'est toutes les séances du programme faites dans la semaine. La médaille est un chronomètre.',cyc:'Les mésocycles bouclés et les gros volumes. La médaille est un écusson.'};
+let TROPHY_VIEW='rang';
+function showBadges(view){ if(view) TROPHY_VIEW=view; showTrophies(); }
+function showTrophies(){
+  const f=progressFacts(); let el=document.querySelector('.trophies'); const fresh=!el;
+  if(fresh){ el=document.createElement('div'); el.className='trophies'; document.body.appendChild(el); document.body.classList.add('unlocking'); requestAnimationFrame(()=>el.classList.add('on')); }
+  const dateOf=b=>S.badgeDates&&S.badgeDates[b.id]?new Date(S.badgeDates[b.id]+'T12:00:00').toLocaleDateString('fr-FR',{day:'numeric',month:'long',year:'numeric'}):'';
+  let body='';
+  if(TROPHY_VIEW==='rang'){
+    body=`<div class="thero"><div class="tilt" id="tRank">${rankSvg(f.stage,180)}</div><p class="eyebrow">Rang ${f.stage} sur ${RANKS.length}</p><h2>${esc(f.stageName)}</h2><div class="xpbar"><i style="width:${f.pct}%"></i></div><p class="tsub">${f.xp} XP${f.next?` · encore ${f.next.xp-f.xp} XP pour devenir « ${esc(f.next.name)} »`:' · rang maximal'}</p></div>
+      <h4>L'échelle des rangs</h4><div class="ladder">${RANKS.map((r,i)=>{ const st=i+1; const cls=st===f.stage?'now':st<f.stage?'done':'todo'; return `<div class="lrow ${cls}">${rankSvg(st,48)}<div><b>${esc(r.name)}</b><small>${st<f.stage?'acquis':st===f.stage?'ton rang actuel':`à ${r.xp} XP · il te manque ${r.xp-f.xp}`}</small></div><span>${r.xp} XP</span></div>`; }).join('')}</div>
+      <h4>Comment gagner de l'XP</h4><div class="xprules"><div><b>+10</b><span>séance terminée</span></div><div><b>+15</b><span>record personnel</span></div><div><b>+5</b><span>test de tractions</span></div><div><b>+25</b><span>semaine complète</span></div></div>
+      <p class="small muted">Ton compte : ${f.sessions} séance${f.sessions>1?'s':''}, ${f.prs} record${f.prs>1?'s':''}, ${f.tests} test${f.tests>1?'s':''}, ${f.fullWeeks} semaine${f.fullWeeks>1?'s':''} complète${f.fullWeeks>1?'s':''}.</p>`;
+  } else {
+    body=`<p class="tsub center">${f.unlocked.length} médaille${f.unlocked.length>1?'s':''} sur ${BADGES.length}. Touche une médaille pour la voir en grand.</p>`+['ses','pr','pull','reg','cyc'].map(fam=>`<h4>${FAM_NAME[fam]}</h4><p class="small muted famd">${FAM_DESC[fam]}</p><div class="bgrid">${BADGES.filter(b=>b.fam===fam).map((b,i)=>{ const ok=f.unlocked.includes(b.id); const pr=b.prog?b.prog(f):null; return `<button class="bcell ${ok?'':'lock'}" data-badge="${b.id}" style="animation-delay:${i*60}ms">${badgeSvg(b,84,!ok,f)}<b>${esc(b.name)}</b><small>${ok?esc(dateOf(b)):(pr?`${String(pr[0]).replace('.',',')} / ${pr[1]}`:esc(b.how))}</small></button>`; }).join('')}</div>`).join('');
+  }
+  el.innerHTML=`<div class="tbar"><button class="tclose" id="tClose" aria-label="Fermer">✕</button><div class="seg"><button data-tv="rang" aria-selected="${TROPHY_VIEW==='rang'}">Rang</button><button data-tv="medailles" aria-selected="${TROPHY_VIEW!=='rang'}">Médailles</button></div><span></span></div><div class="tbody">${body}</div>`;
+  el.querySelector('#tClose').onclick=()=>{ el.classList.remove('on'); setTimeout(()=>{ el.remove(); document.body.classList.remove('unlocking'); },250); };
+  el.querySelectorAll('[data-tv]').forEach(b=>b.onclick=()=>{ TROPHY_VIEW=b.dataset.tv; showTrophies(); el.querySelector('.tbody').scrollTop=0; });
+  el.querySelectorAll('[data-badge]').forEach(b=>b.onclick=()=>showBadgeDetail(BADGES.find(x=>x.id===b.dataset.badge)));
+  const tr=el.querySelector('#tRank'); if(tr) tilt(tr);
+  if(!UNLOCK_BUSY&&f.unlocked.some(id=>!(S.badgesSeen||[]).includes(id))){ S.badgesSeen=f.unlocked.slice(); save(); renderHome(); }
+}
+function showBadgeDetail(b){
+  const f=progressFacts(); const ok=f.unlocked.includes(b.id); const pr=b.prog?b.prog(f):null; const pct=pr?Math.min(100,Math.round(100*pr[0]/pr[1])):0;
+  const d=S.badgeDates&&S.badgeDates[b.id]?new Date(S.badgeDates[b.id]+'T12:00:00').toLocaleDateString('fr-FR',{day:'numeric',month:'long',year:'numeric'}):'';
+  const el=document.createElement('div'); el.className='bdetail'; el.innerHTML=`<button class="tclose" id="bdClose" aria-label="Fermer">✕</button><div class="bdwrap"><p class="eyebrow">${FAM_NAME[b.fam]} · ${b.tier>=5?'or':b.tier>=3?'argent':'bronze'}</p><div class="bdbadge tilt" id="bdBadge">${badgeSvg(b,250,!ok,f)}</div><h2>${esc(b.name)}</h2><p class="bdhow">${esc(b.how)}</p>
+    ${ok?`<p class="bdok">Obtenue le ${esc(d)}</p>`:pr?`<div class="xpbar"><i style="width:${pct}%"></i></div><p class="bdprog">${String(pr[0]).replace('.',',')} / ${pr[1]} · ${pr[1]-pr[0]>0?`encore ${String(Math.round((pr[1]-pr[0])*10)/10).replace('.',',')}`:'à portée'}</p>`:`<p class="bdprog">Pas encore obtenue</p>`}
+    <p class="small muted">${esc(FAM_DESC[b.fam])}</p>
+    <div class="row2">${ok?`<button class="btn fill" id="bdShare">Partager</button>`:''}<button class="btn" id="bdBack">Retour</button></div></div>`;
+  document.body.appendChild(el); requestAnimationFrame(()=>el.classList.add('on')); native({type:'haptic'});
+  const close=()=>{ el.classList.remove('on'); setTimeout(()=>el.remove(),220); };
+  el.querySelector('#bdClose').onclick=close; el.querySelector('#bdBack').onclick=close; const sh=el.querySelector('#bdShare'); if(sh) sh.onclick=()=>shareBadge(b);
+  tilt(el.querySelector('#bdBadge'));
 }
 
 /* ---------- Aujourd'hui ---------- */
@@ -786,7 +812,7 @@ function renderHome(){
   h+=`<div class="card wk"><div class="card-h"><b>Cette semaine</b><span class="muted">${weekDone}/${PROGRAM.sessions.length} séances · ${fmtD(a)} au ${fmtD(addDays(a,6))}</span></div><div class="dots">${dots}</div></div>`;
   // avatar + progression
   const recent=BADGES.filter(b=>af.unlocked.includes(b.id)).slice(-4);
-  h+=`<button class="card avcard" id="homeAvatar2"><div class="card-h"><b>${rankSvg(af.stage,22)} ${esc(af.stageName)}${newB.length?` <em class="pstar">${newB.length} nouveau${newB.length>1?'x':''}</em>`:''}</b><span class="muted">${af.unlocked.length}/${BADGES.length} badges</span></div><div class="xpbar"><i style="width:${af.pct}%"></i></div><div class="brow">${recent.map(b=>badgeSvg(b,40,false)).join('')}${af.nextBadge?badgeSvg(af.nextBadge,40,true,af):''}<span class="small muted">${af.nextBadge?`Prochain : ${esc(af.nextBadge.name.toLowerCase())} · ${esc(af.nextBadge.how)}`:'Tous les badges obtenus'}</span></div></button>`;
+  h+=`<button class="card avcard" id="homeAvatar2"><div class="card-h"><b>${rankSvg(af.stage,22)} Rang ${af.stage} · ${esc(af.stageName)}${newB.length?` <em class="pstar">${newB.length} nouveau${newB.length>1?'x':''}</em>`:''}</b><span class="muted">${af.unlocked.length}/${BADGES.length} médailles</span></div><div class="xpbar"><i style="width:${af.pct}%"></i></div><div class="brow">${recent.map(b=>badgeSvg(b,40,false)).join('')}${af.nextBadge?badgeSvg(af.nextBadge,40,true,af):''}<span class="small muted">${af.nextBadge?`Prochain : ${esc(af.nextBadge.name.toLowerCase())} · ${esc(af.nextBadge.how)}`:'Tous les badges obtenus'}</span></div></button>`;
   // chiffres : mois, tonnage semaine, série
   const month=date.slice(0,7); const nMonth=Object.values(S.logs).filter(l=>l.done&&l.date.startsWith(month)).length;
   let ton=0; Object.values(S.logs).filter(l=>l.date>=a&&l.date<=addDays(a,6)).forEach(l=>Object.values(l.sets||{}).flat().forEach(x=>{ if(x&&x.done) ton+=(x.w||0)*(x.r||0); }));
@@ -811,11 +837,11 @@ function renderHome(){
   const ng=$('#homeNogym'); if(ng) ng.onclick=()=>{ go(); setTimeout(()=>{ const b=$('#subBtn'); if(b) b.click(); },50); };
   const hc=$('#homeCoach'); if(hc) hc.onclick=()=>showTab('coach');
   const nc=$('#homeNewCycle'); if(nc) nc.onclick=regenerateProgram;
-  ['#homeAvatar','#homeAvatar2'].forEach(q=>{ const b=$(q); if(b) b.onclick=showBadges; });
+  const ha=$('#homeAvatar'); if(ha) ha.onclick=()=>showBadges('rang'); const ha2=$('#homeAvatar2'); if(ha2) ha2.onclick=()=>showBadges('medailles');
   el.querySelectorAll('.tr[data-view]').forEach(b=>b.onclick=()=>{ SUIVI_VIEW=b.dataset.view; renderSuivi(); showTab('suivi'); });
   el.querySelectorAll('.dot[data-day]').forEach(b=>b.onclick=()=>{ if(!b.dataset.day) return; S.session=b.dataset.day; S.sessionDate=todayISO(); save(); showTab('seance'); });
   const bq=$('#bwQuick'); if(bq) bq.onsubmit=e=>{ e.preventDefault(); const kg=parseFloat(bq.querySelector('input').value.replace(',','.')); if(isNaN(kg)||kg<30||kg>250) return; S.bw[date]={date,kg,updatedAt:Date.now()}; save(); writeDoc('bw',date,S.bw[date]); toast('Pesée notée','ok'); renderHome(); renderSuivi(); };
-  const tq=$('#tQuick'); if(tq) tq.onsubmit=e=>{ e.preventDefault(); const r=parseInt(tq.querySelector('input').value); if(isNaN(r)||r<0||r>200) return; S.tests[date]={date,reps:r,updatedAt:Date.now()}; save(); writeDoc('tests',date,S.tests[date]); toast('Test noté','ok'); renderHome(); renderSuivi(); };
+  const tq=$('#tQuick'); if(tq) tq.onsubmit=e=>{ e.preventDefault(); const r=parseInt(tq.querySelector('input').value); if(isNaN(r)||r<0||r>200) return; S.tests[date]={date,reps:r,updatedAt:Date.now()}; save(); writeDoc('tests',date,S.tests[date]); toast('Test noté','ok'); renderHome(); renderSuivi(); setTimeout(checkUnlocks,400); };
 }
 /* ---------- mode séance plein écran ---------- */
 let FOCUS=false;
@@ -871,7 +897,7 @@ async function showDemo(ex){
 document.addEventListener('click',e=>{ const b=e.target.closest&&e.target.closest('[data-demo]'); if(b){ e.preventDefault(); e.stopPropagation(); showDemo(findEx(b.dataset.demo)); } },true);
 
 /* ---------- render: séance ---------- */
-function render(){ if(!PROGRAM.sessions.length||!PROGRAM_LOADED||!$('#tab-seance')) return; renderHome(); if(!RENDER_UNLOCK_T) RENDER_UNLOCK_T=setTimeout(()=>{ RENDER_UNLOCK_T=null; if(!document.querySelector('.onb')) checkUnlocks(); },1500); renderSeance(); renderProgramme(); renderSuivi(); renderReglages(); renderCoach(); const w=WEEKS[curWeek()-1]; $('#weekChip').textContent=`Semaine ${w.n}`; }
+function render(){ if(!PROGRAM.sessions.length||!PROGRAM_LOADED||!$('#tab-seance')) return; renderHome(); if(!RENDER_UNLOCK_T){ RENDER_UNLOCK_T=setTimeout(()=>{ if(!document.querySelector('.onb')&&!document.querySelector('#sheet.on')) checkUnlocks(); },2500); } renderSeance(); renderProgramme(); renderSuivi(); renderReglages(); renderCoach(); const w=WEEKS[curWeek()-1]; $('#weekChip').textContent=`Semaine ${w.n}`; }
 
 function shortName(n){ n=String(n||''); if(n.length<=9) return n; const w=n.split(/\s+/); return w[0]+(w.length>1&&/^[A-Z]$/.test(w[w.length-1])?' '+w[w.length-1]:''); }
 const LEX={
