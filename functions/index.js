@@ -162,7 +162,7 @@ const DEMO_SCHEMA = { type: 'object', required: ['map'], properties: { map: { ty
 async function mapDemos(apiKey, model, exercises) {
   const list = exercises.filter(e => e && e.id && e.name).map(e => `${e.id} | ${e.name} | ${e.machine || ''} | ${e.target || ''}`);
   if (!list.length) return {};
-  const user = `Pour chaque exercice ci-dessous, choisis dans la liste de fiches l'identifiant qui montre le mouvement le plus proche (même geste, même muscle cible ; une version barre, haltère, machine ou câble du même geste est acceptable si le geste est identique). Si rien n'est proche, renvoie "". Ne réponds qu'avec les identifiants de la liste.\n\nExercices (id | nom | matériel | cible) :\n${list.join('\n')}\n\nFiches disponibles :\n${DEMO_IDS.join(', ')}`;
+  const user = `Pour chaque exercice ci-dessous, choisis dans la liste de fiches l'identifiant qui montre exactement le même mouvement : même geste ET même groupe musculaire cible, de préférence le même matériel (machine, barre, haltère, câble). Une fiche d'un autre groupe musculaire ou d'un geste différent est une erreur grave : dans le doute, renvoie "" plutôt qu'une approximation. Ne réponds qu'avec les identifiants de la liste.\n\nExercices (id | nom | matériel | cible) :\n${list.join('\n')}\n\nFiches disponibles :\n${DEMO_IDS.join(', ')}`;
   try {
     const parsed = await claudeJSON(apiKey, model, 'Tu associes des exercices de musculation à des fiches de démonstration. Réponds uniquement via l\'outil.', [{ role: 'user', content: user }], DEMO_SCHEMA, 3000);
     const out = {}; (parsed.map || []).forEach(m => { if (m && m.exId && DEMO_SET.has(String(m.demoId || ''))) out[String(m.exId)] = String(m.demoId); });

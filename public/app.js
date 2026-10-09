@@ -18,7 +18,7 @@ function humanErr(e){ const c=(e&&e.code)||''; const m=(e&&e.message)||String(e|
   if(/network|Failed to fetch|internet/i.test(m)||!navigator.onLine) return 'Pas de réseau. Le coach a besoin d\'une connexion ; tes séries sont enregistrées et partiront toutes seules.';
   if(/invalid-argument/.test(c)) return 'Le serveur n\'a pas compris la demande (version de l\'app en retard ?). Recharge l\'application depuis Réglages.';
   return m; }
-const APP_VERSION='3.17.0';
+const APP_VERSION='3.18.0';
 let PROGRAM={sessions:[]};
 let WEEKS = [
   {n:1,label:'S1 calibrage',from:'2026-09-07',to:'2026-09-13',rirNote:'RIR 3 · établir les références, tout noter'},
@@ -225,40 +225,41 @@ function renderReglages(){
   const el=$('#tab-reglages'); if(!el) return;
   const notifState=window.Notification?({granted:'autorisées',denied:'refusées',default:'non demandées'}[Notification.permission]||Notification.permission):'non supporté';
   const usage=USAGE?`${(USAGE.analyse||0)+(USAGE.chat||0)+(USAGE.program||0)} appels · ${((USAGE.costUsd||0)*0.92).toFixed(2).replace('.',',')} €`:'aucun appel ce mois-ci';
-  el.innerHTML=`<h2>Réglages</h2>
-  ${USER?`<div class="acct"><div class="av">${esc((USER.displayName||USER.email||'?').slice(0,1).toUpperCase())}</div><div><b>${esc(USER.displayName||'')}</b><div class="small muted">${esc(USER.email||'')}${USER.providerData&&USER.providerData.some(p=>p.providerId==='password')&&!USER.emailVerified?' · <button class="link" id="verifBtn">e-mail non vérifié, renvoyer</button>':''}</div></div></div>`:''}
-  <div class="grp"><div class="grp-t">Athlète</div>
-    <button class="row" id="profBtn"><span>Mon profil</span><span class="muted">${esc(PROFILE&&PROFILE.level?({debutant:'débutant',intermediaire:'intermédiaire',confirme:'confirmé',avance:'avancé'}[PROFILE.level]||''):'')}</span><i></i></button>
+  const pi=planInfo(); const P=PROFILE||{}; const name=P.name||USER&&USER.displayName||'';
+  const LV={debutant:'Débutant',intermediaire:'Intermédiaire',confirme:'Confirmé',avance:'Avancé'};
+  const bwArr=Object.values(S.bw||{}).sort((x,y)=>x.date<y.date?1:-1); const kg=bwArr[0]?bwArr[0].kg:P.weight;
+  const tests=Object.values(S.tests||{}).sort((x,y)=>x.date<y.date?1:-1); const pull=tests[0]?tests[0].reps:null;
+  const nDone=Object.values(S.logs).filter(l=>l.done).length;
+  const goals={force:'Force',masse:'Muscle',seche:'Sèche',endurance:'Endurance',puissance:'Puissance',tractions:'Tractions',jambes:'Jambes',bras:'Bras & pecs',sante:'Santé',perf:'Performance'};
+  el.innerHTML=`<div class="phero prof"><div class="pav">${esc((name||USER&&USER.email||'?').slice(0,1).toUpperCase())}</div><h2>${esc(name||'Mon profil')}</h2><p class="small muted">${P.level?LV[P.level]+' · ':''}${P.age?P.age+' ans · ':''}${P.height?P.height+' cm':''}</p>
+    <div class="pills">${(P.goals||[]).slice(0,4).map(g=>`<span class="pill">${esc(goals[g]||g)}</span>`).join('')}<span class="pill ${pi.plan==='premium'?'prem':''}">${pi.plan==='premium'?'Premium':'Gratuit'}</span></div>
+    <div class="pstats"><div><b>${kg?String(kg).replace('.',','):'—'}</b><span>kg</span></div><div><b>${pull!=null?pull:'—'}</b><span>tractions${P.pullGoal?' / '+P.pullGoal:''}</span></div><div><b>${nDone}</b><span>séance${nDone>1?'s':''}</span></div></div>
+    <div class="row2"><button class="btn sm" id="profBtn">Modifier le profil</button>${pi.plan!=='premium'?`<button class="btn fill sm" id="planBtn">Passer Premium</button>`:''}</div></div>
+  <div class="grp"><div class="grp-t">Entraînement</div>
+    <button class="row" id="progBtn"><span>Programme</span><span class="muted">${esc(PROGRAM.cycleName||'—')}</span><i></i></button>
     <button class="row" id="lexBtn"><span>Lexique</span><span class="muted">RIR, tempo, décharge…</span><i></i></button>
-    <button class="row" id="progBtn"><span>Programme en cours</span><span class="muted">${esc(PROGRAM.cycleName||'—')}</span><i></i></button>
-  </div>
-  <div class="grp"><div class="grp-t">Forfait</div>
-    <button class="row" id="planBtn"><span>${planInfo().plan==='premium'?'Premium':'Gratuit'}</span><span class="muted">${planInfo().plan==='premium'?'Kai sans compter':`${USAGE?(USAGE.analyse||0):0}/${planInfo().lim.analyse} analyses · ${USAGE?(USAGE.chat||0):0}/${planInfo().lim.chat} questions`}</span><i></i></button>
-    ${USER&&/^ganeme\.asloune@nexisafe\.com$/i.test(USER.email||'')?`<button class="row" id="adminBtn"><span>Administration</span><span class="muted">comptes, erreurs, coûts</span><i></i></button>`:''}</div>
-  <div class="grp"><div class="grp-t">Coach ce mois-ci</div>
-    <div class="row"><span>Usage</span><span class="muted">${usage}</span></div>
-    ${USAGE?`<div class="row"><span>Détail</span><span class="muted">${USAGE.analyse||0} analyses · ${USAGE.chat||0} questions · ${USAGE.program||0} programme${(USAGE.program||0)>1?'s':''}</span></div>`:''}
-  </div>
-  <div class="grp"><div class="grp-t">Séance</div>
     <label class="row"><span>Écran allumé pendant la séance</span><input type="checkbox" class="sw" id="wakeOpt" ${S.wake!==false?'checked':''}></label>
-    ${NATIVE&&HEALTH.available!==false?`<button class="row" id="healthBtn"><span>Apple Santé</span><span class="muted">${HEALTH.busy?'…':S.health?('connecté'+(S.healthAt?' · synchro '+new Date(S.healthAt).toLocaleDateString('fr-FR',{day:'numeric',month:'short'}):'')):'poids importé, séances exportées'}</span><i></i></button>`:''}
-    ${NATIVE?`<div class="row"><span>Notifications</span><span class="muted">${PUSH_TOKEN?'activées':'gérées par le téléphone'}</span></div>`:`<button class="row" id="notifBtn"><span>Notifications de fin de repos</span><span class="muted">${notifState}</span><i></i></button>`}
+    ${NATIVE&&HEALTH.available!==false?`<button class="row" id="healthBtn"><span>Apple Santé</span><span class="muted">${HEALTH.busy?'…':S.health?'connecté':'non connecté'}</span><i></i></button>`:''}
+    ${NATIVE?`<div class="row"><span>Notifications</span><span class="muted">${PUSH_TOKEN?'activées':'gérées par le téléphone'}</span></div>`:`<button class="row" id="notifBtn"><span>Notifications de repos</span><span class="muted">${notifState}</span><i></i></button>`}
   </div>
-  <div class="grp"><div class="grp-t">Données</div>
-    <button class="row" id="expBtn"><span>Exporter mon journal (JSON)</span><i></i></button>
+  <div class="grp"><div class="grp-t">Compte</div>
+    ${USER?`<div class="row"><span>E-mail</span><span class="muted">${esc(USER.email||'')}</span></div>${USER.providerData&&USER.providerData.some(p=>p.providerId==='password')&&!USER.emailVerified?`<button class="row" id="verifBtn"><span>E-mail non vérifié</span><span class="muted">renvoyer le lien</span><i></i></button>`:''}`:''}
+    ${pi.plan==='premium'?`<button class="row" id="planBtn"><span>Abonnement</span><span class="muted">Premium</span><i></i></button>`:`<div class="row"><span>Kai ce mois-ci</span><span class="muted">${USAGE?(USAGE.analyse||0):0}/${pi.lim.analyse} analyses · ${USAGE?(USAGE.chat||0):0}/${pi.lim.chat} questions</span></div>`}
+    ${USER&&/^ganeme\.asloune@nexisafe\.com$/i.test(USER.email||'')?`<button class="row" id="adminBtn"><span>Administration</span><span class="muted">comptes, erreurs, coûts</span><i></i></button>`:''}
+    <button class="row" id="expBtn"><span>Exporter mon journal</span><i></i></button>
     <label class="row" for="impFile"><span>Importer un journal</span><i></i></label><input id="impFile" type="file" accept="application/json" hidden>
-    <a class="row" href="confidentialite.html" target="_blank" rel="noopener"><span>Politique de confidentialité</span><i></i></a>
+    <a class="row" href="confidentialite.html" target="_blank" rel="noopener"><span>Confidentialité</span><i></i></a>
   </div>
   <div class="grp">
     ${USER?`<button class="row" id="signOut"><span>Se déconnecter</span></button>`:''}
-    ${USER?`<button class="row danger" id="delBtn"><span>Supprimer mon compte et mes données</span></button>`:''}
+    <button class="row" id="diagBtn"><span>Diagnostic</span><span class="muted">${ERRLOG.length?ERRLOG.length+' erreur'+(ERRLOG.length>1?'s':''):'ok'}</span><i></i></button>
+    ${USER?`<button class="row danger" id="delBtn"><span>Supprimer mon compte</span></button>`:''}
   </div>
-  <div class="grp"><button class="row" id="diagBtn"><span>Diagnostic</span><span class="muted">${ERRLOG.length?ERRLOG.length+' erreur'+(ERRLOG.length>1?'s':''):'aucune erreur'}</span><i></i></button></div>
-  <p class="small muted center">Rituel ${APP_VERSION}${NATIVE&&(window.__RITUEL_NATIVE__||{}).version?' · app '+esc((window.__RITUEL_NATIVE__||{}).version):''} · <button class="link" id="reloadBtn">Recharger l'application</button></p>
+  <p class="small muted center">Rituel ${APP_VERSION}${NATIVE&&(window.__RITUEL_NATIVE__||{}).version?' · app '+esc((window.__RITUEL_NATIVE__||{}).version):''} · <button class="link" id="reloadBtn">Recharger</button></p>
 `;
   const so=$('#signOut'); if(so) so.onclick=()=>{ if(confirm('Se déconnecter ? Tes données restent sur ton compte.')) signOut(); };
   const db_=$('#delBtn'); if(db_) db_.onclick=async()=>{ if(!confirm('Supprimer définitivement ton compte, ton programme et tout ton journal ? Cette action est irréversible.')) return; if(prompt('Tape SUPPRIMER pour confirmer')!=='SUPPRIMER') return; try{ const fn=fbFn.httpsCallable('deleteAccount'); await fn({}); try{ localStorage.clear(); }catch(e){} alert('Compte supprimé.'); location.reload(); }catch(e){ alert('Échec : '+(e.message||e)+'. Si le message parle de connexion récente, déconnecte-toi, reconnecte-toi puis réessaie.'); } };
-  const vb=$('#verifBtn'); if(vb) vb.onclick=async()=>{ try{ await USER.sendEmailVerification(); vb.textContent='lien envoyé'; }catch(e){ vb.textContent='échec : '+e.message; } };
+  const vb=$('#verifBtn'); if(vb) vb.onclick=async()=>{ try{ await USER.sendEmailVerification(); vb.querySelector('.muted').textContent='lien envoyé'; }catch(e){ vb.textContent='échec : '+e.message; } };
   const hb=$('#healthBtn'); if(hb) hb.onclick=()=>{ if(S.health){ showSheet(`<h3>Apple Santé</h3><p>Ton poids est importé automatiquement (les pesées saisies à la main gardent la priorité) et chaque séance terminée est enregistrée comme entraînement de force : elle compte dans tes anneaux et apparaît sur ta montre.</p><div class="row2"><button class="btn fill" id="hsNow">Synchroniser maintenant</button><button class="btn" id="hsOff">Déconnecter</button></div>`); $('#hsNow').onclick=()=>{ hideSheet(); healthSync(); toast('Synchronisation…'); }; $('#hsOff').onclick=()=>{ S.health=false; save(); hideSheet(); renderReglages(); toast('Apple Santé déconnecté'); }; } else healthEnable(); };
   const pb=$('#planBtn'); if(pb) pb.onclick=()=>showPaywall();
   const adb=$('#adminBtn'); if(adb) adb.onclick=showAdmin;
@@ -327,7 +328,7 @@ function curThread(){ if(!S.chats) S.chats={}; if(COACH.threadId&&S.chats[COACH.
 function newThread(){ if(!S.chats) S.chats={}; const id='c'+Date.now().toString(36); S.chats[id]={id,createdAt:Date.now(),updatedAt:Date.now(),title:'',messages:[]}; COACH.threadId=id; COACH.thread=S.chats[id].messages; return S.chats[id]; }
 function openThread(id){ const t=S.chats&&S.chats[id]; if(!t) return; COACH.threadId=id; COACH.thread=t.messages; COACH.listOpen=false; renderChatSheet(); }
 function saveThread(){ const t=curThread(); if(!t||!t.messages.length) return; t.updatedAt=Date.now(); if(!t.title){ const u=t.messages.find(m=>m.role==='user'); t.title=u?u.content.slice(0,60):''; } save(); writeDoc('chats',t.id,t); }
-function deleteThread(id){ if(!S.chats[id]) return; delete S.chats[id]; save(); if(USER){ try{ const r=col('chats').doc(id); if(r.delete) r.delete().catch(()=>{}); }catch(e){} } if(COACH.threadId===id){ COACH.threadId=null; COACH.thread=[]; } renderChatSheet(); renderCoach(); }
+function deleteThread(id){ if(!S.chats[id]) return; delete S.chats[id]; save(); if(USER){ try{ const r=col('chats').doc(id); if(r.delete) r.delete().catch(()=>{}); }catch(e){} } if(COACH.threadId===id){ COACH.threadId=null; COACH.thread=[]; } renderCoach(); }
 // Le fil peut être remplacé par sa copie Firestore entre deux messages : on relit toujours l'objet courant, jamais une référence gardée.
 function threadMsgs(){ const t=curThread()||newThread(); if(!Array.isArray(t.messages)) t.messages=[]; COACH.thread=t.messages; return t.messages; }
 async function askCoach(text){
@@ -344,103 +345,104 @@ function applyOverride(item){
   Object.entries(bySession).forEach(([sid,adj])=>col('overrides').doc(sid).set({adj, fromCoach:item.id, updatedAt:Date.now()},{merge:true}));
   col('coach').doc(item.id).set({applied:true},{merge:true});
 }
+function fmtRel(ts){ if(!ts) return ''; const d=new Date(ts), now=new Date(); const sameDay=d.toDateString()===now.toDateString(); if(sameDay) return d.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}); const y=new Date(now); y.setDate(now.getDate()-1); if(d.toDateString()===y.toDateString()) return 'hier'; return d.toLocaleDateString('fr-FR',{day:'numeric',month:'short'}); }
+function coachOpenChat(id,prefill){ if(id&&S.chats&&S.chats[id]){ COACH.threadId=id; COACH.thread=S.chats[id].messages; } else newThread(); COACH.view='chat'; COACH.prefill=prefill||''; renderCoach(); }
 function renderCoach(){
   const el=$('#tab-coach'); if(!el||!PROGRAM_LOADED||!PROGRAM.sessions.length) return;
-  const lastItem=COACH.items[0]; const lastAt=lastItem&&lastItem.createdAt?new Date(lastItem.createdAt):null;
-  const stateTxt=COACH.busy?'Au travail…':lastAt?`En veille · dernier passage ${lastAt.toLocaleDateString('fr-FR',{day:'numeric',month:'short'})} à ${lastAt.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})}`:'En veille · aucune analyse encore';
-  let h=`<div class="chead">${coachAvatar(COACH.busy?'busy':'idle','lg')}<div><h2>${esc(COACH_NAME)}</h2><p class="cstate ${COACH.busy?'busy':''}">${esc(stateTxt)}</p></div></div>`;
-  if(!USER){ h+=`<p class="small muted">Connecte-toi (Réglages) pour activer le Coach : analyse de chaque séance, ajustement des charges, réponses sur ta progression.</p>`; el.innerHTML=h; return; }
+  document.body.classList.toggle('chatmode',COACH.view==='chat'&&!$('#tab-coach').hidden);
+  if(COACH.view==='chat') return renderChatView(el);
+  if(COACH.view==='chats') return renderChatList(el);
   const date=todayISO(), ses=curSession(), log=S.logs[logKey(date,ses.id)];
+  const lastItem=COACH.items[0]; const lastAt=lastItem&&lastItem.createdAt?new Date(lastItem.createdAt):null;
+  const stateTxt=COACH.busy?'Au travail…':lastAt?`En veille · dernier passage ${fmtRel(lastAt.getTime())}`:'En veille';
+  let h=`<div class="chead">${coachAvatar(COACH.busy?'busy':'idle','lg')}<div><h2>${esc(COACH_NAME)}</h2><p class="cstate ${COACH.busy?'busy':''}">${esc(stateTxt)}</p></div></div>`;
+  if(!USER){ h+=`<p class="small muted">Connecte-toi (Réglages) pour activer ${esc(COACH_NAME)}.</p>`; el.innerHTML=h; return; }
   const todayAnalysed=COACH.items.some(i=>i.logKey===logKey(date,ses.id));
-  const hasSets=!!(log&&Object.keys(log.sets||{}).length);
-  // État du coach : ce qu'il surveille et la prochaine action utile.
-  const wk=curWeek(), W=WEEKS[wk-1]||{}; const a=WEEKS[0]?addDays(WEEKS[0].from,Math.max(0,Math.floor(Math.round((new Date(date+'T12:00:00')-new Date(WEEKS[0].from+'T12:00:00'))/86400000)/7))*7):date;
-  const weekDone=Object.values(S.logs).filter(l=>l.done&&l.date>=a&&l.date<=addDays(a,6)).length;
+  const hasSets=!!(log&&Object.values(log.sets||{}).flat().some(x=>x&&x.done));
   const pending=COACH.items.find(i=>i.adjustments&&i.adjustments.length&&!i.applied&&i.type!=='bilan');
   const missing=Object.entries(S.logs).filter(([k,l])=>l.done&&l.date>=addDays(date,-14)&&l.date<date&&Object.values(l.sets||{}).flat().some(x=>x&&x.done)&&!COACH.items.some(i=>i.logKey===k)).sort((x,y)=>x[1].date<y[1].date?-1:1).map(([k])=>k);
-  let act='';
-  if(COACH.busy) act=`<button class="btn acc" disabled>Analyse en cours…</button>`;
-  else if(missing.length) act=`<button class="btn fill" id="anaMissing">Analyser ${missing.length} séance${missing.length>1?'s':''} non analysée${missing.length>1?'s':''}</button>`;
-  else if(hasSets&&!todayAnalysed) act=`<button class="btn fill" id="anaBtn">Analyser la séance du jour</button>`;
-  else if(pending) act=`<button class="btn fill" data-apply="${esc(pending.id)}">Appliquer les charges · ${esc(pending.title||'')}</button>`;
-  else if(hasSets&&todayAnalysed) act=`<button class="btn" id="anaBtn">Ré-analyser la séance du jour</button>`;
-  h+=`<div class="cstat ${pending||(hasSets&&!todayAnalysed)||missing.length?'needs':''}"><div class="cs-grid"><div><b>S${wk}</b><span>${esc(String(W.label||'').replace(/^S\d+\s*/,''))} · ${esc((W.rirNote||'').split('·')[0].trim())}</span></div><div><b>${weekDone}/${PROGRAM.sessions.length}</b><span>séances cette semaine</span></div><div><b>Dim. 19h</b><span>bilan hebdomadaire</span></div></div>
-    <p class="small muted">${pending?'Des charges ajustées attendent d\'être appliquées à la prochaine séance.':hasSets&&!todayAnalysed?'Ta séance du jour a des séries enregistrées : lance l\'analyse pour fixer les charges suivantes.':'Il analyse chaque séance terminée, relance après 3 jours sans séance et prépare le cycle suivant.'}</p>
-    <div class="row2">${act}<button class="btn ${act?'':'fill'}" id="chatBtn">Parler à ${esc(COACH_NAME)}${Object.keys(S.chats||{}).length?' · '+Object.keys(S.chats).length+' conv.':''}</button></div></div>`;
-  h+=`<h3>Analyses</h3>`;
-  if(!COACH.items.length) h+=`<div class="empty"><div class="ic">◎</div><b>Pas encore d'analyse</b><p class="small muted">Termine une séance : ${esc(COACH_NAME)} l'analyse et fixe les charges de la prochaine.</p></div>`;
-  const weekAgo=Date.now()-7*86400000; const older=[];
+  // Une seule chose à faire, mise en avant
+  let act=null;
+  if(COACH.busy) act={cls:'busy',t:'Analyse en cours',s:'Quelques secondes.'};
+  else if(missing.length) act={id:'anaMissing',t:`Analyser ${missing.length} séance${missing.length>1?'s':''}`,s:'Des séances terminées attendent leur lecture.'};
+  else if(hasSets&&!todayAnalysed) act={id:'anaBtn',t:'Analyser la séance du jour',s:'Tes séries sont enregistrées, je fixe les charges suivantes.'};
+  else if(pending) act={apply:pending.id,t:'Appliquer les charges',s:esc(pending.title||'')+' : ajustements prêts pour la prochaine séance.'};
+  h+=`<div class="kact ${act?'on':''}">${act?`<div class="kact-t"><b>${act.t}</b><span>${act.s}</span></div>${act.cls?'':`<button class="btn fill sm" ${act.id?`id="${act.id}"`:`data-apply="${esc(act.apply)}"`}>Lancer</button>`}`:`<div class="kact-t"><b>Rien en attente</b><span>Termine ta prochaine séance, je l'analyse dans la foulée.</span></div>`}</div>`;
+  // Conversations
+  const threads=Object.values(S.chats||{}).filter(t=>t&&Array.isArray(t.messages)&&t.messages.length).sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0));
+  h+=`<div class="ksec"><div class="ksec-h"><h3>Conversations</h3>${threads.length>2?`<button class="link" id="chatsAll">Tout voir (${threads.length})</button>`:''}</div>
+    <button class="btn fill knew" id="chatNew">${coachAvatar('idle','xs')} Écrire à ${esc(COACH_NAME)}</button>
+    ${threads.slice(0,2).map(t=>{ const last=t.messages[t.messages.length-1]; return `<button class="krow" data-open-thread="${esc(t.id)}"><div><b>${esc(t.title||'Conversation')}</b><span>${esc((last.role==='assistant'?COACH_NAME+' : ':'Toi : ')+String(last.content||'').replace(/\n/g,' ').slice(0,70))}</span></div><em>${fmtRel(t.updatedAt||t.createdAt)}</em></button>`; }).join('')}</div>`;
+  // Analyses
+  const weekAgo=Date.now()-7*86400000; const older=[]; let cards='';
   COACH.items.forEach(it=>{
     if(!it.type&&it.logKey){ const lg=S.logs[it.logKey]; if(lg&&!Object.values(lg.sets||{}).flat().some(x=>x&&x.done)) return; }
     if(it.type==='nudge'&&(it.createdAt||0)<weekAgo){ older.push(it); return; }
+    const when=it.createdAt?fmtRel(it.createdAt):'';
     if(it.type==='bilan'||it.type==='cycleEnd'||it.type==='nudge'){
-      const lbl={ok:'OK',up:'En hausse',hold:'Stable',warn:'Attention'};
-      h+=`<div class="ana ${it.type}"><div class="anah">${coachAvatar('idle','xs')}<b>${esc(it.title||'')}</b><span class="small muted">${it.createdAt?new Date(it.createdAt).toLocaleDateString('fr-FR'):''}</span></div>`;
-      if(it.analysis) h+=`<div class="anab">${lexify(esc(it.analysis)).replace(/\n/g,'<br>')}</div>`;
-      if(it.highlights&&it.highlights.length) h+=`<div class="hl">${it.highlights.map(x=>`<div class="hli s-${esc(x.status||'ok')}"><span class="v">${esc(x.value)}</span><span class="l">${esc(x.label)}</span></div>`).join('')}</div>`;
-      if(it.alerts&&it.alerts.length) h+=`<div class="banner">${it.alerts.map(esc).join('<br>')}</div>`;
-      if(it.nextWeek) h+=`<p class="coachline"><b>Semaine prochaine</b> ${lexify(esc(it.nextWeek))}</p>`;
-      if(it.type==='cycleEnd') h+=`<div class="adj"><button class="btn fill" id="nextCycleBtn">Générer le cycle suivant avec le coach</button></div>`;
-      if(it.type==='nudge') h+=`<div class="adj"><button class="btn sm acc" data-goseance>Ouvrir la séance du jour</button></div>`;
-      h+=`</div>`; return;
+      cards+=`<div class="ana ${it.type}"><div class="anah"><span class="kind">${it.type==='nudge'?'Relance':it.type==='cycleEnd'?'Fin de cycle':'Bilan'}</span><b>${esc(it.title||'')}</b><em>${when}</em></div>`;
+      if(it.analysis) cards+=`<div class="anab">${lexify(esc(it.analysis)).replace(/\n/g,'<br>')}</div>`;
+      if(it.highlights&&it.highlights.length) cards+=`<div class="hl">${it.highlights.map(x=>`<div class="hli s-${esc(x.status||'ok')}"><span class="v">${esc(x.value)}</span><span class="l">${esc(x.label)}</span></div>`).join('')}</div>`;
+      if(it.alerts&&it.alerts.length) cards+=`<div class="banner">${it.alerts.map(esc).join('<br>')}</div>`;
+      if(it.nextWeek) cards+=`<p class="coachline"><b>Semaine prochaine</b> ${lexify(esc(it.nextWeek))}</p>`;
+      if(it.type==='cycleEnd') cards+=`<div class="adj"><button class="btn fill" id="nextCycleBtn">Générer le cycle suivant</button></div>`;
+      if(it.type==='nudge') cards+=`<div class="adj"><button class="btn sm" data-goseance>Ouvrir la séance du jour</button></div>`;
+      cards+=`</div>`; return;
     }
     const adjBy={}; (it.adjustments||[]).forEach(a=>adjBy[a.exId]=a);
     const exs=(it.exercises&&it.exercises.length)?it.exercises:(it.adjustments||[]).map(a=>({exId:a.exId,name:a.name,done:'',read:a.reason,status:'up'}));
-    const lbl={ok:'OK',up:'Charger',hold:'Plus de reps',warn:'À revoir'};
-    const needs=it.adjustments&&it.adjustments.length&&!it.applied; h+=`<div class="ana ${needs?'needs':''}"><div class="anah">${coachAvatar(needs?'attention':'idle','xs')}<b>${esc(it.title||it.logKey||'')}</b>${needs?'<span class="tag">à appliquer</span>':''}<span class="small muted">${it.createdAt?new Date(it.createdAt).toLocaleDateString('fr-FR'):''}</span></div>`;
-    if(it.analysis){ const long=it.analysis.length>420; h+=`<div class="anab ${long?'clamp':''}" data-clamp>${lexify(esc(it.analysis)).replace(/\n/g,'<br>')}</div>${long?'<button class="link" data-unclamp>Lire la suite</button>':''}`; }
-    if(exs.length){
-      h+=`<div class="exl2">`+exs.map(e=>{ const a=adjBy[e.exId]; const fx=findEx(e.exId); return `<div class="exc ${fx&&demoId(fx)?'hasimg':''}">${fx?demoThumb(fx):''}<div class="l1"><b>${esc(e.name)}</b><span class="st s-${esc(e.status||'ok')}">${lbl[e.status]||'OK'}</span></div><div class="l2"><span class="done">${esc(e.done||'—')}</span>${a?`<span class="arrow">→</span><span class="next">${esc(a.change)}</span>`:''}</div></div>`; }).join('')+`</div>`;
-      h+=`<details class="more" open><summary>Le détail de ${esc(COACH_NAME)}</summary><div class="exl">${exs.map(e=>{ const a=adjBy[e.exId]; return `<div class="exr s-${esc(e.status||'ok')}"><i></i><div><b>${esc(e.name)}</b><div class="read">${lexify(esc(e.read||''))}${a&&a.reason?' <span class="muted">— '+lexify(esc(a.reason))+'</span>':''}</div></div></div>`; }).join('')}</div></details>`;
-    }
-    if(it.questions&&it.questions.length) h+=`<div class="cq">${coachAvatar('attention','xs')}<div><b>${esc(COACH_NAME)} te demande</b>${it.questions.map(q=>`<p>${esc(q)} <button class="link" data-ask="${esc(q)}">Répondre</button></p>`).join('')}</div></div>`;
-    if(it.cue) h+=`<p class="coachline cue"><b>Point technique</b> ${lexify(esc(it.cue))}</p>`;
-    if(it.nextFocus) h+=`<p class="coachline"><b>Prochaine fois</b> ${lexify(esc(it.nextFocus))}</p>`;
-    if(it.adjustments&&it.adjustments.length){ h+=`<div class="adj">${it.applied?'<span class="tag ok">appliqué à la prochaine séance</span>':`<button class="btn sm acc" data-apply="${it.id}">Appliquer ces charges à la prochaine séance</button>`}</div>`; }
-    h+=`</div>`;
+    const lbl={ok:'Conforme',up:'Charger',hold:'Plus de reps',warn:'À revoir'};
+    const needs=it.adjustments&&it.adjustments.length&&!it.applied;
+    cards+=`<div class="ana ${needs?'needs':''}" data-ana="${esc(it.id)}"><div class="anah"><span class="kind">Analyse</span><b>${esc(it.title||it.logKey||'')}</b><em>${when}</em></div>`;
+    if(it.analysis) cards+=`<div class="anab clamp4">${lexify(esc(it.analysis)).replace(/\n/g,'<br>')}</div>`;
+    if(exs.length) cards+=`<div class="exl2">`+exs.map(e=>{ const a=adjBy[e.exId]; const fx=findEx(e.exId); return `<div class="exc ${fx&&demoId(fx)?'hasimg':''}">${fx?demoThumb(fx):''}<div class="l1"><b>${esc(e.name)}</b><span class="st s-${esc(e.status||'ok')}">${lbl[e.status]||'Conforme'}</span></div><div class="l2"><span class="done">${esc(e.done||'—')}</span>${a?`<span class="arrow">→</span><span class="next">${esc(a.change)}</span>`:''}</div></div>`; }).join('')+`</div>`;
+    if(it.questions&&it.questions.length) cards+=`<div class="cq">${coachAvatar('attention','xs')}<div><b>${esc(COACH_NAME)} te demande</b>${it.questions.map(q=>`<p>${esc(q)} <button class="link" data-ask="${esc(q)}">Répondre</button></p>`).join('')}</div></div>`;
+    cards+=`<div class="anaf"><button class="link" data-detail="${esc(it.id)}">Lire l'analyse complète</button>${it.adjustments&&it.adjustments.length?(it.applied?'<span class="tag ok">charges appliquées</span>':`<button class="btn sm fill" data-apply="${esc(it.id)}">Appliquer les charges</button>`):''}</div></div>`;
   });
-  if(older.length) h+=`<details class="more"><summary>Relances passées (${older.length})</summary>${older.map(it=>`<p class="small muted">${it.createdAt?new Date(it.createdAt).toLocaleDateString('fr-FR'):''} · ${esc(it.title||'')}</p>`).join('')}</details>`;
+  h+=`<div class="ksec"><div class="ksec-h"><h3>Analyses</h3></div>${cards||`<div class="empty"><b>Pas encore d'analyse</b><p class="small muted">Termine une séance : ${esc(COACH_NAME)} l'analyse et fixe les charges de la prochaine.</p></div>`}${older.length?`<details class="more"><summary>Relances passées (${older.length})</summary>${older.map(it=>`<p class="small muted">${it.createdAt?new Date(it.createdAt).toLocaleDateString('fr-FR'):''} · ${esc(it.title||'')}</p>`).join('')}</details>`:''}</div>`;
   el.innerHTML=h;
-  el.querySelectorAll('[data-ask]').forEach(b=>b.onclick=()=>{ COACH.chatOpen=true; renderChatSheet(); const i=$('#askInput'); if(i){ i.value='Tu me demandes : « '+b.dataset.ask+' » — '; i.focus(); i.setSelectionRange(i.value.length,i.value.length); } });
-  el.querySelectorAll('[data-unclamp]').forEach(b=>b.onclick=()=>{ b.previousElementSibling.classList.remove('clamp'); b.remove(); });
   const ab=$('#anaBtn'); if(ab) ab.onclick=()=>analyseSession(logKey(date,ses.id));
   const am=$('#anaMissing'); if(am) am.onclick=async()=>{ for(const k of missing){ await analyseSession(k); } };
-  const cb=$('#chatBtn'); if(cb) cb.onclick=()=>{ COACH.chatOpen=true; renderChatSheet(); };
-  if(COACH.chatOpen) renderChatSheet();
+  const cn=$('#chatNew'); if(cn) cn.onclick=()=>coachOpenChat(null);
+  const ca=$('#chatsAll'); if(ca) ca.onclick=()=>{ COACH.view='chats'; renderCoach(); };
+  el.querySelectorAll('[data-open-thread]').forEach(b=>b.onclick=()=>coachOpenChat(b.dataset.openThread));
+  el.querySelectorAll('[data-ask]').forEach(b=>b.onclick=()=>coachOpenChat(null,'Tu me demandes : « '+b.dataset.ask+' » — '));
   el.querySelectorAll('[data-apply]').forEach(b=>b.onclick=()=>applyOverride(COACH.items.find(i=>i.id===b.dataset.apply)));
-  const nc=$('#nextCycleBtn'); if(nc) nc.onclick=()=>{ document.querySelector('.tabs button[data-tab="programme"]').click(); regenerateProgram(); };
-  el.querySelectorAll('[data-goseance]').forEach(b=>b.onclick=()=>document.querySelector('.tabs button[data-tab="seance"]').click());
+  el.querySelectorAll('[data-detail]').forEach(b=>b.onclick=()=>showAnalysisDetail(COACH.items.find(i=>i.id===b.dataset.detail)));
+  const nc=$('#nextCycleBtn'); if(nc) nc.onclick=()=>{ showTab('programme'); regenerateProgram(); };
+  el.querySelectorAll('[data-goseance]').forEach(b=>b.onclick=()=>showTab('seance'));
   updateCoachBadge();
 }
-// Clavier iOS : la feuille reste collée au-dessus du clavier (visualViewport), sinon le champ de saisie est masqué.
-(function(){ const vv=window.visualViewport; if(!vv) return; const fix=()=>{ const s=$('#sheet'); if(!s||!s.classList.contains('on')) return; const card=s.querySelector('.sheet-card'); const kb=Math.max(0,window.innerHeight-vv.height-vv.offsetTop); card.style.bottom=kb+'px'; card.style.maxHeight=(vv.height-24)+'px'; const inp=document.activeElement; if(kb&&inp&&card.contains(inp)) setTimeout(()=>inp.scrollIntoView({block:'nearest'}),50); }; vv.addEventListener('resize',fix); vv.addEventListener('scroll',fix); })();
-function renderChatSheet(){
-  const s0=$('#sheet'); if(COACH.chatOpen&&s0&&s0.classList.contains('on')&&!s0.querySelector('.chatpane')){ COACH.chatOpen=false; return; }
-  const threads=Object.values(S.chats||{}).filter(x=>x&&Array.isArray(x.messages)&&x.messages.length).sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0));
-  const t=curThread(); if(!t&&!COACH.listOpen){ if(threads.length&&!COACH.thread.length){ COACH.threadId=threads[0].id; COACH.thread=threads[0].messages; } else if(!threads.length) newThread(); }
-  const cur=curThread(); if(cur&&!Array.isArray(cur.messages)) cur.messages=[]; if(cur) COACH.thread=cur.messages;
-  let body='';
-  if(COACH.listOpen||!cur){
-    body=`<div class="chat-list">${threads.length?threads.map(x=>`<div class="crow"><button class="copen" data-open-thread="${x.id}"><b>${esc(x.title||'Conversation')}</b><span>${new Date(x.updatedAt||x.createdAt).toLocaleDateString('fr-FR',{day:'numeric',month:'short'})} · ${x.messages.length} message${x.messages.length>1?'s':''}</span></button><button class="cdel" data-del-thread="${x.id}" aria-label="Supprimer">🗑</button></div>`).join(''):`<p class="small muted center">Aucune conversation encore.</p>`}</div><button class="btn fill" id="chatNew">Nouvelle conversation</button>`;
-  } else {
-    const msgs=cur.messages.map(m=>`<div class="msg ${m.role} ${m.error?'err':''}">${(m.role==='assistant'?lexify(esc(m.content)):esc(m.content)).replace(/\n/g,'<br>')}</div>`).join('')||`<p class="small muted center">Charges, douleur, garde, nutrition, remplacement d'un exercice : ${esc(COACH_NAME)} connaît ton programme et ton historique.</p>`;
-    body=`<div class="chat">${msgs}${COACH.busy&&cur.messages.length&&cur.messages[cur.messages.length-1].role==='user'?`<div class="msg assistant typing" aria-label="${esc(COACH_NAME)} écrit"><i></i><i></i><i></i></div>`:''}</div>
-      <form class="ask" id="askForm"><textarea id="askInput" rows="1" placeholder="Écris à ${esc(COACH_NAME)}…" enterkeyhint="send"></textarea><button class="send" type="submit" aria-label="Envoyer" ${COACH.busy?'disabled':''}><svg viewBox="0 0 24 24"><path d="M4 12h14M12 5l7 7-7 7" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></button></form>`;
-  }
-  const sheet=showSheet(`<div class="chatpane"><div class="chead sm">${coachAvatar(COACH.busy?'busy':'idle')}<h3>${COACH.listOpen||!cur?'Conversations':esc(COACH_NAME)}</h3><div class="chtools">${cur&&!COACH.listOpen?`<button class="ico" id="chatList" aria-label="Conversations" title="Conversations"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button><button class="ico" id="chatNew" aria-label="Nouvelle conversation" title="Nouvelle"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg></button>`:''}<button class="ico" id="chatClose" aria-label="Fermer"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg></button></div></div>${body}</div>`);
-  sheet.classList.add('tall');
-  const c=sheet.querySelector('.chat'); if(c) c.scrollTop=c.scrollHeight;
-  const cl=$('#chatClose'); if(cl) cl.onclick=hideSheet;
-  const ls=$('#chatList'); if(ls) ls.onclick=()=>{ COACH.listOpen=true; renderChatSheet(); };
-  const nw=$('#chatNew'); if(nw) nw.onclick=()=>{ newThread(); COACH.listOpen=false; renderChatSheet(); };
-  sheet.querySelectorAll('[data-open-thread]').forEach(b=>b.onclick=()=>openThread(b.dataset.openThread));
-  sheet.querySelectorAll('[data-del-thread]').forEach(b=>b.onclick=()=>{ if(confirm('Supprimer cette conversation ?')) deleteThread(b.dataset.delThread); });
-  const f=$('#askForm'); if(f){ const ta=$('#askInput');
-    const grow=()=>{ ta.style.height='auto'; ta.style.height=Math.min(ta.scrollHeight,140)+'px'; }; ta.oninput=grow; grow();
-    f.onsubmit=e=>{ e.preventDefault(); const v=ta.value; if(!v.trim()) return; ta.value=''; grow(); askCoach(v); };
-    ta.onkeydown=e=>{ if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); f.requestSubmit(); } };
-    if(!COACH.busy&&cur.messages.length) ta.focus({preventScroll:true}); }
+function showAnalysisDetail(it){ if(!it) return; const adjBy={}; (it.adjustments||[]).forEach(a=>adjBy[a.exId]=a); const exs=it.exercises||[];
+  showSheet(`<div class="chead sm">${coachAvatar('idle')}<h3>${esc(it.title||'')}</h3></div><p>${lexify(esc(it.analysis||'')).replace(/\n/g,'<br>')}</p>${exs.length?`<div class="exl">${exs.map(e=>{ const a=adjBy[e.exId]; return `<div class="exr s-${esc(e.status||'ok')}"><i></i><div><b>${esc(e.name)}</b><div class="read">${lexify(esc(e.read||''))}${a&&a.reason?' <span class="muted">— '+lexify(esc(a.reason))+'</span>':''}</div></div></div>`; }).join('')}</div>`:''}${it.cue?`<p class="coachline cue"><b>Point technique</b> ${lexify(esc(it.cue))}</p>`:''}${it.nextFocus?`<p class="coachline"><b>Prochaine fois</b> ${lexify(esc(it.nextFocus))}</p>`:''}<button class="btn" onclick="hideSheet()">Fermer</button>`); }
+function renderChatList(el){
+  const threads=Object.values(S.chats||{}).filter(t=>t&&Array.isArray(t.messages)&&t.messages.length).sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0));
+  el.innerHTML=`<div class="kbar"><button class="back" id="kBack">‹ ${esc(COACH_NAME)}</button><b>Conversations</b><span></span></div>
+    <button class="btn fill knew" id="chatNew">Nouvelle conversation</button>
+    ${threads.length?threads.map(t=>`<div class="krow-w"><button class="krow" data-open-thread="${esc(t.id)}"><div><b>${esc(t.title||'Conversation')}</b><span>${t.messages.length} message${t.messages.length>1?'s':''}</span></div><em>${fmtRel(t.updatedAt||t.createdAt)}</em></button><button class="kdel" data-del-thread="${esc(t.id)}" aria-label="Supprimer"><svg viewBox="0 0 24 24"><path d="M5 7h14M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button></div>`).join(''):'<p class="small muted center">Aucune conversation encore.</p>'}`;
+  $('#kBack').onclick=()=>{ COACH.view='home'; renderCoach(); };
+  $('#chatNew').onclick=()=>coachOpenChat(null);
+  el.querySelectorAll('[data-open-thread]').forEach(b=>b.onclick=()=>coachOpenChat(b.dataset.openThread));
+  el.querySelectorAll('[data-del-thread]').forEach(b=>b.onclick=()=>{ if(confirm('Supprimer cette conversation ?')){ deleteThread(b.dataset.delThread); } });
 }
+function renderChatView(el){
+  const cur=curThread()||newThread(); if(!Array.isArray(cur.messages)) cur.messages=[]; COACH.thread=cur.messages;
+  const msgs=cur.messages.map(m=>`<div class="msgw ${m.role}">${m.role==='assistant'?coachAvatar('idle','xs'):''}<div class="msg ${m.role} ${m.error?'err':''}">${(m.role==='assistant'?lexify(esc(m.content)):esc(m.content)).replace(/\n/g,'<br>')}</div></div>`).join('');
+  const typing=COACH.busy&&cur.messages.length&&cur.messages[cur.messages.length-1].role==='user'?`<div class="msgw assistant">${coachAvatar('busy','xs')}<div class="msg assistant typing"><i></i><i></i><i></i></div></div>`:'';
+  const empty=!cur.messages.length?`<div class="kempty">${coachAvatar('idle','lg')}<p>Charges, douleur, garde, nutrition, remplacement d'un exercice : je connais ton programme et ton historique. Dis-moi.</p><div class="ksug">${['Je suis fatigué, j\'allège comment ce soir ?','Mon épaule tire sur le développé, je fais quoi ?','Combien de calories pour sécher sans perdre de force ?'].map(q=>`<button class="chip2" data-sug="${esc(q)}">${esc(q)}</button>`).join('')}</div></div>`:'';
+  el.innerHTML=`<div class="kbar"><button class="back" id="kBack">‹</button><div class="kbar-t">${coachAvatar(COACH.busy?'busy':'idle','xs')}<b>${esc(cur.title||COACH_NAME)}</b></div><button class="ico" id="kMenu" aria-label="Options">⋯</button></div>
+    <div class="chat kchat" id="kchat">${empty}${msgs}${typing}</div>
+    <form class="ask kask" id="askForm"><textarea id="askInput" rows="1" placeholder="Écris à ${esc(COACH_NAME)}…" enterkeyhint="send"></textarea><button class="send" type="submit" aria-label="Envoyer" ${COACH.busy?'disabled':''}><svg viewBox="0 0 24 24"><path d="M4 12h14M12 5l7 7-7 7" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></button></form>`;
+  $('#kBack').onclick=()=>{ COACH.view='home'; renderCoach(); };
+  $('#kMenu').onclick=()=>{ const sh=showSheet(`<h3>${esc(cur.title||'Conversation')}</h3><div class="menu"><button data-act="new">Nouvelle conversation</button><button data-act="list">Toutes les conversations</button><button data-act="del" class="danger">Supprimer cette conversation</button></div>`); sh.querySelectorAll('[data-act]').forEach(b=>b.onclick=()=>{ hideSheet(); const a=b.dataset.act; if(a==='new') coachOpenChat(null); else if(a==='list'){ COACH.view='chats'; renderCoach(); } else if(a==='del'&&confirm('Supprimer cette conversation ?')){ deleteThread(cur.id); COACH.view='home'; renderCoach(); } }); };
+  el.querySelectorAll('[data-sug]').forEach(b=>b.onclick=()=>{ $('#askInput').value=b.dataset.sug; $('#askForm').requestSubmit(); });
+  const ta=$('#askInput'), f=$('#askForm'); const grow=()=>{ ta.style.height='auto'; ta.style.height=Math.min(ta.scrollHeight,140)+'px'; }; ta.oninput=grow;
+  if(COACH.prefill){ ta.value=COACH.prefill; COACH.prefill=''; grow(); ta.focus(); ta.setSelectionRange(ta.value.length,ta.value.length); }
+  f.onsubmit=e=>{ e.preventDefault(); const v=ta.value; if(!v.trim()) return; ta.value=''; grow(); askCoach(v); };
+  ta.onkeydown=e=>{ if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); f.requestSubmit(); } };
+  window.scrollTo({top:document.body.scrollHeight});
+}
+function renderChatSheet(){ COACH.view='chat'; renderCoach(); }
 function updateCoachBadge(){ const t=document.querySelector('.tabs button[data-tab="coach"]'); if(!t) return; const seen=S.coachSeen||0; const n=COACH.items.filter(i=>(i.createdAt||0)>seen).length; t.classList.toggle('badge',n>0&&t.getAttribute('aria-selected')!=='true'); }
 
 /* ---------- Palier 2 : profil et programme par utilisateur ----------
@@ -690,7 +692,8 @@ function exitFocus(){ if(!FOCUS) return; FOCUS=false; document.body.classList.re
 const DEMO={base:window.__DEMO_BASE||'demo/img/',index:null,loading:null,asked:false,prefetched:new Set()};
 // Repli local quand le coach n'a pas encore associé les fiches : mots-clés français → fiche.
 const DEMO_GUESS=[[/traction.*(assist|machine)|chin.*assist/i,'Machine_Assisted_Chin-Up'],[/traction|pull[- ]?up/i,'Pullups'],[/chin[- ]?up|supination/i,'Chin-Up'],[/dips?\b/i,'Dips_-_Triceps_Version'],[/hack/i,'Hack_Squat'],[/presse|leg press/i,'Leg_Press'],[/pendulum|belt squat/i,'Hack_Squat'],[/squat.*(avant|front)|front squat/i,'Front_Barbell_Squat'],[/squat.*(goblet)/i,'Goblet_Squat'],[/squat/i,'Barbell_Full_Squat'],[/fente|lunge|split/i,'Dumbbell_Lunges'],[/leg curl.*(couch|allong)|lying leg curl/i,'Lying_Leg_Curls'],[/leg curl|ischio/i,'Seated_Leg_Curl'],[/leg ext|extension.*(jambe|quad)/i,'Leg_Extensions'],[/soulev.*terre.*(jambes? tendues|roumain)|rdl|romanian/i,'Romanian_Deadlift'],[/soulev.*terre|deadlift/i,'Barbell_Deadlift'],[/hip thrust/i,'Barbell_Hip_Thrust'],[/mollet.*(assis)|seated calf/i,'Seated_Calf_Raise'],[/mollet|calf/i,'Standing_Calf_Raises'],[/d[ée]velopp[ée].*(inclin|incline)/i,'Incline_Dumbbell_Press'],[/d[ée]velopp[ée].*(d[ée]clin|decline)/i,'Decline_Barbell_Bench_Press'],[/d[ée]velopp[ée].*(couch|bench).*halt/i,'Dumbbell_Bench_Press'],[/d[ée]velopp[ée].*(couch|bench)|bench press/i,'Barbell_Bench_Press_-_Medium_Grip'],[/d[ée]velopp[ée].*(militaire|[ée]paule|overhead|shoulder)|press.*[ée]paule/i,'Dumbbell_Shoulder_Press'],[/chest press|press.*(pector|poitrine)/i,'Machine_Bench_Press'],[/pec[- ]?deck|butterfly|[ée]cart[ée].*(machine|poulie)|fly/i,'Butterfly'],[/[ée]cart[ée]/i,'Dumbbell_Flyes'],[/crossover|poulie.*(vis|crois)/i,'Cable_Crossover'],[/tirage.*(vertical|haut)|lat ?pull/i,'Wide-Grip_Lat_Pulldown'],[/tirage.*(horizontal|bas)|seated row|rowing.*(poulie|c[âa]ble)/i,'Seated_Cable_Rows'],[/rowing.*(halt|unilat|un bras)|one[- ]arm/i,'One-Arm_Dumbbell_Row'],[/rowing.*(barre|pench)|bent.?over/i,'Bent_Over_Barbell_Row'],[/rowing|row\b/i,'Seated_Cable_Rows'],[/face ?pull/i,'Face_Pull'],[/pull[- ]?over/i,'Straight-Arm_Dumbbell_Pullover'],[/[ée]l[ée]vation.*lat|lateral raise/i,'Side_Lateral_Raise'],[/[ée]l[ée]vation.*(front|avant)/i,'Front_Dumbbell_Raise'],[/oiseau|rear delt|reverse (fly|pec)/i,'Seated_Bent-Over_Rear_Delt_Raise'],[/shrug|haussement/i,'Dumbbell_Shrug'],[/curl.*(marteau|hammer)/i,'Hammer_Curls'],[/curl.*(inclin|incline)/i,'Incline_Dumbbell_Curl'],[/curl.*(pupitre|larry|preacher|scott)/i,'Preacher_Curl'],[/curl.*(poulie|c[âa]ble)/i,'Cable_Hammer_Curls_-_Rope_Attachment'],[/curl.*(barre|ez)/i,'Barbell_Curl'],[/curl/i,'Dumbbell_Bicep_Curl'],[/skull|barre au front|triceps.*(couch|allong)/i,'Lying_Triceps_Press'],[/extension.*(poulie|corde|c[âa]ble)|push ?down|pushdown/i,'Triceps_Pushdown_-_Rope_Attachment'],[/extension.*(nuque|overhead|au[- ]dessus)/i,'Standing_Dumbbell_Triceps_Extension'],[/kick ?back/i,'Tricep_Dumbbell_Kickback'],[/pompes?|push[- ]?up/i,'Pushups'],[/gainage|planche|plank/i,'Plank'],[/crunch.*(poulie|c[âa]ble)/i,'Cable_Crunch'],[/relev[ée].*jambes|leg raise|hanging/i,'Hanging_Leg_Raise'],[/crunch|abdo/i,'Crunches'],[/farmer/i,'Farmers_Walk'],[/suspension.*(barre)|dead ?hang|grip|avant[- ]bras/i,'Wrist_Curl'],[/good ?morning/i,'Good_Morning'],[/kettlebell swing|swing/i,'Kettlebell_Swing'],[/muscle[- ]?up/i,'Pullups']];
-function demoId(ex){ if(!ex) return null; if(ex.demo) return ex.demo; const m=(PROGRAM.demos||{})[ex.id]; if(m) return m; const t=(ex.name||'')+' '+(ex.machine||''); const g=DEMO_GUESS.find(([re])=>re.test(t)); return g?g[1]:null; }
+// Choix de l'utilisateur d'abord (meta/program.demosUser), puis association du coach, puis repli par mots-clés.
+function demoId(ex){ if(!ex) return null; const u=(PROGRAM.demosUser||{})[ex.id]; if(u) return u==='none'?null:u; if(ex.demo) return ex.demo; const m=(PROGRAM.demos||{})[ex.id]; if(m) return m; const t=(ex.name||'')+' '+(ex.machine||''); const g=DEMO_GUESS.find(([re])=>re.test(t)); return g?g[1]:null; }
 function demoImg(id,i){ return DEMO.base+encodeURIComponent(id)+'_'+i+'.webp'; }
 // Précharge les deux photos de chaque exercice du programme (et des séances sans salle) pour qu'elles soient là sans réseau.
 function prefetchDemos(){ if(!PROGRAM.sessions.length||window.__DEMO_BASE) return; const ids=new Set(); PROGRAM.sessions.forEach(se=>se.exercises.forEach(ex=>{ const id=demoId(ex); if(id) ids.add(id); })); Object.values(S.overrides||{}).forEach(o=>((o.substitute||{}).exercises||[]).forEach(ex=>{ const id=demoId(ex); if(id) ids.add(id); }));
@@ -701,6 +704,20 @@ async function ensureDemos(){ if(DEMO.asked||!USER||!navigator.onLine||!PROGRAM_
 function demoStrip(ex,cls){ const id=demoId(ex); if(!id) return ''; return `<button class="demo ${cls||''}" data-demo="${esc(ex.id)}" aria-label="Voir le mouvement"><img src="${demoImg(id,0)}" alt="" loading="lazy"><i class="arr">›</i><img src="${demoImg(id,1)}" alt="" loading="lazy"><span>Voir le mouvement</span></button>`; }
 function demoThumb(ex){ const id=demoId(ex); if(!id) return ''; return `<button class="dthumb" data-demo="${esc(ex.id)}" aria-label="Voir le mouvement"><img src="${demoImg(id,1)}" alt="" loading="lazy"></button>`; }
 function findEx(exId){ for(const s of PROGRAM.sessions){ const e=s.exercises.find(x=>x.id===exId); if(e) return e; const sub=((S.overrides||{})[s.id]||{}).substitute; if(sub){ const e2=(sub.exercises||[]).find(x=>x.id===exId); if(e2) return e2; } } return null; }
+// Mauvaise photo : l'utilisateur choisit lui-même la fiche (recherche par nom, filtre par muscle). Enregistré dans son programme.
+async function pickDemo(ex){
+  const idx=await loadDemoIndex(); const all=Object.values(idx); const MUS={quadriceps:'Quadriceps',hamstrings:'Ischios',glutes:'Fessiers',calves:'Mollets',chest:'Pectoraux',lats:'Dos',"middle back":'Dos',"lower back":'Lombaires',shoulders:'Épaules',traps:'Trapèzes',biceps:'Biceps',triceps:'Triceps',forearms:'Avant-bras',abdominals:'Abdos',abductors:'Abducteurs',adductors:'Adducteurs',neck:'Cou'};
+  const FR={traction:'pull up chin up',tirage:'pulldown row',rowing:'row',développé:'press',couché:'bench',incliné:'incline',épaule:'shoulder',poulie:'cable',haltère:'dumbbell',barre:'barbell',presse:'press',squat:'squat',fente:'lunge',mollet:'calf',curl:'curl',extension:'extension',dips:'dip',pompe:'push up',gainage:'plank',élévation:'raise',écarté:'fly',oiseau:'rear delt',soulevé:'deadlift',ischio:'leg curl',cuisse:'leg',pectoraux:'chest',dos:'back lat',biceps:'biceps',triceps:'triceps',abdos:'crunch'};
+  const guessQ=()=>{ const words=(ex.name||'').toLowerCase().split(/[^a-zà-ÿ]+/).filter(Boolean); const en=words.map(w=>Object.entries(FR).find(([k])=>w.startsWith(k.slice(0,5)))).filter(Boolean).map(x=>x[1]); return (en.join(' ')||words.join(' ')); };
+  const sheet=showSheet(`<h3>Choisir la photo</h3><p class="small muted">${esc(ex.name)} · tape un mot (en français ou en anglais) ou filtre par muscle.</p><input id="dpQ" placeholder="Rechercher…" value="${esc(guessQ())}"><div class="chips dpm" id="dpM"><button class="chip2 on" data-m="">Tous</button>${Object.entries(MUS).filter(([k])=>!/middle|lower/.test(k)).map(([k,l])=>`<button class="chip2" data-m="${k}">${l}</button>`).join('')}</div><div class="dpgrid" id="dpG"></div><button class="btn" id="dpNone">Aucune photo pour cet exercice</button>`);
+  let mus=''; const q=$('#dpQ');
+  const score=(x,terms)=>{ const n=x.n.toLowerCase(); let sc=0; terms.forEach(t=>{ if(n.includes(t)) sc+=2; else if(n.split(/\W+/).some(w=>w.startsWith(t))) sc+=1; }); return sc; };
+  const draw=()=>{ const terms=q.value.toLowerCase().split(/\s+/).filter(t=>t.length>1); let list=all.filter(x=>!mus||x.p.includes(mus)||x.s.includes(mus)); if(terms.length) list=list.map(x=>[x,score(x,terms)]).filter(([,sc])=>sc>0).sort((a,b)=>b[1]-a[1]).map(([x])=>x); list=list.slice(0,40);
+    $('#dpG').innerHTML=list.length?list.map(x=>`<button class="dpc" data-id="${esc(x.i)}"><img src="${demoImg(x.i,1)}" alt="" loading="lazy"><span>${esc(x.n)}</span></button>`).join(''):'<p class="small muted center">Rien ne correspond, essaie un autre mot.</p>';
+    sheet.querySelectorAll('.dpc').forEach(b=>b.onclick=()=>setDemoUser(ex,b.dataset.id)); };
+  q.oninput=draw; sheet.querySelectorAll('#dpM .chip2').forEach(b=>b.onclick=()=>{ mus=b.dataset.m; sheet.querySelectorAll('#dpM .chip2').forEach(x=>x.classList.toggle('on',x===b)); draw(); }); $('#dpNone').onclick=()=>setDemoUser(ex,'none'); draw();
+}
+function setDemoUser(ex,id){ PROGRAM.demosUser=PROGRAM.demosUser||{}; PROGRAM.demosUser[ex.id]=id; if(USER&&fbDb) col('meta').doc('program').set({demosUser:{[ex.id]:id}},{merge:true}).catch(()=>{}); hideSheet(); toast(id==='none'?'Photo retirée':'Photo enregistrée','ok'); render(); if(id!=='none') showDemo(ex); }
 let demoAnim=0;
 async function showDemo(ex){
   if(!ex) return; const id=demoId(ex);
@@ -708,7 +725,8 @@ async function showDemo(ex){
   let d='<dl class="dl">'; if(ex.target) d+=`<dt>Cible</dt><dd>${esc(ex.target)}</dd>`; if(ex.exec) d+=`<dt>Exécution</dt><dd>${esc(ex.exec)}</dd>`; if(ex.why) d+=`<dt>Pourquoi</dt><dd>${esc(ex.why)}</dd>`; if(ex.seek) d+=`<dt class="seek">Ce qu'on cherche</dt><dd>${esc(ex.seek)}</dd>`; if(ex.reco) d+=`<dt>Reconnaître la machine</dt><dd>${esc(ex.reco)}</dd>`; d+='</dl>';
   const links=`<div class="row2 dlinks">${ex.url?`<a class="btn sm" href="${esc(ex.url)}" target="_blank" rel="noopener" data-ext>Photo de la machine ↗</a>`:''}<a class="btn sm" href="${yt}" target="_blank" rel="noopener" data-ext>Vidéo ↗</a></div>`;
   const p=rx(ex,curWeek()); const rxh=`<div class="rx"><b>${p.sets} × ${esc(p.reps)}</b>${p.rir!=null?`<b data-lex="rir"><i>RIR</i>${p.rir}</b>`:''}<b data-lex="tempo"><i>tempo</i>${esc(ex.tempo||'')}</b><b><i>repos</i>${esc(p.restText||'')}</b></div>`;
-  const sheet=showSheet(`<h3>${esc(ex.name)}</h3><p class="small muted">${esc(ex.machine||'')}${ex.alt?' · alternative : '+esc(ex.alt):''}</p>${id?`<div class="dplay" id="dplay"><img src="${demoImg(id,0)}" alt="Position de départ" class="on"><img src="${demoImg(id,1)}" alt="Position d'arrivée"><div class="dcap"><span class="on">Départ</span><span>Arrivée</span></div></div><div class="mmap-slot" id="mslot"></div>`:`<p class="hint">Pas de photos pour ce mouvement. La vidéo ci-dessous montre l'exécution.</p>`}${rxh}${links}${d}<button class="btn" onclick="hideSheet()">Fermer</button>`);
+  const sheet=showSheet(`<h3>${esc(ex.name)}</h3><p class="small muted">${esc(ex.machine||'')}${ex.alt?' · alternative : '+esc(ex.alt):''}</p>${id?`<div class="dplay" id="dplay"><img src="${demoImg(id,0)}" alt="Position de départ" class="on"><img src="${demoImg(id,1)}" alt="Position d'arrivée"><div class="dcap"><span class="on">Départ</span><span>Arrivée</span></div></div><div class="mmap-slot" id="mslot"></div>`:`<p class="hint">Pas de photo associée. <button class="link" id="dpPick">Choisir une photo</button></p>`}${id?`<p class="small center"><button class="link" id="dpPick">Mauvaise photo ? En choisir une autre</button></p>`:''}${rxh}${links}${d}<button class="btn" onclick="hideSheet()">Fermer</button>`);
+  const pk=$('#dpPick'); if(pk) pk.onclick=()=>pickDemo(ex);
   sheet.querySelectorAll('[data-lex]').forEach(b=>b.onclick=e=>{ e.stopPropagation(); showLex(b.dataset.lex); });
   clearInterval(demoAnim);
   if(id){ let k=0; demoAnim=setInterval(()=>{ const p=$('#dplay'); if(!p||!sheet.classList.contains('on')){ clearInterval(demoAnim); return; } k=1-k; p.querySelectorAll('img').forEach((im,i)=>im.classList.toggle('on',i===k)); p.querySelectorAll('.dcap span').forEach((c,i)=>c.classList.toggle('on',i===k)); },1100);
@@ -747,6 +765,8 @@ const LEX={
 };
 const LEX_TERMS=[['rir',/\bRIR\b/g],['tempo',/\btempo\b/gi],['emom',/\bEMOM\b/g],['gtg',/\bGTG\b/g],['e1rm',/\be1RM\b/g],['mesocycle',/\bm[ée]socycles?\b/gi],['decharge',/\bd[ée]charge\b/gi],['calibrage',/\bcalibrage\b/gi],['accumulation',/\baccumulation\b/gi],['intensification',/\bintensification\b/gi],['dropset',/\bdrop[- ]?sets?\b/gi],['restpause',/\brest[- ]?pause\b/gi],['superset',/\bsupersets?\b/gi],['partielles',/\bpartielles\b/gi],['isolateral',/\biso-?lat[ée]rale?s?\b/gi],['compound',/\bcompounds?\b/gi],['fourchette',/\bfourchette\b/gi],['tonnage',/\btonnage\b/gi],['volume',/\bvolume\b/gi]];
 function lexify(escapedHtml){ let h=String(escapedHtml||''); LEX_TERMS.forEach(([k,re])=>{ h=h.replace(re,m=>`<button class="lx" data-lex="${k}">${m}</button>`); }); return h; }
+// Liens externes : dans la coquille, on ouvre Safari (la WebView est limitée aux domaines de l'app et afficherait une page d'erreur).
+document.addEventListener('click',e=>{ const a=e.target.closest&&e.target.closest('a[href]'); if(!a||!NATIVE) return; const href=a.getAttribute('href')||''; if(/^https?:/i.test(href)&&!href.startsWith(location.origin)){ e.preventDefault(); native({type:'open',url:href}); } },true);
 document.addEventListener('click',e=>{ const b=e.target.closest&&e.target.closest('.lx[data-lex]'); if(b){ e.preventDefault(); e.stopPropagation(); showLex(b.dataset.lex); } },true);
 function showSheet(html){ let s=$('#sheet'); if(!s){ s=document.createElement('div'); s.id='sheet'; s.innerHTML='<div class="sheet-bg"></div><div class="sheet-card" role="dialog"><button class="sheet-grip" aria-label="Fermer"></button><div class="sheet-body"></div></div>'; document.body.appendChild(s); s.querySelector('.sheet-bg').onclick=hideSheet; s.querySelector('.sheet-grip').onclick=hideSheet;
     // Glisser vers le bas pour fermer : depuis la poignée, ou depuis le contenu quand il est en haut de son défilement.
@@ -765,7 +785,8 @@ function renderSeance(){
   const subDoc=((S.overrides||{})[ses.id]||{}).substitute; const sub=subDoc&&subDoc.date===date?subDoc:null;
   if(sub) ses=Object.assign({},ses,{name:sub.name,sub:'sans salle · '+(sub.gear||[]).join(', '),exercises:sub.exercises,gtg:false,note:''});
   const el=$('#tab-seance'); let h='';
-  h+=`<div class="days">`+PROGRAM.sessions.map(s=>{ const done=Object.values(S.logs).some(l=>l.session===s.id&&l.week===wk&&l.done); return `<button data-s="${s.id}" aria-pressed="${s.id===ses.id}" class="${done?'done':''}"><b>${esc(s.dayName.slice(0,3))}</b><span>${esc(shortName(s.name))}</span></button>`; }).join('')+`<button data-s="rest" aria-pressed="false"><b>Dim</b><span>Repos</span></button></div>`;
+  const dow=(new Date(date+'T12:00:00').getDay()+6)%7; const monday=addDays(date,-dow), sunday=addDays(monday,6);
+  h+=`<div class="days">`+PROGRAM.sessions.map(s=>{ const done=Object.values(S.logs).some(l=>l.session===s.id&&l.done&&l.date>=monday&&l.date<=sunday); return `<button data-s="${s.id}" aria-pressed="${s.id===ses.id}" class="${done?'done':''}"><b>${esc(s.dayName.slice(0,3))}</b><span>${esc(shortName(s.name))}</span></button>`; }).join('')+`<button data-s="rest" aria-pressed="false"><b>Dim</b><span>Repos</span></button></div>`;
   // état de la séance
   const flagsAll=log.flags||{};
   const states=ses.exercises.map(ex=>{ const p=rx(ex,wk); const done=(log.sets[ex.id]||[]).filter(s=>s&&s.done).length; const f=flagsAll[ex.id]||{}; return {ex,p,done,complete:done>=p.sets,skip:!!f.skip,alt:!!f.alt}; });
@@ -892,20 +913,35 @@ function updateElapsed(log){
 /* ---------- render: programme ---------- */
 function renderProgramme(){
   if(!$('#tab-programme')) return;
-  const wk=curWeek(); let h=`<h2>Programme</h2><p class="small muted">${esc(PROGRAM.cycleName||'')} · <button class="lx" data-lex="mesocycle">mésocycle</button> de ${WEEKS.length} semaines · semaine ${wk} affichée${PROGRAM.cycleReason?'<br><span class="small">'+esc(PROGRAM.cycleReason)+'</span>':''}</p><div class="row2"><button class="btn sm" id="regenBtn">Nouveau cycle avec le coach</button></div>`;
+  const wk=curWeek(), auto=weekFor(todayISO()), today=new Date().getDay();
+  const DN=['Dim','Lun','Mar','Mer','Jeu','Ven','Sam'];
+  const W=WEEKS[wk-1]||{}; const mono=(W.rirNote||'').split('·')[0].trim();
+  if(PROG_OPEN===undefined){ const t=sessionForDay(); PROG_OPEN=t?t.id:(PROGRAM.sessions[0]||{}).id; }
+  let h=`<div class="phero"><div class="eyebrow">Cycle en cours</div><h2>${esc(String(PROGRAM.cycleName||'Programme').split(' · ')[0])}</h2>${String(PROGRAM.cycleName||'').includes(' · ')?`<p class="small muted" style="margin:0 0 8px">${esc(String(PROGRAM.cycleName).split(' · ').slice(1).join(' · '))}</p>`:''}${PROGRAM.cycleReason?`<p class="pwhy">${esc(PROGRAM.cycleReason)}</p>`:''}
+    <div class="wkchips">${WEEKS.map((w,i)=>`<button data-wk="${i+1}" aria-pressed="${i+1===wk}"><b>S${i+1}</b><span>${i+1===auto?'en cours':esc(String(w.label||'').replace(/^S\d+\s*/,'').split(' ')[0])}</span></button>`).join('')}</div>
+    <p class="small muted">${esc(String(W.label||'').replace(/^S\d+\s*/,''))}${mono?' · '+esc(mono):''}${W.from?' · '+fmtD(W.from)+'–'+fmtD(W.to):''}</p>
+    <div class="row2"><button class="btn sm" id="cycBtn">Lire le cycle</button><button class="btn sm" id="regenBtn">Nouveau cycle avec Kai</button></div></div>`;
   PROGRAM.sessions.forEach(s=>{
-    h+=`<h3>${esc(s.dayName)} — ${esc(s.name)} <span class="muted small">(${esc(s.sub)})</span></h3><div class="pcard">`;
-    s.exercises.forEach(ex=>{ const p=rx(ex,wk); const did=demoId(ex); h+=`<div class="prow" data-pex="${ex.id}">${did?`<img class="pimg" src="${demoImg(did,1)}" alt="" loading="lazy">`:`<span class="n">${ex.n}</span>`}<span class="nm">${esc(ex.name)}${ex.star?' <span style="color:var(--accent)">★</span>':''}</span><span class="rx2">${p.sets}×${esc(p.reps)}</span></div>`; });
+    const open=s.id===PROG_OPEN; const n=s.exercises.length; const sets=s.exercises.reduce((t,ex)=>t+(rx(ex,wk).sets||0),0);
+    const prio=s.exercises.filter(e=>e.star).map(e=>e.name).slice(0,2);
+    h+=`<div class="pses${open?' is-open':''}${s.day===today?' is-now':''}" data-ses="${s.id}"><button class="psh" data-toggle="${s.id}"><span class="pday"><b>${DN[s.day]||esc((s.dayName||'').slice(0,3))}</b></span><span class="pst"><b>${esc(s.name)}</b><span>${esc(s.sub)}</span></span><span class="pmeta">${n} exos</span><i></i></button>`;
+    if(open){ h+=`<div class="pbody">`;
+      s.exercises.forEach(ex=>{ const p=rx(ex,wk); const did=demoId(ex); h+=`<div class="prow" data-pex="${ex.id}">${did?`<img class="pimg" src="${demoImg(did,1)}" alt="" loading="lazy">`:`<span class="n">${ex.n}</span>`}<span class="nm">${esc(ex.name)}${ex.star?' <em class="pstar">prioritaire</em>':''}</span><span class="rx2">${p.sets}×${esc(p.reps)}</span></div>`; });
+      h+=`<div class="row2 pgo"><button class="btn fill sm" data-go="${s.id}">Ouvrir la séance</button></div></div>`; }
+    else if(prio.length) h+=`<div class="pprio">Priorité : ${esc(prio.join(', '))}</div>`;
     h+=`</div>`;
   });
-  h+=`<p class="small muted center">Semaine affichée : <b>S${wk}</b>${S.weekOverride?' (forcée)':''} · <button class="link" id="wkNext">Voir la semaine suivante</button>${S.weekOverride?' · <button class="link" id="wkAuto">Revenir à la semaine réelle</button>':''}</p>`;
-  h+=`<details class="cyc doc"><summary>Lire le cycle</summary>${cycleHtml()}</details>`;
+  if(S.weekOverride) h+=`<p class="small muted center">Semaine forcée · <button class="link" id="wkAuto">Revenir à la semaine réelle</button></p>`;
   $('#tab-programme').innerHTML=h;
   const rb=$('#regenBtn'); if(rb) rb.onclick=regenerateProgram;
-  const wn=$('#wkNext'); if(wn) wn.onclick=()=>{ const auto=weekFor(todayISO()); const nx=curWeek()%WEEKS.length+1; S.weekOverride=nx===auto?null:nx; save(); render(); };
+  $('#cycBtn').onclick=()=>showSheet(`<h3>${esc(PROGRAM.cycleName||'Le cycle')}</h3><div class="doc">${cycleHtml()}</div>`);
+  $('#tab-programme').querySelectorAll('[data-wk]').forEach(b=>b.onclick=()=>{ const n=+b.dataset.wk; S.weekOverride=n===auto?null:n; save(); render(); });
   const wa=$('#wkAuto'); if(wa) wa.onclick=()=>{ S.weekOverride=null; save(); render(); };
+  $('#tab-programme').querySelectorAll('[data-toggle]').forEach(b=>b.onclick=()=>{ PROG_OPEN=PROG_OPEN===b.dataset.toggle?null:b.dataset.toggle; renderProgramme(); });
+  $('#tab-programme').querySelectorAll('[data-go]').forEach(b=>b.onclick=()=>{ S.session=b.dataset.go; save(); showTab('seance'); });
   $('#tab-programme').querySelectorAll('[data-pex]').forEach(r=>r.onclick=()=>{ const ex=PROGRAM.sessions.flatMap(x=>x.exercises).find(e=>e.id===r.dataset.pex); if(ex) showDemo(ex); });
 }
+let PROG_OPEN;
 
 
 /* ---------- suivi enrichi : groupes musculaires, assiduité, records ---------- */
@@ -1066,7 +1102,9 @@ function renderHist(){
 document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>{ document.querySelectorAll('.tabs button').forEach(x=>x.setAttribute('aria-selected',x===b)); if(b.dataset.tab==='coach'){ S.coachSeen=Date.now(); save(); b.classList.remove('badge'); } showTab(b.dataset.tab); });
 // La barre flottante se range quand on défile vers le bas, revient dès qu'on remonte ou qu'on arrive en bas de page.
 (function(){ let last=0, acc=0; const tabs=document.querySelector('.tabs'); if(!tabs) return; window.addEventListener('scroll',()=>{ const y=window.scrollY; const dy=y-last; last=y; if(FOCUS||y<40||y+window.innerHeight>=document.documentElement.scrollHeight-40){ tabs.classList.remove('hide'); acc=0; return; } acc=Math.max(-80,Math.min(80,acc+dy)); if(acc>50) tabs.classList.add('hide'); else if(acc<-20) tabs.classList.remove('hide'); },{passive:true}); })();
-function showTab(tab){ const tb=document.querySelector('.tabs'); if(tb) tb.classList.remove('hide'); document.querySelectorAll('.tabs button').forEach(x=>x.setAttribute('aria-selected',x.dataset.tab===tab)); ['home','seance','coach','programme','suivi','reglages'].forEach(t=>{ const s=$('#tab-'+t); if(s) s.hidden=t!==tab; }); if(tab!=='seance') exitFocus(); window.scrollTo({top:0}); }
+const TAB_SCROLL={};
+function showTab(tab){ const tb=document.querySelector('.tabs'); if(tb) tb.classList.remove('hide');
+  const curTab=(document.querySelector('.tabs button[aria-selected="true"]')||{}).dataset; if(curTab&&curTab.tab&&curTab.tab!==tab) TAB_SCROLL[curTab.tab]=window.scrollY; document.querySelectorAll('.tabs button').forEach(x=>x.setAttribute('aria-selected',x.dataset.tab===tab)); ['home','seance','coach','programme','suivi','reglages'].forEach(t=>{ const s=$('#tab-'+t); if(s) s.hidden=t!==tab; }); document.body.classList.toggle('chatmode',tab==='coach'&&COACH.view==='chat'); if(tab!=='seance') exitFocus(); const y=tab==='seance'?0:(TAB_SCROLL[tab]||0); window.scrollTo({top:y}); requestAnimationFrame(()=>window.scrollTo({top:y})); }
 $('#settingsBtn').onclick=()=>showTab('reglages');
 $('#weekChip').onclick=()=>{ const auto=weekFor(todayISO()); const cur=curWeek(); const nx=cur%WEEKS.length+1; S.weekOverride=nx===auto?null:nx; save(); render(); };
 document.addEventListener('pointerdown',unlockAudio,{once:true});
