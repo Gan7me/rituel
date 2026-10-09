@@ -18,7 +18,7 @@ function humanErr(e){ const c=(e&&e.code)||''; const m=(e&&e.message)||String(e|
   if(/network|Failed to fetch|internet/i.test(m)||!navigator.onLine) return 'Pas de réseau. Le coach a besoin d\'une connexion ; tes séries sont enregistrées et partiront toutes seules.';
   if(/invalid-argument/.test(c)) return 'Le serveur n\'a pas compris la demande (version de l\'app en retard ?). Recharge l\'application depuis Réglages.';
   return m; }
-const APP_VERSION='3.23.2';
+const APP_VERSION='3.24.0';
 const ADMIN_RE=/^(ganeme\.asloune@nexisafe\.com|gads@live\.fr)$/i;
 let PROGRAM={sessions:[]};
 let WEEKS = [
@@ -188,46 +188,56 @@ function onHealthResult(m){
 function healthExportSession(log){ if(!NATIVE||!S.health||!log) return; const ts=Object.values(log.sets||{}).flat().filter(x=>x&&x.done&&x.t).map(x=>x.t); if(!ts.length) return; const start=Math.min(...ts)-5*60000, end=Math.max(Date.now(),Math.max(...ts)+60000); const ses=PROGRAM.sessions.find(x=>x.id===log.session); const mins=(end-start)/60000; const kcal=Math.round(mins*((PROFILE&&PROFILE.weight)||70)*0.09); native({type:'health',action:'writeWorkout',workout:{start,end,kcal,title:'Rituel · '+(ses?ses.name:log.session)}}); }
 // Forfait : affiché dans Réglages, et proposé quand une limite gratuite est atteinte. Le paiement arrive avec l'étape suivante (App Store / Play).
 function planInfo(){ const bd=BILLING.doc||{}; const docPrem=bd.plan==='premium'&&(!bd.expiresAt||bd.expiresAt>Date.now()); const isAdmin=!!(USER&&ADMIN_RE.test(USER.email||'')); const plan=(BILLING.premium||docPrem||isAdmin)?'premium':((USAGE&&USAGE.plan)||'free'); const lim=(USAGE&&USAGE.limits)||{program:2,analyse:8,chat:30,substitute:2,demo:4}; return {plan,lim}; }
-function showPaywall(what,limit){
+function showPaywall(what,limit){ if(what) toast(`Limite du forfait Découverte atteinte : ${limit} ${what} par mois.`); showPlan(); return;
+  const _old=()=>{
   const {lim}=planInfo();
   showSheet(`<div class="chead sm">${coachAvatar('attention')}<h3>Kai a atteint sa limite gratuite</h3></div>
     <p>${what?`Ce mois-ci tu as utilisé tes ${esc(String(limit))} ${esc(what)} gratuits.`:'Le forfait gratuit couvre la découverte.'} Avec <b>Rituel Premium</b>, Kai te suit sans compter.</p>
     <div class="plancmp"><div><b>Gratuit</b><span>${lim.analyse} analyses · ${lim.chat} questions · ${lim.program} programmes par mois</span></div><div class="pro"><b>Premium</b><span>Analyses et questions sans limite pratique (60 et 300), nouveau cycle à chaque fin de mésocycle, séances sans salle, Progrès complet, nutrition</span></div></div>
     <div id="pwOffers"></div><button class="btn" onclick="hideSheet()">Plus tard</button>`);
-  renderOffers(); if(BILLING.available&&!BILLING.packages&&USER) native({type:'getOfferings',uid:USER.uid});
-}
+  renderOffers(); if(BILLING.available&&!BILLING.packages&&USER) native({type:'getOfferings',uid:USER.uid}); }; }
 // Offres : prix réels de l'App Store / Google Play quand la coquille les fournit ; sinon « me prévenir ».
 function renderOffers(){ const el=$('#pwOffers'); if(!el) return;
-  if(!NATIVE||!BILLING.available){ el.innerHTML=`<p class="small muted">${NATIVE?'Abonnement bientôt disponible dans cette version.':'L\'abonnement se prend dans l\'app iPhone ou Android.'} En attendant, les limites se renouvellent le 1er du mois.</p><button class="btn fill" id="pwNotify">Me prévenir au lancement</button>`;
-    const b=$('#pwNotify'); if(b) b.onclick=()=>{ if(USER) col('meta').doc('billing_interest').set({at:Date.now()},{merge:true}).catch(()=>{}); hideSheet(); toast('Noté, tu seras prévenu','ok'); }; return; }
+  const cards=(m,y,intro)=>`<div class="pricing"><button class="price" data-pkg="${esc(m.id||'')}" ${m.id?'':'disabled'}><span class="pl">Mensuel</span><b>${esc(m.price)}</b><small>par mois · sans engagement</small></button><button class="price best" data-pkg="${esc(y.id||'')}" ${y.id?'':'disabled'}><span class="tag2">Le plus choisi · −50 %</span><span class="pl">Annuel</span><b>${esc(y.price)}</b><small>par an · soit ${esc(y.perMonth||PRICING.yearlyPerMonth)} / mois</small></button></div><p class="trial">${intro?`Essai gratuit ${esc(intro)}, puis prélèvement. `:`Essai gratuit ${PRICING.trial}. `}Résiliable à tout moment depuis ton compte ${/iPhone|iPad/.test(navigator.userAgent)?'App Store':'Google Play'}.</p>`;
+  if(!NATIVE||!BILLING.available){ el.innerHTML=cards({price:PRICING.monthly},{price:PRICING.yearly})+`<p class="small muted center">${NATIVE?'L\'abonnement arrive dans la prochaine version de l\'app.':'L\'abonnement se prend dans l\'app iPhone ou Android.'} Prix indicatifs, affichés en définitive par la boutique.</p><button class="btn fill" id="pwNotify">Me prévenir au lancement</button>`;
+    const b=$('#pwNotify'); if(b) b.onclick=()=>{ if(USER) col('meta').doc('billing_interest').set({at:Date.now()},{merge:true}).catch(()=>{}); toast('Noté, tu seras prévenu','ok'); b.disabled=true; }; return; }
   if(!BILLING.packages){ el.innerHTML=`<p class="small muted center">Chargement des offres…</p>`; return; }
   if(!BILLING.packages.length){ el.innerHTML=`<p class="small muted">Aucune offre disponible pour le moment.</p><button class="btn" id="pwRestore">Restaurer mes achats</button>`; const r=$('#pwRestore'); if(r) r.onclick=()=>{ native({type:'restore',uid:USER.uid}); toast('Restauration…'); }; return; }
-  const label=p=>p.type==='ANNUAL'?'Annuel':p.type==='MONTHLY'?'Mensuel':p.type==='WEEKLY'?'Hebdomadaire':(p.title||p.id);
-  const sub=p=>p.type==='ANNUAL'?'2 mois offerts par rapport au mensuel':p.intro?('Puis '+p.price+' · essai '+p.intro):'Sans engagement, résiliable à tout moment';
-  el.innerHTML=`<div class="offers">${BILLING.packages.map(p=>`<button class="offer ${p.type==='ANNUAL'?'best':''}" data-pkg="${esc(p.id)}"><span class="ol">${esc(label(p))}${p.type==='ANNUAL'?' <em>Le plus choisi</em>':''}</span><b>${esc(p.price||'')}</b><span class="os">${esc(sub(p))}</span></button>`).join('')}</div><button class="link" id="pwRestore">Restaurer mes achats</button><p class="small muted">Paiement géré par ${/iPhone|iPad/.test(navigator.userAgent)?'l\'App Store':'Google Play'}. Renouvellement automatique, résiliable dans les réglages de ton compte.</p>`;
-  el.querySelectorAll('[data-pkg]').forEach(b=>b.onclick=()=>{ b.disabled=true; b.classList.add('busy'); native({type:'purchase',uid:USER.uid,packageId:b.dataset.pkg}); });
+  const m=BILLING.packages.find(p=>p.type==='MONTHLY')||{price:PRICING.monthly}; const y=BILLING.packages.find(p=>p.type==='ANNUAL')||{price:PRICING.yearly}; if(y.priceAmount) y.perMonth=(y.priceAmount/12).toLocaleString('fr-FR',{style:'currency',currency:y.currency||'EUR'});
+  el.innerHTML=cards(m,y,(m.intro||y.intro))+`<button class="link" id="pwRestore">Restaurer mes achats</button><p class="small muted">Paiement géré par ${/iPhone|iPad/.test(navigator.userAgent)?'l\'App Store':'Google Play'}. Renouvellement automatique, résiliable dans les réglages de ton compte.</p>`;
+  el.querySelectorAll('[data-pkg]').forEach(b=>b.onclick=()=>{ if(!b.dataset.pkg) return; b.disabled=true; b.classList.add('busy'); native({type:'purchase',uid:USER.uid,packageId:b.dataset.pkg}); });
   const r=$('#pwRestore'); if(r) r.onclick=()=>{ native({type:'restore',uid:USER.uid}); toast('Restauration…'); };
 }
-function onPurchaseResult(m){ if(m.ok&&m.premium){ BILLING.premium=true; hideSheet(); toast(m.restored?'Abonnement restauré':'Bienvenue dans Rituel Premium','ok'); renderReglages(); }
+function onPurchaseResult(m){ if(m.ok&&m.premium){ BILLING.premium=true; hideSheet(); const pp=document.querySelector('.premium'); if(pp){ pp.remove(); document.body.classList.remove('unlocking'); } toast(m.restored?'Abonnement restauré':'Bienvenue dans Rituel Premium','ok'); renderReglages(); }
   else if(m.ok&&!m.premium){ toast(m.restored?'Aucun abonnement actif à restaurer':'Achat non confirmé'); if($('#pwOffers')) renderOffers(); }
   else if(m.cancelled){ if($('#pwOffers')) renderOffers(); }
   else { toast('Paiement impossible : '+(m.error||'réessaie')); logErr('achat',m.error||'échec'); if($('#pwOffers')) renderOffers(); } }
 // Écran Abonnement : forfait, consommation du mois, offres ou gestion.
+const PRICING={monthly:'9,99 €',yearly:'59,99 €',yearlyPerMonth:'5 €',trial:'7 jours'}; // prix indicatifs ; les prix réels viennent de l'App Store / Google Play quand la coquille les fournit
 function showPlan(){
-  const pi=planInfo(); const u=USAGE&&USAGE.month===new Date().toISOString().slice(0,7)?USAGE:{}; const bd=BILLING.doc||{};
-  const bar=(k,l)=>{ const n=u[k]||0, m=pi.lim[k]||1; const pct=Math.min(100,Math.round(100*n/m)); return `<div class="qrow"><span>${l}</span><div class="qbar"><i style="width:${pct}%" class="${pct>=100?'full':pct>=75?'warn':''}"></i></div><b>${n}/${m}</b></div>`; };
+  const pi=planInfo(); const u=USAGE&&USAGE.month===new Date().toISOString().slice(0,7)?USAGE:{}; const bd=BILLING.doc||{}; const prem=pi.plan==='premium';
   const src=bd.source==='admin'?'offert':bd.store==='APP_STORE'?'App Store':bd.store==='PLAY_STORE'?'Google Play':bd.store?bd.store:'';
   const exp=bd.expiresAt?new Date(bd.expiresAt).toLocaleDateString('fr-FR',{day:'numeric',month:'long',year:'numeric'}):null;
   const manageUrl=/iPhone|iPad/.test(navigator.userAgent)?'https://apps.apple.com/account/subscriptions':'https://play.google.com/store/account/subscriptions';
-  const prem=pi.plan==='premium';
-  const sh=showSheet(`<div class="plan-h ${prem?'prem':''}"><span class="eyebrow">Ton forfait</span><h3>${prem?'Rituel Premium':'Rituel Gratuit'}</h3><p class="small">${prem?(src?`${src}${exp?(bd.cancelledAt?' · se termine le ':' · renouvellement le ')+exp:''}`:'actif'):'Pour découvrir Kai. Les compteurs se remettent à zéro le 1er du mois.'}</p></div>
-    <h4>Ce mois-ci</h4><div class="quotas">${bar('analyse','Analyses de séance')}${bar('chat','Questions à Kai')}${bar('program','Nouveaux cycles')}${bar('substitute','Séances sans salle')}</div>
-    ${prem?`<h4>Inclus</h4><ul class="incl"><li>Analyse de chaque séance et charges ajustées</li><li>Questions à Kai sans compter</li><li>Nouveau cycle à chaque fin de mésocycle</li><li>Séances sans salle, Progrès complet</li></ul>
-      ${bd.store?`<a class="btn" href="${manageUrl}" target="_blank" rel="noopener">Gérer l'abonnement</a>`:''}${NATIVE&&BILLING.available?`<button class="link" id="plRestore">Restaurer mes achats</button>`:''}`
-    :`<div class="plancmp"><div><b>Gratuit</b><span>${pi.lim.analyse} analyses · ${pi.lim.chat} questions · ${pi.lim.program} programmes par mois</span></div><div class="pro"><b>Premium</b><span>60 analyses, 300 questions, 6 cycles par mois, séances sans salle, Progrès complet</span></div></div><div id="pwOffers"></div>`}
-    <button class="btn" onclick="hideSheet()">Fermer</button>`);
+  const rows=[['Programme sur mesure par Kai','1 cycle','à chaque fin de cycle'],['Analyse après chaque séance',`${pi.lim.analyse} / mois`,'illimité*'],['Questions à Kai',`${pi.lim.chat} / mois`,'illimité*'],['Charges ajustées automatiquement','ok','ok'],['Séances sans salle (déplacement, garde)',`${pi.lim.substitute} / mois`,'illimité*'],['Bilan hebdomadaire de Kai','no','ok'],['Progrès complet (force, corps, records)','ok','ok'],['Médailles, rangs, défis','ok','ok'],['Apple Santé','ok','ok']];
+  const cell=v=>v==='ok'?'<span class="ok"></span>':v==='no'?'<span class="no"></span>':esc(v);
+  const cmp=`<div class="cmp"><div>Ce que tu as</div><div class="c2">Découverte</div><div class="c3">Premium</div>${rows.map(r=>`<div>${esc(r[0])}</div><div class="c2">${cell(r[1])}</div><div class="c3">${cell(r[2])}</div>`).join('')}</div><p class="small muted">* usage normal : 60 analyses et 300 questions par mois, bien au-delà d'un entraînement quotidien.</p>`;
+  const el=document.createElement('div'); el.className='premium'; document.body.appendChild(el); document.body.classList.add('unlocking');
+  const close=()=>{ el.classList.remove('on'); setTimeout(()=>{ el.remove(); document.body.classList.remove('unlocking'); },220); };
+  let body;
+  if(prem){ body=`<div class="phead"><p class="eyebrow">Ton forfait</p><h2>Rituel Premium</h2><p>${src?`${src}${exp?(bd.cancelledAt?' · se termine le ':' · renouvellement le ')+exp:''}`:'actif'}</p></div>
+      <h4>Ce mois-ci</h4><div class="quotas">${[['analyse','Analyses de séance'],['chat','Questions à Kai'],['program','Nouveaux cycles'],['substitute','Séances sans salle']].map(([k,l])=>{ const n=u[k]||0, m=pi.lim[k]||1; const pct=Math.min(100,Math.round(100*n/m)); return `<div class="qrow"><span>${l}</span><div class="qbar"><i style="width:${pct}%" class="${pct>=100?'full':pct>=75?'warn':''}"></i></div><b>${n}/${m}</b></div>`; }).join('')}</div>
+      <h4>Inclus</h4>${cmp}
+      <div class="row2">${bd.store?`<a class="btn" href="${manageUrl}" target="_blank" rel="noopener">Gérer l'abonnement</a>`:''}${NATIVE&&BILLING.available?`<button class="btn" id="plRestore">Restaurer mes achats</button>`:''}</div>`; }
+  else { body=`<div class="phead"><p class="eyebrow">Rituel Premium</p><h2>Un coach qui te suit vraiment</h2><p>Chaque séance analysée, tes charges ajustées, un nouveau cycle à chaque fin de mésocycle. Sans compter.</p></div>
+      <div id="pwOffers"></div>
+      ${cmp}
+      <h4>Ta consommation ce mois-ci</h4><div class="quotas">${[['analyse','Analyses'],['chat','Questions']].map(([k,l])=>{ const n=u[k]||0, m=pi.lim[k]||1; const pct=Math.min(100,Math.round(100*n/m)); return `<div class="qrow"><span>${l}</span><div class="qbar"><i style="width:${pct}%" class="${pct>=100?'full':pct>=75?'warn':''}"></i></div><b>${n}/${m}</b></div>`; }).join('')}</div>
+      <p class="small muted">Les compteurs du forfait Découverte se remettent à zéro le 1er de chaque mois.</p>`; }
+  el.innerHTML=`<div class="tbar"><button class="tclose" id="plClose" aria-label="Fermer">✕</button><span></span><span></span></div><div class="tbody">${body}</div>`;
+  requestAnimationFrame(()=>el.classList.add('on'));
+  el.querySelector('#plClose').onclick=close; const r=el.querySelector('#plRestore'); if(r) r.onclick=()=>{ native({type:'restore',uid:USER.uid}); toast('Restauration…'); };
   if(!prem){ renderOffers(); if(BILLING.available&&!BILLING.packages&&USER) native({type:'getOfferings',uid:USER.uid}); }
-  const r=sh.querySelector('#plRestore'); if(r) r.onclick=()=>{ native({type:'restore',uid:USER.uid}); toast('Restauration…'); };
 }
 let ADMIN_DATA=null;
 async function showAdmin(){
@@ -268,7 +278,7 @@ function renderReglages(){
     ${(()=>{ const f=progressFacts(); const got=BADGES.filter(b=>f.unlocked.includes(b.id)); return got.length?`<button class="brow center" id="profBadges">${got.slice(-6).map(b=>badgeSvg(b,34,false)).join('')}${got.length>6?`<span class="small muted">+${got.length-6}</span>`:''}</button>`:''; })()}
     <div class="pstats"><div><b>${kg?String(kg).replace('.',','):'—'}</b><span>kg</span></div><div><b>${pull!=null?pull:'—'}</b><span>tractions${P.pullGoal?' / '+P.pullGoal:''}</span></div><div><b>${nDone}</b><span>séance${nDone>1?'s':''}</span></div></div>
     <div class="row2"><button class="btn sm" id="profBtn">Modifier le profil</button></div></div>
-  <button class="card plancard ${pi.plan==='premium'?'prem':''}" id="planCard"><div class="card-h"><b>${pi.plan==='premium'?'Rituel Premium':'Forfait gratuit'}</b><span>${pi.plan==='premium'?'actif':'voir Premium ›'}</span></div><p>${pi.plan==='premium'?'Kai sans compter : analyses, questions, nouveaux cycles, séances sans salle.':`${USAGE?(USAGE.analyse||0):0}/${pi.lim.analyse} analyses et ${USAGE?(USAGE.chat||0):0}/${pi.lim.chat} questions utilisées ce mois-ci. Premium lève les limites.`}</p></button>
+  ${pi.plan==='premium'?`<button class="card plancard prem" id="planCard"><div class="pcin"><div class="card-h"><b>Rituel Premium</b><span>actif ›</span></div><p>Kai sans compter : analyses de chaque séance, questions, nouveaux cycles, séances sans salle.</p></div></button>`:`<button class="card plancard free" id="planCard"><div class="pcin"><b>Forfait Découverte</b><p>${USAGE?(USAGE.analyse||0):0}/${pi.lim.analyse} analyses · ${USAGE?(USAGE.chat||0):0}/${pi.lim.chat} questions ce mois-ci</p><span class="cta">Passer Premium</span></div><div class="pcbar"><i style="width:${Math.min(100,Math.round(100*(USAGE?(USAGE.analyse||0):0)/Math.max(1,pi.lim.analyse)))}%"></i></div></button>`}
   <div class="grp"><div class="grp-t">Entraînement</div>
     <button class="row" id="progBtn"><span>Programme</span><span class="muted">${esc(PROGRAM.cycleName||'—')}</span><i></i></button>
     <button class="row" id="lexBtn"><span>Lexique</span><span class="muted">RIR, tempo, décharge…</span><i></i></button>
@@ -315,7 +325,7 @@ function renderReglages(){
 /* ---------- Présence du coach : identité, états visibles, barre de travail ---------- */
 const COACH_NAME='Kai';
 // Avatar : le loup de Rituel dans un cercle. États : idle, busy (anneau qui tourne), attention (point rouge), ok (coche).
-function coachAvatar(state,size){ return `<span class="cav ${state||'idle'} ${size||''}" aria-hidden="true"><i class="mk"></i><i class="ring"></i><i class="dot"></i></span>`; }
+function coachAvatar(state,size){ return `<span class="cav ${state||'idle'} ${size||''}" aria-hidden="true"><i class="mk"></i><i class="cring"></i><i class="dot"></i></span>`; }
 // Barre de travail globale : ce que fait le coach, étape en cours, progression. Un seul job à la fois.
 const JOB={on:false,t:0,iv:0};
 function startJob(label,steps,expectMs){

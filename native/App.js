@@ -38,7 +38,7 @@ async function rcInit(uid) {
   if (!Purchases || !RC_KEY) return false;
   try { if (!rcReady) { Purchases.configure({ apiKey: RC_KEY, appUserID: uid || null }); rcReady = true; } else if (uid) { await Purchases.logIn(uid); } return true; } catch (e) { return false; }
 }
-function pkgInfo(p) { const pr = p.product || {}; return { id: p.identifier, type: p.packageType, title: pr.title, price: pr.priceString, period: pr.subscriptionPeriod || '', intro: pr.introPrice ? pr.introPrice.priceString : null }; }
+function pkgInfo(p) { const pr = p.product || {}; return { id: p.identifier, type: p.packageType, title: pr.title, price: pr.priceString, period: pr.subscriptionPeriod || '', intro: pr.introPrice ? pr.introPrice.priceString : null, priceAmount: pr.price, currency: pr.currencyCode }; }
 function isPremium(info) { const e = info && info.entitlements && info.entitlements.active; return !!(e && (e.premium || Object.keys(e).length)); }
 
 const WEB_URL = (Constants.expoConfig && Constants.expoConfig.extra && Constants.expoConfig.extra.webUrl) || 'https://rituel-6b365.web.app';
