@@ -363,20 +363,8 @@ exports.coach = onCall({ region: 'europe-west1', secrets: [ANTHROPIC_API_KEY], t
     throw e;
   }
 });
-async function coachImpl(req) {
-  if (!req.auth) throw new HttpsError('unauthenticated', 'Connexion requise.');
-  const uid = req.auth.uid; const { mode } = req.data || {};
-  if (!QUOTAS[mode]) throw new HttpsError('invalid-argument', 'mode inconnu');
-  const plan = await planFor(uid, req.auth.token && req.auth.token.email);
-  await checkQuota(uid, mode, plan);
-  // Nettoyage : un secret collé depuis Windows peut contenir BOM, octets nuls, retours à la ligne ou guillemets.
-  const apiKey = String(ANTHROPIC_API_KEY.value() || '').replace(/[^\x21-\x7E]/g, '').replace(/^["']+|["']+$/g, '');
-  if (!/^sk-ant-/.test(apiKey)) throw new HttpsError('failed-precondition', 'Clé API Anthropic absente ou mal formée côté serveur (doit commencer par sk-ant-).');
-  const model = await resolveModel(apiKey, MODEL.value());
-  const meta = await loadMeta(uid);
-  if (!meta.profile) throw new HttpsError('failed-precondition', 'Profil manquant.');
-
-  if (mode === 'program') {
+async function generateProgramFor(uid, meta, apiKey, model) {
+  const genRef = db.collection('users').doc(uid).collection('meta').doc('genstate');
     const sys = systemFor(meta.profile, null);
     const safety = { debutant: 'Débutant : 3 séances max, 4 à 6 exercices par séance, 12 à 16 séries, RIR jamais sous 2, pas de techniques d\'intensification, machines guidées et mouvements simples, échauffement détaillé, aucune charge suggérée en kg.', intermediaire: 'Intermédiaire : 16 à 22 séries par séance, RIR 3 → 1, une seule technique d\'intensification en S3.', confirme: 'Confirmé : 22 à 28 séries, RIR jusqu\'à 0 sur les isolations en S3, intensification ciblée.', avance: 'Avancé : volume et intensité d\'athlète, techniques d\'intensification justifiées.' }[(meta.profile || {}).level] || '';
     const constraints = (meta.profile || {}).constraints ? `Respecte strictement les contraintes déclarées (blessures, douleurs, métier) : exclus tout exercice qui les sollicite et propose une alternative. ` : '';
@@ -394,7 +382,29 @@ async function coachImpl(req) {
     await recordUsage(uid, 'program', model);
     prog.demos = await mapDemos(apiKey, model, prog.sessions.flatMap(se => se.exercises)); prog.demosAt = Date.now(); if (Object.keys(prog.demos).length) await recordUsage(uid, 'demo', model);
     await db.collection('users').doc(uid).collection('meta').doc('program').set(prog);
+    await genRef.set({ status: 'done', at: Date.now() });
     return { ok: true, sessions: prog.sessions.length };
+}
+async function coachImpl(req) {
+  if (!req.auth) throw new HttpsError('unauthenticated', 'Connexion requise.');
+  const uid = req.auth.uid; const { mode } = req.data || {};
+  if (!QUOTAS[mode]) throw new HttpsError('invalid-argument', 'mode inconnu');
+  const plan = await planFor(uid, req.auth.token && req.auth.token.email);
+  // Génération déjà en cours (l'appel précédent a été coupé côté téléphone) : on ne relance pas, on ne reconsomme pas, le programme arrivera par Firestore.
+  const genRef = db.collection('users').doc(uid).collection('meta').doc('genstate');
+  if (mode === 'program') { const g = await genRef.get(); const gd = g.exists ? g.data() : {}; if (gd.status === 'running' && Date.now() - (gd.startedAt || 0) < 8 * 60000) return { ok: true, running: true }; }
+  await checkQuota(uid, mode, plan);
+  // Nettoyage : un secret collé depuis Windows peut contenir BOM, octets nuls, retours à la ligne ou guillemets.
+  const apiKey = String(ANTHROPIC_API_KEY.value() || '').replace(/[^\x21-\x7E]/g, '').replace(/^["']+|["']+$/g, '');
+  if (!/^sk-ant-/.test(apiKey)) throw new HttpsError('failed-precondition', 'Clé API Anthropic absente ou mal formée côté serveur (doit commencer par sk-ant-).');
+  const model = await resolveModel(apiKey, MODEL.value());
+  const meta = await loadMeta(uid);
+  if (!meta.profile) throw new HttpsError('failed-precondition', 'Profil manquant.');
+
+  if (mode === 'program') {
+    await genRef.set({ status: 'running', startedAt: Date.now() });
+    try { return await generateProgramFor(uid, meta, apiKey, model); }
+    catch (e) { await genRef.set({ status: 'error', message: String(e && e.message || e).slice(0, 300), at: Date.now() }); throw e; }
   }
 
   const prog = meta.program || program; // repli : programme embarqué

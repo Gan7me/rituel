@@ -18,7 +18,7 @@ function humanErr(e){ const c=(e&&e.code)||''; const m=(e&&e.message)||String(e|
   if(/network|Failed to fetch|internet/i.test(m)||!navigator.onLine) return 'Pas de réseau. Le coach a besoin d\'une connexion ; tes séries sont enregistrées et partiront toutes seules.';
   if(/invalid-argument/.test(c)) return 'Le serveur n\'a pas compris la demande (version de l\'app en retard ?). Recharge l\'application depuis Réglages.';
   return m; }
-const APP_VERSION='3.23.0';
+const APP_VERSION='3.23.1';
 const ADMIN_RE=/^(ganeme\.asloune@nexisafe\.com|gads@live\.fr)$/i;
 let PROGRAM={sessions:[]};
 let WEEKS = [
@@ -242,6 +242,16 @@ async function showAdmin(){
     $('#admBody').querySelectorAll('[data-plan]').forEach(b=>b.onclick=async()=>{ const months=b.dataset.plan==='premium'?parseInt(prompt('Offrir Premium pour combien de mois ?','1'))||0:0; if(b.dataset.plan==='premium'&&!months) return; b.disabled=true; try{ const fn=fbFn.httpsCallable('adminSetPlan'); await fn({uid:b.dataset.uid,plan:b.dataset.plan,months}); toast(b.dataset.plan==='premium'?'Premium offert':'Premium retiré','ok'); showAdmin(); }catch(e){ b.disabled=false; toast('Échec : '+(e.message||e)); } });
   }catch(e){ $('#admMsg').textContent='Échec : '+(e.message||e); }
 }
+function showDiag(){ const recent=Object.values(S.logs).filter(l=>Object.keys(l.sets||{}).length||l.done).sort((a,b)=>a.date<b.date?1:-1).slice(0,8).map(l=>`${l.date} ${l.session} ${l.done?'terminée':'en cours'} ${Object.values(l.sets||{}).flat().filter(x=>x&&x.done).length} séries`).join('\n');
+    const txt=`Rituel web ${APP_VERSION} · ${NATIVE?'coquille iOS/Android '+((window.__RITUEL_NATIVE__||{}).version||'?'):'navigateur'} · ${navigator.userAgent}\nSession : ${USER?USER.uid.slice(0,6)+'…':'aucune'} · réseau : ${navigator.onLine?'oui':'non'} · programme : ${PROGRAM_LOADED?'chargé':'absent'} · journal local : ${Object.keys(S.logs).length} séances\n\nDernières séances locales :\n${recent||'(aucune)'}\n\n`+(ERRLOG.length?ERRLOG.map(e=>`${new Date(e.t).toLocaleString('fr-FR')} · ${e.src} · ${e.code?e.code+' · ':''}${e.msg}`).join('\n'):'Aucune erreur enregistrée.');
+    const sh=showSheet(`<h3>Diagnostic</h3><pre class="diag" id="diagTxt">${esc(txt)}</pre><div class="row2"><button class="btn" id="diagCopy">Copier</button><button class="btn sm" id="diagSync">Vérifier la synchro</button><button class="btn sm" id="diagClear">Effacer</button></div>`);
+    sh.querySelector('#diagCopy').onclick=async()=>{ try{ await navigator.clipboard.writeText($('#diagTxt').textContent); toast('Copié'); }catch(e){ toast('Sélectionne le texte pour le copier'); } };
+    // Compare chaque séance locale au serveur et renvoie ce qui manque, en capturant l'erreur exacte s'il y en a une.
+    sh.querySelector('#diagSync').onclick=async()=>{ const b=sh.querySelector('#diagSync'); if(!USER||!navigator.onLine){ toast('Connexion et réseau nécessaires'); return; } b.disabled=true; b.textContent='Vérification…'; const lines=[]; let missing=0, sent=0, fail=0;
+      for(const [k,l] of Object.entries(S.logs)){ if(!Object.keys(l.sets||{}).length&&!l.done) continue; try{ const snap=await col('logs').doc(k).get({source:'server'}); const r=snap.exists?snap.data():null; if(!r||(l.updatedAt||0)>(r.updatedAt||0)){ missing++; try{ await col('logs').doc(k).set(JSON.parse(JSON.stringify(l))); sent++; }catch(e){ fail++; lines.push(`${k} : échec envoi · ${e.code||''} ${e.message||e}`); logErr('resync '+k,e); } } }catch(e){ lines.push(`${k} : lecture serveur impossible · ${e.code||''} ${e.message||e}`); } }
+      lines.unshift(`Synchro : ${Object.keys(S.logs).length} séances locales · ${missing} absentes ou plus récentes que le cloud · ${sent} renvoyées · ${fail} échec${fail>1?'s':''}`);
+      $('#diagTxt').textContent=lines.join('\n')+'\n\n'+$('#diagTxt').textContent; b.textContent='Vérifié'; toast(fail?'Erreurs de synchro, copie le diagnostic':'Synchro vérifiée','ok'); };
+    sh.querySelector('#diagClear').onclick=()=>{ ERRLOG.length=0; try{ localStorage.removeItem('rituel.errlog'); }catch(e){} hideSheet(); renderReglages(); }; }
 function renderReglages(){
   const el=$('#tab-reglages'); if(!el) return;
   const notifState=window.Notification?({granted:'autorisées',denied:'refusées',default:'non demandées'}[Notification.permission]||Notification.permission):'non supporté';
@@ -292,16 +302,7 @@ function renderReglages(){
   const adb=$('#adminBtn'); if(adb) adb.onclick=showAdmin;
   $('#profBtn').onclick=()=>{ if(!USER) return; const sheet=showSheet(`<h3>Mon profil</h3>`+profileForm(PROFILE||{})); bindProfileForm(()=>{ hideSheet(); toast('Profil enregistré','ok'); renderReglages(); }, sheet); };
   $('#progBtn').onclick=()=>document.querySelector('.tabs button[data-tab="programme"]').click();
-  $('#diagBtn').onclick=()=>{ const recent=Object.values(S.logs).filter(l=>Object.keys(l.sets||{}).length||l.done).sort((a,b)=>a.date<b.date?1:-1).slice(0,8).map(l=>`${l.date} ${l.session} ${l.done?'terminée':'en cours'} ${Object.values(l.sets||{}).flat().filter(x=>x&&x.done).length} séries`).join('\n');
-    const txt=`Rituel web ${APP_VERSION} · ${NATIVE?'coquille iOS/Android '+((window.__RITUEL_NATIVE__||{}).version||'?'):'navigateur'} · ${navigator.userAgent}\nSession : ${USER?USER.uid.slice(0,6)+'…':'aucune'} · réseau : ${navigator.onLine?'oui':'non'} · programme : ${PROGRAM_LOADED?'chargé':'absent'} · journal local : ${Object.keys(S.logs).length} séances\n\nDernières séances locales :\n${recent||'(aucune)'}\n\n`+(ERRLOG.length?ERRLOG.map(e=>`${new Date(e.t).toLocaleString('fr-FR')} · ${e.src} · ${e.code?e.code+' · ':''}${e.msg}`).join('\n'):'Aucune erreur enregistrée.');
-    const sh=showSheet(`<h3>Diagnostic</h3><pre class="diag" id="diagTxt">${esc(txt)}</pre><div class="row2"><button class="btn" id="diagCopy">Copier</button><button class="btn sm" id="diagSync">Vérifier la synchro</button><button class="btn sm" id="diagClear">Effacer</button></div>`);
-    sh.querySelector('#diagCopy').onclick=async()=>{ try{ await navigator.clipboard.writeText($('#diagTxt').textContent); toast('Copié'); }catch(e){ toast('Sélectionne le texte pour le copier'); } };
-    // Compare chaque séance locale au serveur et renvoie ce qui manque, en capturant l'erreur exacte s'il y en a une.
-    sh.querySelector('#diagSync').onclick=async()=>{ const b=sh.querySelector('#diagSync'); if(!USER||!navigator.onLine){ toast('Connexion et réseau nécessaires'); return; } b.disabled=true; b.textContent='Vérification…'; const lines=[]; let missing=0, sent=0, fail=0;
-      for(const [k,l] of Object.entries(S.logs)){ if(!Object.keys(l.sets||{}).length&&!l.done) continue; try{ const snap=await col('logs').doc(k).get({source:'server'}); const r=snap.exists?snap.data():null; if(!r||(l.updatedAt||0)>(r.updatedAt||0)){ missing++; try{ await col('logs').doc(k).set(JSON.parse(JSON.stringify(l))); sent++; }catch(e){ fail++; lines.push(`${k} : échec envoi · ${e.code||''} ${e.message||e}`); logErr('resync '+k,e); } } }catch(e){ lines.push(`${k} : lecture serveur impossible · ${e.code||''} ${e.message||e}`); } }
-      lines.unshift(`Synchro : ${Object.keys(S.logs).length} séances locales · ${missing} absentes ou plus récentes que le cloud · ${sent} renvoyées · ${fail} échec${fail>1?'s':''}`);
-      $('#diagTxt').textContent=lines.join('\n')+'\n\n'+$('#diagTxt').textContent; b.textContent='Vérifié'; toast(fail?'Erreurs de synchro, copie le diagnostic':'Synchro vérifiée','ok'); };
-    sh.querySelector('#diagClear').onclick=()=>{ ERRLOG.length=0; try{ localStorage.removeItem('rituel.errlog'); }catch(e){} hideSheet(); renderReglages(); }; };
+  $('#diagBtn').onclick=showDiag;
   $('#lexBtn').onclick=()=>showSheet(`<h3>Lexique</h3>`+Object.entries(LEX).map(([k,v])=>`<details class="more"><summary>${esc(v[0])}</summary><p class="small">${esc(v[1])}</p></details>`).join('')+`<button class="btn" onclick="hideSheet()">Fermer</button>`);
   $('#expBtn').onclick=()=>{ const blob=new Blob([JSON.stringify(snapshot(),null,1)],{type:'application/json'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='rituel-journal-'+todayISO()+'.json'; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),2000); };
   $('#impFile').onchange=e=>{ const f=e.target.files[0]; if(!f) return; const rd=new FileReader(); rd.onload=()=>{ try{ const d=JSON.parse(rd.result); mergeInto(S,d); save(); render(); toast('Journal importé','ok'); }catch(err){ alert('Fichier invalide.'); } }; rd.readAsText(f); };
@@ -519,12 +520,15 @@ function showOnboarding(step){ ONB_STEP=step;
     <div class="row2"><button class="btn fill" id="genBtn">${esc(COACH_NAME)}, construis mon programme</button></div>
     <div id="genWait" hidden><div class="wait">${coachAvatar('busy')}<div><b id="genStep">${esc(COACH_NAME)} lit ton profil…</b><p class="small muted">Une à deux minutes. Tu peux garder l'écran ouvert ou revenir plus tard, le programme t'attendra.</p></div></div></div>
     <p class="small err" id="genMsg"></p>
-    ${DEFAULT_PROGRAM&&USER&&/@nexisafe\.com$/i.test(USER.email||'')?`<details class="more"><summary>Autre option</summary><p class="small">Importer le programme « ${esc(DEFAULT_PROGRAM.cycleName||'Fondations')} » tel quel.</p><button class="btn sm" id="importBtn">Importer ce programme</button></details>`:''}
+    <p class="small muted"><button class="link" id="onbDiag">Un problème ? Voir le diagnostic</button></p>
+    ${DEFAULT_PROGRAM?`<div id="genAlt" ${GEN_STATE&&GEN_STATE.status==='error'?'':'hidden'}><p class="small">Si ${esc(COACH_NAME)} n'y arrive pas, tu peux démarrer avec le programme de base « ${esc(DEFAULT_PROGRAM.cycleName||'Fondations')} » (4 semaines, force et hypertrophie) : il l'adaptera ensuite à tes retours.</p><button class="btn sm" id="importBtn">Démarrer avec le programme de base</button></div>`:''}
     <p class="small muted"><button class="link" id="backProf">Modifier mon profil</button></p>
   </section>`;
-  $('#genBtn').onclick=()=>generateProgram();
+  $('#genBtn').onclick=()=>generateProgram(); const od=$('#onbDiag'); if(od) od.onclick=showDiag;
+  if(GEN_STATE&&GEN_STATE.status==='running'&&Date.now()-(GEN_STATE.startedAt||0)<8*60000){ $('#genBtn').hidden=true; $('#genWait').hidden=false; GENERATING=true; }
+  else if(GEN_STATE&&GEN_STATE.status==='error'&&!GENERATING){ $('#genMsg').textContent='La dernière tentative a échoué : '+GEN_STATE.message+'. Réessaie, ou démarre avec le programme de base.'; $('#genBtn').textContent='Réessayer'; }
   $('#backProf').onclick=()=>onbStep(0);
-  const ib=$('#importBtn'); if(ib) ib.onclick=()=>saveProgram(DEFAULT_PROGRAM, DEFAULT_CYCLE_HTML);
+  const ib=$('#importBtn'); if(ib) ib.onclick=async()=>{ ib.disabled=true; try{ await saveProgram(DEFAULT_PROGRAM, DEFAULT_CYCLE_HTML); toast('Programme de base installé','ok'); }catch(e){ ib.disabled=false; $('#genMsg').textContent=humanErr(e); logErr('import',e); } };
 }
 const ONB_DRAFT={};
 function onbStep(i){
@@ -592,7 +596,10 @@ async function generateProgram(){
   const stepsTxt=[COACH_NAME+' lit ton profil…','Il choisit les exercices pour ton matériel…','Il règle séries, repos et progression…','Il rédige les explications de chaque exercice…','Dernières vérifications…']; let k=0; startJob('construit ton programme',stepsTxt.map(x=>x.replace(/…$/,'')),90000);
   const iv=setInterval(()=>{ k=Math.min(k+1,stepsTxt.length-1); const e=$('#genStep'); if(e) e.textContent=stepsTxt[k]; },18000);
   try{ const fn=fbFn.httpsCallable('coach',{timeout:540000}); await fn({mode:'program'}); }
-  catch(e){ logErr('program',e); GENERATING=false; endJob(false,humanErr(e)); if(msg) msg.textContent=humanErr(e); if(btn){ btn.hidden=false; btn.textContent='Réessayer'; } if(wait) wait.hidden=true; clearInterval(iv); return; }
+  catch(e){ logErr('program',e); const m=(e&&e.message)||''; const cut=/deadline|timeout|network|Failed to fetch|internal|unavailable/i.test(m+' '+(e&&e.code||''));
+    if(cut){ // la connexion a lâché mais le serveur continue : on attend le programme par Firestore (jusqu'à 8 min), puis on propose le repli
+      let n=0; const poll=setInterval(()=>{ n++; if(PROGRAM_LOADED){ clearInterval(poll); clearInterval(iv); GENERATING=false; endJob(true,'Programme prêt'); return; } if(GEN_STATE&&GEN_STATE.status==='error'){ clearInterval(poll); clearInterval(iv); GENERATING=false; endJob(false,GEN_STATE.message); if(msg) msg.textContent=GEN_STATE.message; if(btn){ btn.hidden=false; btn.textContent='Réessayer'; } if(wait) wait.hidden=true; const ga=$('#genAlt'); if(ga) ga.hidden=false; } else if(n>96){ clearInterval(poll); clearInterval(iv); GENERATING=false; endJob(false,'Trop long'); if(msg) msg.textContent='Le coach met trop de temps. Réessaie, ou démarre avec le programme de base.'; if(btn){ btn.hidden=false; btn.textContent='Réessayer'; } if(wait) wait.hidden=true; const ga=$('#genAlt'); if(ga) ga.hidden=false; } },5000); return; }
+    GENERATING=false; endJob(false,humanErr(e)); if(msg) msg.textContent=humanErr(e); if(btn){ btn.hidden=false; btn.textContent='Réessayer'; } if(wait) wait.hidden=true; const ga=$('#genAlt'); if(ga) ga.hidden=false; clearInterval(iv); return; }
   clearInterval(iv); GENERATING=false; endJob(true,'Programme prêt');
 }
 async function saveProgram(prog, cycleHtml){
@@ -627,7 +634,7 @@ function mdToHtml(md){ return String(md||'').split(/\n{2,}/).map(par=>{ par=par.
 /* écoute du profil et du programme après connexion */
 function listenMeta(){
   unsubs.push(fbDb.collection('users').doc(USER.uid).collection('meta').onSnapshot(snap=>{
-    let prof=null, prog=null; snap.docs.forEach(d=>{ if(d.id==='profile') prof=d.data(); if(d.id==='program') prog=d.data(); if(d.id==='usage') USAGE=d.data(); if(d.id==='billing') BILLING.doc=d.data(); });
+    let prof=null, prog=null; snap.docs.forEach(d=>{ if(d.id==='profile') prof=d.data(); if(d.id==='program') prog=d.data(); if(d.id==='usage') USAGE=d.data(); if(d.id==='billing') BILLING.doc=d.data(); if(d.id==='genstate') GEN_STATE=d.data(); });
     PROFILE=prof;
     if(prog&&prog.sessions&&prog.sessions.length){ GENERATING=false; applyProgram(prog); }
     else if(snap.metadata.fromCache&&!snap.docs.length){ /* première ouverture hors ligne : attendre le serveur */ }
@@ -1173,7 +1180,7 @@ function renderProgramme(){
   $('#tab-programme').querySelectorAll('[data-go]').forEach(b=>b.onclick=()=>{ S.session=b.dataset.go; S.sessionDate=todayISO(); save(); showTab('seance'); });
   $('#tab-programme').querySelectorAll('[data-pex]').forEach(r=>r.onclick=()=>{ const ex=PROGRAM.sessions.flatMap(x=>x.exercises).find(e=>e.id===r.dataset.pex); if(ex) showDemo(ex); });
 }
-let PROG_OPEN, RENDER_UNLOCK_T=null;
+let PROG_OPEN, RENDER_UNLOCK_T=null, GEN_STATE=null;
 // Semaine active pour toute l'app : choisie à la main (Programme ou pastille de semaine en Séance), sinon calculée.
 function setWeek(n){ const auto=weekFor(todayISO()); S.weekOverride=(n&&n!==auto)?n:null; save(); render(); toast(S.weekOverride?`Semaine ${n} activée`:`Semaine automatique : S${auto}`,'ok'); }
 function showWeekPicker(){ const auto=weekFor(todayISO()), wk=curWeek(); showSheet(`<h3>Semaine du cycle</h3><p class="small muted">La semaine détermine les séries, les répétitions et les consignes de RIR de chaque séance. Calcul automatique : S${auto}${S.weekOverride?' · actuellement fixée à S'+wk:''}.</p><div class="wkpick">${WEEKS.map((w,i)=>`<button class="row" data-pick="${i+1}" aria-pressed="${i+1===wk}"><span><b>S${i+1}</b> · ${esc(String(w.label||'').replace(/^S\d+\s*/,''))}<br><small class="muted">${esc(w.rirNote||'')}</small></span>${i+1===wk?'<i class="chkmark"></i>':''}</button>`).join('')}</div>${S.weekOverride?`<button class="btn" id="wkAutoBtn">Revenir au calcul automatique (S${auto})</button>`:''}`); document.querySelectorAll('[data-pick]').forEach(b=>b.onclick=()=>{ hideSheet(); setWeek(+b.dataset.pick); }); const a=$('#wkAutoBtn'); if(a) a.onclick=()=>{ hideSheet(); setWeek(null); }; }
