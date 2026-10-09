@@ -244,6 +244,12 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   await p.evaluate(() => { const f = document.querySelector('#bwQuick'); f.querySelector('input').value = '68.4'; f.requestSubmit(); }); await sleep(150);
   assert(await p.evaluate(() => S.bw[todayISO()] && S.bw[todayISO()].kg === 68.4), 'pesée rapide enregistrée depuis l\'accueil');
 
+  console.log('Déblocage');
+  await p.evaluate(() => { S.badgesSeen = progressFacts().unlocked.filter(id => id !== 's1'); checkUnlocks(); }); await sleep(400);
+  assert(await p.evaluate(() => !!document.querySelector('.unlock.on') && document.querySelector('.unlock h2').textContent === 'Première séance' && !!document.querySelector('.unlock .badge img')), 'cérémonie de déblocage affichée pour le nouveau badge');
+  await p.evaluate(() => document.querySelector('#uClose').click()); await sleep(400);
+  assert(await p.evaluate(() => !document.querySelector('.unlock') && S.badgesSeen.includes('s1')), 'cérémonie fermée, badge marqué vu');
+
   console.log('Thème sombre');
   await p.emulateMediaFeatures([{ name: 'prefers-color-scheme', value: 'dark' }]); await sleep(150);
   const bg = await p.evaluate(() => getComputedStyle(document.body).backgroundColor);

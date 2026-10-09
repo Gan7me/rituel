@@ -18,7 +18,7 @@ function humanErr(e){ const c=(e&&e.code)||''; const m=(e&&e.message)||String(e|
   if(/network|Failed to fetch|internet/i.test(m)||!navigator.onLine) return 'Pas de réseau. Le coach a besoin d\'une connexion ; tes séries sont enregistrées et partiront toutes seules.';
   if(/invalid-argument/.test(c)) return 'Le serveur n\'a pas compris la demande (version de l\'app en retard ?). Recharge l\'application depuis Réglages.';
   return m; }
-const APP_VERSION='3.20.2';
+const APP_VERSION='3.21.0';
 let PROGRAM={sessions:[]};
 let WEEKS = [
   {n:1,label:'S1 calibrage',from:'2026-09-07',to:'2026-09-13',rirNote:'RIR 3 · établir les références, tout noter'},
@@ -713,6 +713,39 @@ function progressFacts(){
   f.unlocked=BADGES.filter(b=>b.test(f)).map(b=>b.id); f.nextBadge=BADGES.find(b=>!f.unlocked.includes(b.id))||null;
   S.badgeDates=S.badgeDates||{}; let nd=false; f.unlocked.forEach(id=>{ if(!S.badgeDates[id]){ S.badgeDates[id]=todayISO(); nd=true; } }); if(nd) save(); return f;
 }
+// Cérémonie de déblocage : écran plein, médaille qui tombe en tournant, confettis, partage. Un badge à la fois.
+let UNLOCK_QUEUE=[], UNLOCK_BUSY=false;
+function checkUnlocks(){ const f=progressFacts(); const seen=S.badgesSeen||[]; const fresh=f.unlocked.filter(id=>!seen.includes(id)); if(!fresh.length) return;
+  if(!S.badgesSeen){ S.badgesSeen=f.unlocked.slice(); save(); return; } // premier passage : l'historique est acquis sans cérémonie
+  fresh.forEach(id=>{ if(!UNLOCK_QUEUE.includes(id)) UNLOCK_QUEUE.push(id); }); if(!UNLOCK_BUSY) nextUnlock(); }
+function nextUnlock(){ const id=UNLOCK_QUEUE.shift(); if(!id){ UNLOCK_BUSY=false; return; } UNLOCK_BUSY=true; const b=BADGES.find(x=>x.id===id); S.badgesSeen=(S.badgesSeen||[]).concat(id); save(); showUnlock(b,nextUnlock); }
+function showUnlock(b,done){
+  const f=progressFacts(); const got=f.unlocked.length;
+  const el=document.createElement('div'); el.className='unlock'; el.innerHTML=`<canvas class="confetti"></canvas><div class="uwrap"><p class="eyebrow">Nouveau badge · ${got}/${BADGES.length}</p><div class="ubadge" id="uBadge">${badgeSvg(b,240,false,f)}</div><h2>${esc(b.name)}</h2><p class="uhow">${esc(b.how)}</p><div class="row2"><button class="btn fill" id="uShare">Partager</button><button class="btn" id="uClose">Continuer</button></div></div>`;
+  document.body.appendChild(el); document.body.classList.add('unlocking'); native({type:'haptic',kind:'success'}); try{ navigator.vibrate&&navigator.vibrate([30,40,60]); }catch(e){}
+  requestAnimationFrame(()=>el.classList.add('on'));
+  confetti(el.querySelector('.confetti'),BADGE_FAM[b.fam]||BADGE_FAM.ses);
+  tilt(el.querySelector('#uBadge'));
+  const close=()=>{ el.classList.remove('on'); setTimeout(()=>{ el.remove(); document.body.classList.remove('unlocking'); renderHome(); if(done) done(); },260); };
+  el.querySelector('#uClose').onclick=close; el.querySelector('#uShare').onclick=()=>shareBadge(b);
+}
+function confetti(cv,colors){ const ctx=cv.getContext('2d'); const W=cv.width=innerWidth*devicePixelRatio, H=cv.height=innerHeight*devicePixelRatio; const cols=[colors[0],colors[1],'#FFD86B','#FFFFFF','#CFD4DC']; const P=[...Array(140)].map(()=>({x:W/2+(Math.random()-.5)*W*0.3,y:H*0.35,vx:(Math.random()-.5)*18*devicePixelRatio,vy:(-14-Math.random()*12)*devicePixelRatio,r:(3+Math.random()*5)*devicePixelRatio,c:cols[Math.floor(Math.random()*cols.length)],a:Math.random()*6.28,va:(Math.random()-.5)*.3,sh:Math.random()<.5}));
+  let t=0; const step=()=>{ t++; ctx.clearRect(0,0,W,H); P.forEach(p=>{ p.vy+=0.55*devicePixelRatio; p.vx*=.985; p.x+=p.vx; p.y+=p.vy; p.a+=p.va; ctx.save(); ctx.translate(p.x,p.y); ctx.rotate(p.a); ctx.fillStyle=p.c; ctx.globalAlpha=Math.max(0,1-t/150); if(p.sh) ctx.fillRect(-p.r,-p.r/2,p.r*2,p.r); else { ctx.beginPath(); ctx.arc(0,0,p.r/1.6,0,6.28); ctx.fill(); } ctx.restore(); }); if(t<160&&cv.isConnected) requestAnimationFrame(step); }; setTimeout(()=>requestAnimationFrame(step),350); }
+// Inclinaison 3D au doigt (ou au gyroscope si autorisé), avec reflet qui suit.
+function tilt(el){ if(!el) return; el.classList.add('tilt'); const img=el.querySelector('.badge')||el; let raf=null;
+  const set=(dx,dy)=>{ const rx=(-dy*14).toFixed(2), ry=(dx*18).toFixed(2); img.style.transform=`perspective(700px) rotateX(${rx}deg) rotateY(${ry}deg)`; el.style.setProperty('--gx',(50+dx*40)+'%'); el.style.setProperty('--gy',(50+dy*40)+'%'); };
+  const onMove=e=>{ const t=e.touches?e.touches[0]:e; const r=el.getBoundingClientRect(); const dx=Math.max(-1,Math.min(1,((t.clientX-r.left)/r.width-.5)*2)), dy=Math.max(-1,Math.min(1,((t.clientY-r.top)/r.height-.5)*2)); if(raf) cancelAnimationFrame(raf); raf=requestAnimationFrame(()=>set(dx,dy)); };
+  const reset=()=>{ img.style.transition='transform .5s cubic-bezier(.2,.8,.2,1)'; set(0,0); setTimeout(()=>img.style.transition='',500); };
+  el.addEventListener('pointermove',onMove); el.addEventListener('touchmove',onMove,{passive:true}); el.addEventListener('pointerleave',reset); el.addEventListener('touchend',reset);
+  if(window.DeviceOrientationEvent&&typeof DeviceOrientationEvent.requestPermission!=='function'){ const h=e=>{ if(!el.isConnected){ removeEventListener('deviceorientation',h); return; } if(e.gamma==null) return; set(Math.max(-1,Math.min(1,e.gamma/25)),Math.max(-1,Math.min(1,(e.beta-40)/25))); }; addEventListener('deviceorientation',h); }
+}
+// Carte de partage : image générée (médaille, nom, date, marque) → partage natif, sinon téléchargement.
+async function shareBadge(b){ try{ const c=document.createElement('canvas'); c.width=1080; c.height=1350; const x=c.getContext('2d'); x.fillStyle='#0F1216'; x.fillRect(0,0,1080,1350); const g=x.createRadialGradient(540,520,80,540,520,700); const [c1]=BADGE_FAM[b.fam]||BADGE_FAM.ses; g.addColorStop(0,c1+'66'); g.addColorStop(1,'#0F1216'); x.fillStyle=g; x.fillRect(0,0,1080,1350);
+  const im=new Image(); im.src=BADGE_BASE+b.id+'.webp'; await new Promise((r,j)=>{ im.onload=r; im.onerror=j; }); x.drawImage(im,240,220,600,600);
+  x.fillStyle='#fff'; x.textAlign='center'; x.font='900 76px -apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif'; x.fillText(b.name,540,940); x.font='500 40px -apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif'; x.fillStyle='rgba(255,255,255,.75)'; x.fillText(b.how,540,1010); const d=S.badgeDates&&S.badgeDates[b.id]?new Date(S.badgeDates[b.id]+'T12:00:00').toLocaleDateString('fr-FR',{day:'numeric',month:'long',year:'numeric'}):''; x.fillText(d,540,1070); x.font='800 34px -apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif'; x.fillStyle='rgba(255,255,255,.5)'; x.fillText('RITUEL',540,1250);
+  const blob=await new Promise(r=>c.toBlob(r,'image/png')); const file=new File([blob],'rituel-'+b.id+'.png',{type:'image/png'});
+  if(navigator.canShare&&navigator.canShare({files:[file]})) await navigator.share({files:[file],title:b.name,text:`${b.name} · ${b.how} · Rituel`});
+  else { const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=file.name; a.click(); } }catch(e){ if(!/abort/i.test(String(e))) toast('Partage impossible ici'); } }
 function showBadges(){
   const f=progressFacts(); const seen=S.badgesSeen||[]; const FAMN={ses:'Séances',pr:'Records',pull:'Tractions',reg:'Régularité',cyc:'Cycle'};
   const got=BADGES.filter(b=>f.unlocked.includes(b.id)).sort((x,y)=>(S.badgeDates[y.id]||'')<(S.badgeDates[x.id]||'')?-1:1); const latest=got[0];
@@ -721,8 +754,8 @@ function showBadges(){
     ${latest?`<div class="bhero"><div class="bspin">${badgeSvg(latest,170,false)}</div><b>${esc(latest.name)}</b><span>${esc(latest.how)}</span><small>${esc(dateOf(latest))}</small></div>`:''}
     ${['ses','pr','pull','reg','cyc'].map(fam=>`<h4>${FAMN[fam]}</h4><div class="bgrid">${BADGES.filter(b=>b.fam===fam).map(b=>{ const ok=f.unlocked.includes(b.id); const pr=b.prog?b.prog(f):null; return `<button class="bcell ${ok?'':'lock'}" data-badge="${b.id}">${badgeSvg(b,78,!ok,f)}<b>${esc(b.name)}</b><small>${ok?esc(dateOf(b)):(pr?`${String(pr[0]).replace('.',',')} / ${pr[1]}`:esc(b.how))}</small></button>`; }).join('')}</div>`).join('')}
     <p class="small muted">Expérience : séance terminée 10, record 15, test de tractions 5, semaine complète 25.</p><button class="btn" onclick="hideSheet()">Fermer</button>`);
-  document.querySelectorAll('[data-badge]').forEach(el=>el.onclick=()=>{ const b=BADGES.find(x=>x.id===el.dataset.badge); const ok=f.unlocked.includes(b.id); const sh=document.querySelector('#sheet .sheet-card'); const d=document.createElement('div'); d.className='bzoom'; const pr=b.prog?b.prog(f):null; d.innerHTML=`<div class="bspin">${badgeSvg(b,220,!ok,f)}</div><b>${esc(b.name)}</b><span>${esc(b.how)}</span><small>${ok?'Obtenu le '+esc(dateOf(b)):(pr?`Progression : ${String(pr[0]).replace('.',',')} / ${pr[1]}`:'Pas encore obtenu')}</small>`; d.onclick=()=>d.remove(); sh.appendChild(d); });
-  if(f.unlocked.some(id=>!seen.includes(id))){ S.badgesSeen=f.unlocked.slice(); save(); renderHome(); }
+  document.querySelectorAll('[data-badge]').forEach(el=>el.onclick=()=>{ const b=BADGES.find(x=>x.id===el.dataset.badge); const ok=f.unlocked.includes(b.id); const sh=document.querySelector('#sheet .sheet-card'); const d=document.createElement('div'); d.className='bzoom'; const pr=b.prog?b.prog(f):null; d.innerHTML=`<div class="bspin">${badgeSvg(b,220,!ok,f)}</div><b>${esc(b.name)}</b><span>${esc(b.how)}</span><small>${ok?'Obtenu le '+esc(dateOf(b)):(pr?`Progression : ${String(pr[0]).replace('.',',')} / ${pr[1]}`:'Pas encore obtenu')}</small>`; d.onclick=e=>{ if(!e.target.closest('.bspin')) d.remove(); }; sh.appendChild(d); tilt(d.querySelector('.bspin')); });
+  if(!UNLOCK_BUSY&&f.unlocked.some(id=>!seen.includes(id))){ S.badgesSeen=f.unlocked.slice(); save(); renderHome(); }
 }
 
 /* ---------- Aujourd'hui ---------- */
@@ -838,7 +871,7 @@ async function showDemo(ex){
 document.addEventListener('click',e=>{ const b=e.target.closest&&e.target.closest('[data-demo]'); if(b){ e.preventDefault(); e.stopPropagation(); showDemo(findEx(b.dataset.demo)); } },true);
 
 /* ---------- render: séance ---------- */
-function render(){ if(!PROGRAM.sessions.length||!PROGRAM_LOADED||!$('#tab-seance')) return; renderHome(); renderSeance(); renderProgramme(); renderSuivi(); renderReglages(); renderCoach(); const w=WEEKS[curWeek()-1]; $('#weekChip').textContent=`Semaine ${w.n}`; }
+function render(){ if(!PROGRAM.sessions.length||!PROGRAM_LOADED||!$('#tab-seance')) return; renderHome(); if(!RENDER_UNLOCK_T) RENDER_UNLOCK_T=setTimeout(()=>{ RENDER_UNLOCK_T=null; if(!document.querySelector('.onb')) checkUnlocks(); },1500); renderSeance(); renderProgramme(); renderSuivi(); renderReglages(); renderCoach(); const w=WEEKS[curWeek()-1]; $('#weekChip').textContent=`Semaine ${w.n}`; }
 
 function shortName(n){ n=String(n||''); if(n.length<=9) return n; const w=n.split(/\s+/); return w[0]+(w.length>1&&/^[A-Z]$/.test(w[w.length-1])?' '+w[w.length-1]:''); }
 const LEX={
@@ -1003,7 +1036,7 @@ function renderSeance(){
   const so=$('#subOff'); if(so) so.onclick=()=>{ if(!USER) return; col('overrides').doc(curSession().id).set({substitute:firebase.firestore.FieldValue.delete(),updatedAt:Date.now()},{merge:true}).catch(()=>{}); toast('Séance prévue rétablie'); };
   $('#notes').onchange=e=>{ log.notes=e.target.value; touch(log); toast('Note enregistrée'); };
   updateElapsed(log);
-  $('#endBtn').onclick=()=>{ log.done=!log.done; touch(log); stopTimer(); if(log.done){ releaseWake(); S.openEx=null; save(); toast('Séance enregistrée','ok'); healthExportSession(log); if(FOCUS){ FOCUS=false; document.body.classList.remove('focus'); } if(USER&&navigator.onLine){ analyseSession(logKey(log.date,log.session)); document.querySelector('.tabs button[data-tab="coach"]').click(); } } renderSeance(); if(log.done) window.scrollTo({top:0}); };
+  $('#endBtn').onclick=()=>{ log.done=!log.done; touch(log); stopTimer(); if(log.done){ releaseWake(); S.openEx=null; save(); toast('Séance enregistrée','ok'); healthExportSession(log); setTimeout(checkUnlocks,600); if(FOCUS){ FOCUS=false; document.body.classList.remove('focus'); } if(USER&&navigator.onLine){ analyseSession(logKey(log.date,log.session)); document.querySelector('.tabs button[data-tab="coach"]').click(); } } renderSeance(); if(log.done) window.scrollTo({top:0}); };
 }
 
 let elapsedTimer=0;
@@ -1045,7 +1078,7 @@ function renderProgramme(){
   $('#tab-programme').querySelectorAll('[data-go]').forEach(b=>b.onclick=()=>{ S.session=b.dataset.go; S.sessionDate=todayISO(); save(); showTab('seance'); });
   $('#tab-programme').querySelectorAll('[data-pex]').forEach(r=>r.onclick=()=>{ const ex=PROGRAM.sessions.flatMap(x=>x.exercises).find(e=>e.id===r.dataset.pex); if(ex) showDemo(ex); });
 }
-let PROG_OPEN;
+let PROG_OPEN, RENDER_UNLOCK_T=null;
 // Semaine active pour toute l'app : choisie à la main (Programme ou pastille de semaine en Séance), sinon calculée.
 function setWeek(n){ const auto=weekFor(todayISO()); S.weekOverride=(n&&n!==auto)?n:null; save(); render(); toast(S.weekOverride?`Semaine ${n} activée`:`Semaine automatique : S${auto}`,'ok'); }
 function showWeekPicker(){ const auto=weekFor(todayISO()), wk=curWeek(); showSheet(`<h3>Semaine du cycle</h3><p class="small muted">La semaine détermine les séries, les répétitions et les consignes de RIR de chaque séance. Calcul automatique : S${auto}${S.weekOverride?' · actuellement fixée à S'+wk:''}.</p><div class="wkpick">${WEEKS.map((w,i)=>`<button class="row" data-pick="${i+1}" aria-pressed="${i+1===wk}"><span><b>S${i+1}</b> · ${esc(String(w.label||'').replace(/^S\d+\s*/,''))}<br><small class="muted">${esc(w.rirNote||'')}</small></span>${i+1===wk?'<i class="chk"></i>':''}</button>`).join('')}</div>${S.weekOverride?`<button class="btn" id="wkAutoBtn">Revenir au calcul automatique (S${auto})</button>`:''}`); document.querySelectorAll('[data-pick]').forEach(b=>b.onclick=()=>{ hideSheet(); setWeek(+b.dataset.pick); }); const a=$('#wkAutoBtn'); if(a) a.onclick=()=>{ hideSheet(); setWeek(null); }; }

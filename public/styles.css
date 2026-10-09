@@ -986,3 +986,22 @@ body.chatmode #jobbar{bottom:calc(84px + env(safe-area-inset-bottom))}
 .badge.lock{opacity:.9}
 .badge .bring{position:absolute;inset:-6%;width:112%;height:112%}
 .bzoom .badge{animation:bflip 1.6s cubic-bezier(.2,.8,.2,1) both}
+/* cérémonie de déblocage + inclinaison 3D */
+.unlock{position:fixed;inset:0;z-index:80;background:radial-gradient(circle at 50% 38%,#2a2f38 0,#0F1216 70%);color:#fff;display:flex;align-items:center;justify-content:center;opacity:0;transition:opacity .25s}
+.unlock.on{opacity:1}
+.unlock .confetti{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+.uwrap{position:relative;text-align:center;padding:24px;max-width:420px;width:100%}
+.uwrap .eyebrow{color:rgba(255,255,255,.6)}
+.uwrap h2{font-family:var(--disp);font-size:30px;font-weight:800;letter-spacing:-.02em;margin:18px 0 6px}
+.uwrap .uhow{color:rgba(255,255,255,.75);font-size:16px;margin:0 0 22px}
+.uwrap .row2{justify-content:center}
+.uwrap .btn{color:#fff;background:rgba(255,255,255,.14)}
+.uwrap .btn.fill{background:var(--accent);color:#fff}
+.ubadge{display:inline-block;perspective:700px}
+.unlock.on .ubadge .badge{animation:udrop 1.4s cubic-bezier(.2,.8,.2,1) both}
+@keyframes udrop{0%{transform:translateY(-60vh) rotateY(-540deg) scale(.5);opacity:0}55%{transform:translateY(12px) rotateY(10deg) scale(1.06);opacity:1}75%{transform:translateY(-6px) rotateY(-4deg) scale(1)}100%{transform:none}}
+.tilt{--gx:50%;--gy:50%;position:relative;touch-action:none}
+.tilt .badge{transition:transform .08s linear;will-change:transform}
+.tilt .badge::after{content:"";position:absolute;inset:0;border-radius:50%;background:radial-gradient(circle at var(--gx) var(--gy),rgba(255,255,255,.35),rgba(255,255,255,0) 45%);pointer-events:none;mix-blend-mode:screen}
+body.unlocking{overflow:hidden}
+.bzoom .bspin{perspective:700px}
