@@ -18,7 +18,8 @@ function humanErr(e){ const c=(e&&e.code)||''; const m=(e&&e.message)||String(e|
   if(/network|Failed to fetch|internet/i.test(m)||!navigator.onLine) return 'Pas de réseau. Le coach a besoin d\'une connexion ; tes séries sont enregistrées et partiront toutes seules.';
   if(/invalid-argument/.test(c)) return 'Le serveur n\'a pas compris la demande (version de l\'app en retard ?). Recharge l\'application depuis Réglages.';
   return m; }
-const APP_VERSION='3.21.1';
+const APP_VERSION='3.21.2';
+const ADMIN_RE=/^(ganeme\.asloune@nexisafe\.com|gads@live\.fr)$/i;
 let PROGRAM={sessions:[]};
 let WEEKS = [
   {n:1,label:'S1 calibrage',from:'2026-09-07',to:'2026-09-13',rirNote:'RIR 3 · établir les références, tout noter'},
@@ -186,7 +187,7 @@ function onHealthResult(m){
 // Appelé à la fin d'une séance : durée réelle de la première série validée à la clôture.
 function healthExportSession(log){ if(!NATIVE||!S.health||!log) return; const ts=Object.values(log.sets||{}).flat().filter(x=>x&&x.done&&x.t).map(x=>x.t); if(!ts.length) return; const start=Math.min(...ts)-5*60000, end=Math.max(Date.now(),Math.max(...ts)+60000); const ses=PROGRAM.sessions.find(x=>x.id===log.session); const mins=(end-start)/60000; const kcal=Math.round(mins*((PROFILE&&PROFILE.weight)||70)*0.09); native({type:'health',action:'writeWorkout',workout:{start,end,kcal,title:'Rituel · '+(ses?ses.name:log.session)}}); }
 // Forfait : affiché dans Réglages, et proposé quand une limite gratuite est atteinte. Le paiement arrive avec l'étape suivante (App Store / Play).
-function planInfo(){ const bd=BILLING.doc||{}; const docPrem=bd.plan==='premium'&&(!bd.expiresAt||bd.expiresAt>Date.now()); const isAdmin=!!(USER&&/^ganeme\.asloune@nexisafe\.com$/i.test(USER.email||'')); const plan=(BILLING.premium||docPrem||isAdmin)?'premium':((USAGE&&USAGE.plan)||'free'); const lim=(USAGE&&USAGE.limits)||{program:2,analyse:8,chat:30,substitute:2,demo:4}; return {plan,lim}; }
+function planInfo(){ const bd=BILLING.doc||{}; const docPrem=bd.plan==='premium'&&(!bd.expiresAt||bd.expiresAt>Date.now()); const isAdmin=!!(USER&&ADMIN_RE.test(USER.email||'')); const plan=(BILLING.premium||docPrem||isAdmin)?'premium':((USAGE&&USAGE.plan)||'free'); const lim=(USAGE&&USAGE.limits)||{program:2,analyse:8,chat:30,substitute:2,demo:4}; return {plan,lim}; }
 function showPaywall(what,limit){
   const {lim}=planInfo();
   showSheet(`<div class="chead sm">${coachAvatar('attention')}<h3>Kai a atteint sa limite gratuite</h3></div>
@@ -267,7 +268,7 @@ function renderReglages(){
   <div class="grp"><div class="grp-t">Compte</div>
     ${USER?`<div class="row"><span>E-mail</span><span class="muted">${esc(USER.email||'')}</span></div>${USER.providerData&&USER.providerData.some(p=>p.providerId==='password')&&!USER.emailVerified?`<button class="row" id="verifBtn"><span>E-mail non vérifié</span><span class="muted">renvoyer le lien</span><i></i></button>`:''}`:''}
     <button class="row" id="planRow"><span>Abonnement</span><span class="muted">${pi.plan==='premium'?'Premium':`Gratuit · ${USAGE?(USAGE.analyse||0):0}/${pi.lim.analyse} analyses`}</span><i></i></button>
-    ${USER&&/^ganeme\.asloune@nexisafe\.com$/i.test(USER.email||'')?`<button class="row" id="adminBtn"><span>Administration</span><span class="muted">comptes, erreurs, coûts</span><i></i></button>`:''}
+    ${USER&&ADMIN_RE.test(USER.email||'')?`<button class="row" id="adminBtn"><span>Administration</span><span class="muted">comptes, erreurs, coûts</span><i></i></button>`:''}
     <button class="row" id="expBtn"><span>Exporter mon journal</span><i></i></button>
     <label class="row" for="impFile"><span>Importer un journal</span><i></i></label><input id="impFile" type="file" accept="application/json" hidden>
     <a class="row" href="confidentialite.html" target="_blank" rel="noopener"><span>Confidentialité</span><i></i></a>

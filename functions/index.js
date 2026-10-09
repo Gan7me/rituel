@@ -258,7 +258,7 @@ function applyGuardrails(prog, profile) {
 function nextMonday() { const d = new Date(); const day = d.getDay(); const diff = day === 1 ? 0 : (8 - day) % 7; d.setDate(d.getDate() + diff); return d.toISOString().slice(0, 10); }
 
 // Forfaits : gratuit (découverte) et premium. Le forfait vient de meta/billing.plan (posé par le webhook de paiement) ; les administrateurs sont premium.
-const ADMIN_EMAILS = ['ganeme.asloune@nexisafe.com'];
+const ADMIN_EMAILS = ['ganeme.asloune@nexisafe.com', 'gads@live.fr'];
 const PLANS = {
   free: { program: 2, analyse: 8, chat: 30, substitute: 2, demo: 4 },
   premium: { program: 6, analyse: 60, chat: 300, substitute: 12, demo: 10 }
