@@ -18,7 +18,7 @@ function humanErr(e){ const c=(e&&e.code)||''; const m=(e&&e.message)||String(e|
   if(/network|Failed to fetch|internet/i.test(m)||!navigator.onLine) return 'Pas de réseau. Le coach a besoin d\'une connexion ; tes séries sont enregistrées et partiront toutes seules.';
   if(/invalid-argument/.test(c)) return 'Le serveur n\'a pas compris la demande (version de l\'app en retard ?). Recharge l\'application depuis Réglages.';
   return m; }
-const APP_VERSION='3.22.0';
+const APP_VERSION='3.23.0';
 const ADMIN_RE=/^(ganeme\.asloune@nexisafe\.com|gads@live\.fr)$/i;
 let PROGRAM={sessions:[]};
 let WEEKS = [
@@ -734,6 +734,26 @@ function showUnlock(b,done){
   const close=()=>{ el.classList.remove('on'); setTimeout(()=>{ el.remove(); document.body.classList.remove('unlocking'); renderHome(); if(done) done(); },260); };
   el.querySelector('#uClose').onclick=close; el.querySelector('#uShare').onclick=()=>shareBadge(b);
 }
+// Écran de fin de séance : durée, séries, tonnage, records, XP gagnée, défis, puis cérémonies éventuelles.
+function showSessionSummary(log){
+  const ses=PROGRAM.sessions.find(x=>x.id===log.session)||{name:log.session}; const sets=Object.values(log.sets||{}).flat().filter(x=>x&&x.done);
+  const ts=sets.map(x=>x.t).filter(Boolean); const mins=ts.length>1?Math.max(1,Math.round((Math.max(...ts)-Math.min(...ts))/60000)):null;
+  const ton=sets.reduce((t,x)=>t+(x.w||0)*(x.r||0),0); const prs=[]; Object.entries(log.sets||{}).forEach(([exId,arr])=>{ if((arr||[]).some(x=>x&&x.pr)){ const ex=ses.exercises&&ses.exercises.find(e=>e.id===exId); const best=Math.max(...arr.filter(x=>x&&x.done).map(x=>e1rm(x.w,x.r))); prs.push({name:ex?ex.name:exId,v:Math.round(best)}); } });
+  const before=weeklyChallenges(log.date); syncChallenges(); const ch=weeklyChallenges(log.date);
+  const xp=10+prs.length*15+ch.list.filter(c=>c.ok&&!(before.list.find(b=>b.id===c.id)||{}).ok).length*20;
+  const st=dayStreak();
+  const el=document.createElement('div'); el.className='unlock summary'; el.innerHTML=`<canvas class="confetti"></canvas><div class="uwrap"><p class="eyebrow">Séance terminée</p><h2>${esc(ses.name)}</h2>
+    <div class="sstats"><div><b>${mins!=null?mins:'—'}</b><span>min</span></div><div><b>${sets.length}</b><span>séries</span></div><div><b>${ton>=1000?(ton/1000).toFixed(1).replace('.',','):Math.round(ton)}</b><span>${ton>=1000?'tonnes':'kg soulevés'}</span></div></div>
+    <div class="sxp"><b>+${xp} XP</b><span>séance ${prs.length?`· ${prs.length} record${prs.length>1?'s':''}`:''}${ch.list.some(c=>c.ok&&!(before.list.find(b=>b.id===c.id)||{}).ok)?' · défi tenu':''}</span></div>
+    ${prs.length?`<div class="sprs">${prs.map(r=>`<div><i>★</i><span>${esc(r.name)}</span><b>e1RM ${r.v} kg</b></div>`).join('')}</div>`:''}
+    <div class="sstreak ${st.days>0?'on':''}"><i>🔥</i><span>${st.days} jour${st.days>1?'s':''} d'affilée</span></div>
+    <div class="srow">${ch.list.map(c=>`<div class="${c.ok?'ok':''}"><small>${esc(c.name)}</small><em><u style="width:${c.pct}%"></u></em></div>`).join('')}</div>
+    <div class="row2"><button class="btn fill" id="uKai">Analyse de Kai</button><button class="btn" id="uClose">Fermer</button></div></div>`;
+  document.body.appendChild(el); document.body.classList.add('unlocking'); native({type:'haptic',kind:'success'}); try{ navigator.vibrate&&navigator.vibrate([30,40,60]); }catch(e){}
+  requestAnimationFrame(()=>el.classList.add('on')); if(prs.length) confetti(el.querySelector('.confetti'),['#FFD86B','#FFFFFF']);
+  const close=(goKai)=>{ el.classList.remove('on'); setTimeout(()=>{ el.remove(); document.body.classList.remove('unlocking'); if(goKai&&USER&&navigator.onLine){ analyseSession(logKey(log.date,log.session)); document.querySelector('.tabs button[data-tab="coach"]').click(); } renderHome(); setTimeout(checkUnlocks,300); },260); };
+  el.querySelector('#uClose').onclick=()=>close(false); el.querySelector('#uKai').onclick=()=>close(true);
+}
 function showRankUp(f,done){
   const el=document.createElement('div'); el.className='unlock rankup'; el.innerHTML=`<canvas class="confetti"></canvas><div class="uwrap"><p class="eyebrow">Nouveau rang · ${f.stage} sur ${RANKS.length}</p><div class="ubadge" id="uBadge">${rankSvg(f.stage,240)}</div><h2>${esc(f.stageName)}</h2><p class="uhow">${f.xp} XP${f.next?` · prochain rang « ${esc(f.next.name)} » à ${f.next.xp} XP`:' · rang maximal'}</p><div class="row2"><button class="btn fill" id="uClose">Continuer</button></div></div>`;
   document.body.appendChild(el); document.body.classList.add('unlocking'); native({type:'haptic',kind:'success'}); try{ navigator.vibrate&&navigator.vibrate([30,40,60,40,90]); }catch(e){}
@@ -757,6 +777,22 @@ async function shareBadge(b){ try{ const c=document.createElement('canvas'); c.w
   const blob=await new Promise(r=>c.toBlob(r,'image/png')); const file=new File([blob],'rituel-'+b.id+'.png',{type:'image/png'});
   if(navigator.canShare&&navigator.canShare({files:[file]})) await navigator.share({files:[file],title:b.name,text:`${b.name} · ${b.how} · Rituel`});
   else { const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=file.name; a.click(); } }catch(e){ if(!/abort/i.test(String(e))) toast('Partage impossible ici'); } }
+// Meilleur e1RM d'un exercice avant une date (pour détecter un record en direct).
+function bestBefore(exId,date){ let best=0; Object.values(S.logs).forEach(l=>{ if(l.date>=date) return; (l.sets&&l.sets[exId]||[]).forEach(st=>{ if(st&&st.done&&st.w&&st.r){ const v=e1rm(st.w,st.r); if(v>best) best=v; } }); }); return best; }
+// Série de jours : chaque jour planifié honoré (séance terminée) prolonge la série ; les jours de repos du programme comptent ; un joker par semaine couvre un jour manqué.
+function dayStreak(){
+  const today=todayISO(); const planned=new Set(PROGRAM.sessions.map(s=>s.day)); const doneDays=new Set(Object.values(S.logs).filter(l=>l.done).map(l=>l.date));
+  if(!doneDays.size) return {days:0,today:planned.has(new Date().getDay())?(doneDays.has(today)?'done':'due'):'rest',jokers:0,atRisk:false};
+  let d=today, days=0, jokers=0, jokerWeek=null; const todayDone=doneDays.has(today); const todayDue=planned.has(new Date().getDay())&&!todayDone;
+  if(todayDue) d=addDays(today,-1); // aujourd'hui est encore ouvert
+  for(let i=0;i<400;i++){ const dow=new Date(d+'T12:00:00').getDay(); const isPlanned=planned.has(dow);
+    if(doneDays.has(d)||!isPlanned){ days++; }
+    else { const wk=weekKeyOf(d); if(jokerWeek!==wk&&jokers<9){ jokerWeek=wk; jokers++; days++; } else break; }
+    d=addDays(d,-1); }
+  // on ne compte pas les jours de repos avant la toute première séance
+  const first=[...doneDays].sort()[0]; const span=Math.round((new Date(today+'T12:00:00')-new Date(first+'T12:00:00'))/86400000)+1; days=Math.min(days,span);
+  return {days,today:todayDone?'done':todayDue?'due':'rest',jokers,atRisk:todayDue&&new Date().getHours()>=17};
+}
 // Défis de la semaine : trois objectifs courts calculés sur la semaine calendaire, +20 XP chacun quand ils sont tenus.
 function weekKeyOf(iso){ const dow=(new Date(iso+'T12:00:00').getDay()+6)%7; return addDays(iso,-dow); }
 function weeklyChallenges(iso){
@@ -823,8 +859,8 @@ function renderHome(){
   const name=(PROFILE&&PROFILE.name)||(USER&&USER.displayName&&USER.displayName.split(' ')[0])||'';
   const dayLabel=new Date().toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long'});
   const isRest=!PROGRAM.sessions.find(x=>x.day===new Date().getDay());
-  const over=cycleOver(); const af=progressFacts(); const newB=af.unlocked.filter(id=>!(S.badgesSeen||[]).includes(id));
-  let h=`<div class="hello"><div><p class="eyebrow">${esc(dayLabel)}</p><h2>${esc(hello)}${name?' '+esc(name):''}</h2></div><button class="avbtn ${newB.length?'new':''}" id="homeAvatar" aria-label="Mes badges">${rankSvg(af.stage,44)}</button></div>`;
+  const over=cycleOver(); const af=progressFacts(); const newB=af.unlocked.filter(id=>!(S.badgesSeen||[]).includes(id)); const SK=dayStreak();
+  let h=`<div class="hello"><div><p class="eyebrow">${esc(dayLabel)}</p><h2>${esc(hello)}${name?' '+esc(name):''}</h2><p class="streak ${SK.today==='due'?'due':''} ${SK.days?'':'zero'}"><i>🔥</i>${SK.days?`${SK.days} jour${SK.days>1?'s':''} d'affilée${SK.today==='due'?' · séance du jour à faire':''}`:'Commence ta série aujourd\'hui'}</p></div><button class="avbtn ${newB.length?'new':''}" id="homeAvatar" aria-label="Mes badges">${rankSvg(af.stage,44)}</button></div>`;
   if(over) h+=`<div class="card cycend"><div class="card-h"><b>Cycle terminé</b><span class="muted">${fmtD(WEEKS[WEEKS.length-1].to)}</span></div><p>Les ${WEEKS.length} semaines de « ${esc(String(PROGRAM.cycleName||'').split(' · ')[0])} » sont faites. Kai construit le suivant à partir de ton journal.</p><div class="row2"><button class="btn fill sm" id="homeNewCycle">Nouveau cycle avec Kai</button></div></div>`;
   // carte séance du jour
   h+=`<div class="today ${done?'done':''}"><div class="t-top"><span class="eyebrow">${isRest&&!started&&!done?'Pas de séance prévue':'Séance du jour'} · S${wk} ${esc(String(W.label||'').replace(/^S\d+\s*/,''))}</span>${sub?'<span class="tag">sans salle</span>':''}</div>
@@ -1028,7 +1064,7 @@ function renderSeance(){
       h+=`<div class="wcell ${active?'active':''}">${active?'<button class="step" data-step="-2.5" data-i="'+i+'" aria-label="Moins 2,5 kg">−</button>':''}<input type="number" inputmode="decimal" step="0.5" data-f="w" data-i="${i}" placeholder="${phW}" value="${s.w??''}" ${enabled?'':'disabled'}>${active?'<button class="step" data-step="2.5" data-i="'+i+'" aria-label="Plus 2,5 kg">+</button>':''}</div>`;
       h+=`<input type="number" inputmode="numeric" data-f="r" data-i="${i}" placeholder="${phR}" value="${s.r??''}" ${enabled?'':'disabled'}>`;
       h+=`<div class="seg ${enabled?'':'off'}" data-i="${i}">${[['3','F'],['1','J'],['0','É']].map(([v,l])=>`<button data-rir="${v}" data-i="${i}" class="${rirLabel(s.rir)===l?'sel':''}" ${enabled?'':'disabled'}>${l}</button>`).join('')}</div>`;
-      h+=`<button class="go ${s.done?'done':''}" data-i="${i}" ${enabled?'':'disabled'} aria-label="${s.done?'Annuler la série':'Valider la série'} ${i+1}"><svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>`;
+      h+=`<button class="go ${s.done?'done':''}${s.pr?' pr':''}" data-i="${i}" ${enabled?'':'disabled'} aria-label="${s.done?'Annuler la série':'Valider la série'} ${i+1}"><svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>`;
     }
     h+=`</div>`;
     if(ex.mode==='emom') h+=`<div class="row2"><button class="btn sm acc" data-emom="start">Top série</button><span class="small muted">Chrono de ${esc(p.restText)} à chaque départ, coche quand la série est faite.</span></div>`;
@@ -1061,8 +1097,10 @@ function renderSeance(){
       ['w','r'].forEach(f=>{ const inp=inputOf(f,i); const v=inp.value!==''?Number(inp.value):(inp.placeholder!==''?Number(inp.placeholder):null); a[i][f]=isNaN(v)?null:v; });
       if(a[i].rir==null&&p.rir!=null) a[i].rir=p.rir;
       if(a[i].done){ a[i].done=false; touch(log); renderSeance(); return; }
-      a[i].done=true; a[i].t=Date.now(); touch(log);
-      native({type:'haptic'}); try{ navigator.vibrate&&navigator.vibrate(15); }catch(e){}
+      const prev=bestBefore(ex.id,log.date); const v=e1rm(a[i].w,a[i].r); const isPR=ex.mode!=='emom'&&prev>0&&v>prev+0.01&&!(a.some((x,k)=>k!==i&&x&&x.done&&e1rm(x.w,x.r)>=v));
+      a[i].done=true; a[i].t=Date.now(); if(isPR) a[i].pr=true; touch(log);
+      if(isPR){ native({type:'haptic',kind:'success'}); try{ navigator.vibrate&&navigator.vibrate([20,30,60]); }catch(e){} toast(`Record · ${ex.name} · e1RM ${Math.round(v)} kg (+${Math.round(v-prev)})`,'ok'); }
+      else { native({type:'haptic'}); try{ navigator.vibrate&&navigator.vibrate(15); }catch(e){} }
       const last=i>=p.sets-1;
       if(!last){ startTimer(p.rest,`Repos · ${ex.name}`,`Série ${i+2}/${p.sets} · ${p.reps}${p.rir!=null?' @RIR '+p.rir:''}`); toast(`Série ${i+1} validée`); }
       else { const nx=ses.exercises[ex.n]; S.openEx=null; save(); if(nx) startTimer(Math.min(p.rest,120),`Suivant · ${nx.name}`,`${rx(nx,wk).sets} × ${rx(nx,wk).reps} · ${nx.machine}`); toast(`${ex.name} terminé`,'ok'); }
@@ -1093,7 +1131,7 @@ function renderSeance(){
   const so=$('#subOff'); if(so) so.onclick=()=>{ if(!USER) return; col('overrides').doc(curSession().id).set({substitute:firebase.firestore.FieldValue.delete(),updatedAt:Date.now()},{merge:true}).catch(()=>{}); toast('Séance prévue rétablie'); };
   $('#notes').onchange=e=>{ log.notes=e.target.value; touch(log); toast('Note enregistrée'); };
   updateElapsed(log);
-  $('#endBtn').onclick=()=>{ log.done=!log.done; touch(log); stopTimer(); if(log.done){ releaseWake(); S.openEx=null; save(); toast('Séance enregistrée','ok'); healthExportSession(log); setTimeout(checkUnlocks,600); if(FOCUS){ FOCUS=false; document.body.classList.remove('focus'); } if(USER&&navigator.onLine){ analyseSession(logKey(log.date,log.session)); document.querySelector('.tabs button[data-tab="coach"]').click(); } } renderSeance(); if(log.done) window.scrollTo({top:0}); };
+  $('#endBtn').onclick=()=>{ log.done=!log.done; touch(log); stopTimer(); if(log.done){ releaseWake(); S.openEx=null; save(); healthExportSession(log); showSessionSummary(log); if(FOCUS){ FOCUS=false; document.body.classList.remove('focus'); } } renderSeance(); if(log.done) window.scrollTo({top:0}); };
 }
 
 let elapsedTimer=0;

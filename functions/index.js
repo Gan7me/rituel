@@ -551,6 +551,16 @@ exports.dailyNudge = onSchedule({ schedule: '0 18 * * *', timeZone: 'Europe/Pari
     try {
       const base = db.collection('users').doc(uid);
       const last = await base.collection('logs').where('date', '>=', cutoff).get();
+      // Série en jeu : jour planifié, séance non faite à 18 h, série d'au moins 2 jours → relance ciblée (une par jour).
+      const today = parisISO(); const pg = await base.collection('meta').doc('program').get();
+      const days = new Set(((pg.exists && pg.data().sessions) || []).map(x => x.day));
+      const dow = new Date(today + 'T12:00:00Z').getUTCDay();
+      if (days.has(dow) && !last.docs.some(d => d.data().date === today && isDone(d.data()))) {
+        const hist = await base.collection('logs').where('date', '>=', isoDaysAgo(60)).get(); const done = new Set(hist.docs.filter(d => isDone(d.data())).map(d => d.data().date));
+        let streak = 0, d = new Date(today + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() - 1);
+        for (let i = 0; i < 60; i++) { const iso = d.toISOString().slice(0, 10); if (done.has(iso) || !days.has(d.getUTCDay())) streak++; else break; d.setUTCDate(d.getUTCDate() - 1); }
+        if (streak >= 2) { await sendPush(uid, `Ta série de ${streak} jours est en jeu`, 'La séance du jour n\'est pas encore faite. Même courte, elle compte.', { tab: 'seance' }); continue; }
+      }
       if (last.docs.some(d => d.data().done || Object.keys(d.data().sets || {}).length)) continue;
       const recent = await base.collection('coach').where('createdAt', '>=', Date.now() - 3 * 86400000).get();
       if (recent.docs.some(d => d.data().type === 'nudge')) continue;

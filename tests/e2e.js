@@ -130,8 +130,10 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   await p.click('.ex.cur [data-lex="ressenti"]'); await sleep(200);
   assert((await p.$eval('#sheet .sheet-body', e => e.textContent)).includes('facile'), 'lexique du ressenti');
   await p.click('#sheet .sheet-bg'); await sleep(200);
-  await p.evaluate(() => document.querySelector('#endBtn').click()); await sleep(300);
-  assert(await p.evaluate(() => (window.__calls || []).some(c => c.p && c.p.mode === 'analyse')), 'analyse lancée à la fin de séance');
+  await p.evaluate(() => document.querySelector('#endBtn').click()); await sleep(400);
+  assert(await p.evaluate(() => !!document.querySelector('.unlock.summary.on') && document.querySelectorAll('.sstats div').length === 3 && /\+\d+ XP/.test(document.querySelector('.sxp b').textContent)), 'écran de fin de séance : chiffres et XP');
+  await p.evaluate(() => document.querySelector('#uKai').click()); await sleep(600);
+  assert(await p.evaluate(() => !document.querySelector('.unlock.summary') && (window.__calls || []).some(c => c.p && c.p.mode === 'analyse')), 'analyse lancée depuis l\'écran de fin');
   assert(await p.evaluate(() => document.querySelector('.tabs button[data-tab="coach"]').getAttribute('aria-selected') === 'true'), 'bascule sur Coach');
 
   console.log('Coach');

@@ -1066,3 +1066,26 @@ body.unlocking{overflow:hidden}
 .xprules{grid-template-columns:repeat(5,1fr);gap:5px}
 .xprules b{font-size:17px}.xprules span{font-size:10.5px}
 .unlock.rankup{background:radial-gradient(circle at 50% 38%,#3b3418 0,#0F1216 70%)}
+/* série, fin de séance */
+.streak{margin:6px 0 0;font-size:13.5px;font-weight:600;color:var(--ink2);display:flex;align-items:center;gap:5px}
+.streak i{font-style:normal}
+.streak.due{color:var(--accent-ink)}
+.streak.zero{color:var(--muted);font-weight:500}
+.unlock.summary{background:radial-gradient(circle at 50% 25%,#243027 0,#0F1216 70%)}
+.sstats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:14px 0}
+.sstats div{background:rgba(255,255,255,.08);border-radius:14px;padding:12px 6px}
+.sstats b{display:block;font-family:var(--disp);font-size:26px;font-weight:800;line-height:1.1}
+.sstats span{display:block;font-size:12px;color:rgba(255,255,255,.65);margin-top:2px}
+.sxp{margin:0 0 12px}.sxp b{display:block;font-family:var(--disp);font-size:40px;font-weight:800;color:#FFD86B;letter-spacing:-.02em;line-height:1}
+.sxp span{font-size:13.5px;color:rgba(255,255,255,.7)}
+.sprs{display:grid;gap:6px;margin:0 0 12px}
+.sprs div{display:flex;align-items:center;gap:8px;background:rgba(255,216,107,.12);border-radius:12px;padding:8px 12px;font-size:14px;text-align:left}
+.sprs i{font-style:normal;color:#FFD86B}.sprs span{flex:1 1 auto}.sprs b{font-size:13px;color:#FFD86B}
+.sstreak{display:inline-flex;align-items:center;gap:6px;font-weight:600;font-size:14px;margin:0 0 12px;color:rgba(255,255,255,.6)}
+.sstreak.on{color:#fff}.sstreak i{font-style:normal}
+.srow{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin:0 0 18px}
+.srow div small{display:block;font-size:11px;color:rgba(255,255,255,.6);margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.srow em{display:block;height:5px;border-radius:999px;background:rgba(255,255,255,.12);overflow:hidden}
+.srow u{display:block;height:100%;background:var(--accent);text-decoration:none}
+.srow div.ok u{background:#3DD68C}
+.sets .go.pr{background:var(--accent);color:#fff;border-color:var(--accent)}
