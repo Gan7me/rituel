@@ -976,3 +976,8 @@ body.chatmode #jobbar{bottom:calc(84px + env(safe-area-inset-bottom))}
 .bzoom span{font-size:15px;color:var(--ink2);margin-top:4px}
 .bzoom small{font-size:13px;color:var(--muted);margin-top:6px}
 .badge{filter:none}
+.bspin{perspective:600px}
+.bspin .badge{animation:bflip 1.6s cubic-bezier(.2,.8,.2,1) both;transform-style:preserve-3d}
+@keyframes bflip{0%{transform:rotateY(-160deg) scale(.6);opacity:0}60%{transform:rotateY(14deg) scale(1.04);opacity:1}100%{transform:none}}
+.bcell.lock{background:color-mix(in srgb,var(--surface2) 70%,#1E2228 8%)}
+.bcell.lock small{font-variant-numeric:tabular-nums}

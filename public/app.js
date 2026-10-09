@@ -18,7 +18,7 @@ function humanErr(e){ const c=(e&&e.code)||''; const m=(e&&e.message)||String(e|
   if(/network|Failed to fetch|internet/i.test(m)||!navigator.onLine) return 'Pas de réseau. Le coach a besoin d\'une connexion ; tes séries sont enregistrées et partiront toutes seules.';
   if(/invalid-argument/.test(c)) return 'Le serveur n\'a pas compris la demande (version de l\'app en retard ?). Recharge l\'application depuis Réglages.';
   return m; }
-const APP_VERSION='3.19.3';
+const APP_VERSION='3.19.4';
 let PROGRAM={sessions:[]};
 let WEEKS = [
   {n:1,label:'S1 calibrage',from:'2026-09-07',to:'2026-09-13',rirNote:'RIR 3 · établir les références, tout noter'},
@@ -672,23 +672,23 @@ document.addEventListener('visibilitychange',()=>{ if(!document.hidden&&$('#time
 const RANKS=[{xp:0,name:'Recrue'},{xp:60,name:'Solide'},{xp:180,name:'Costaud'},{xp:400,name:'Athlète'},{xp:800,name:'Élite'}];
 // Palette par famille : séances = rouge, records = or, tractions = bleu, régularité = vert, cycle = violet.
 const BADGES=[
-  {id:'s1',name:'Première séance',how:'1 séance terminée',fam:'ses',icon:'bolt',test:f=>f.sessions>=1},
-  {id:'s10',name:'Dix séances',how:'10 séances terminées',fam:'ses',icon:'bolt',tier:2,test:f=>f.sessions>=10},
-  {id:'s25',name:'Vingt-cinq',how:'25 séances terminées',fam:'ses',icon:'bolt',tier:3,test:f=>f.sessions>=25},
-  {id:'s50',name:'Cinquante',how:'50 séances terminées',fam:'ses',icon:'bolt',tier:4,test:f=>f.sessions>=50},
-  {id:'s100',name:'Centurion',how:'100 séances terminées',fam:'ses',icon:'bolt',tier:5,test:f=>f.sessions>=100},
-  {id:'pr1',name:'Premier record',how:'1 record personnel',fam:'pr',icon:'trophy',test:f=>f.prs>=1},
-  {id:'pr5',name:'Cinq records',how:'5 records personnels',fam:'pr',icon:'trophy',tier:3,test:f=>f.prs>=5},
-  {id:'pr15',name:'Collectionneur',how:'15 records personnels',fam:'pr',icon:'trophy',tier:5,test:f=>f.prs>=15},
-  {id:'t1',name:'Premier test',how:'1 test de tractions',fam:'pull',icon:'bar',test:f=>f.tests>=1},
-  {id:'t45',name:'45 tractions',how:'45 tractions d\'affilée',fam:'pull',icon:'bar',tier:2,test:f=>f.pull>=45},
-  {id:'t55',name:'55 tractions',how:'55 tractions d\'affilée',fam:'pull',icon:'bar',tier:3,test:f=>f.pull>=55},
-  {id:'t70',name:'70 tractions',how:'70 tractions d\'affilée',fam:'pull',icon:'bar',tier:5,test:f=>f.pull>=70},
-  {id:'w1',name:'Semaine pleine',how:'1 semaine complète',fam:'reg',icon:'flame',test:f=>f.fullWeeks>=1},
-  {id:'w4',name:'Un mois sans faille',how:'4 semaines complètes',fam:'reg',icon:'flame',tier:3,test:f=>f.fullWeeks>=4},
-  {id:'w12',name:'Trimestre de fer',how:'12 semaines complètes',fam:'reg',icon:'flame',tier:5,test:f=>f.fullWeeks>=12},
-  {id:'c1',name:'Cycle bouclé',how:'1 mésocycle terminé',fam:'cyc',icon:'star',tier:2,test:f=>f.cycles>=1},
-  {id:'ton',name:'Dix tonnes',how:'10 t soulevées en une semaine',fam:'cyc',icon:'star',tier:4,test:f=>f.maxTon>=10000}
+  {id:'s1',name:'Première séance',how:'1 séance terminée',fam:'ses',icon:'bolt',test:f=>f.sessions>=1,prog:f=>[f.sessions,1]},
+  {id:'s10',name:'Dix séances',how:'10 séances terminées',fam:'ses',icon:'bolt',tier:2,test:f=>f.sessions>=10,prog:f=>[f.sessions,10]},
+  {id:'s25',name:'Vingt-cinq',how:'25 séances terminées',fam:'ses',icon:'bolt',tier:3,test:f=>f.sessions>=25,prog:f=>[f.sessions,25]},
+  {id:'s50',name:'Cinquante',how:'50 séances terminées',fam:'ses',icon:'bolt',tier:4,test:f=>f.sessions>=50,prog:f=>[f.sessions,50]},
+  {id:'s100',name:'Centurion',how:'100 séances terminées',fam:'ses',icon:'bolt',tier:5,test:f=>f.sessions>=100,prog:f=>[f.sessions,100]},
+  {id:'pr1',name:'Premier record',how:'1 record personnel',fam:'pr',icon:'trophy',test:f=>f.prs>=1,prog:f=>[f.prs,1]},
+  {id:'pr5',name:'Cinq records',how:'5 records personnels',fam:'pr',icon:'trophy',tier:3,test:f=>f.prs>=5,prog:f=>[f.prs,5]},
+  {id:'pr15',name:'Collectionneur',how:'15 records personnels',fam:'pr',icon:'trophy',tier:5,test:f=>f.prs>=15,prog:f=>[f.prs,15]},
+  {id:'t1',name:'Premier test',how:'1 test de tractions',fam:'pull',icon:'bar',test:f=>f.tests>=1,prog:f=>[f.tests,1]},
+  {id:'t45',name:'45 tractions',how:'45 tractions d\'affilée',fam:'pull',icon:'bar',tier:2,test:f=>f.pull>=45,prog:f=>[f.pull,45]},
+  {id:'t55',name:'55 tractions',how:'55 tractions d\'affilée',fam:'pull',icon:'bar',tier:3,test:f=>f.pull>=55,prog:f=>[f.pull,55]},
+  {id:'t70',name:'70 tractions',how:'70 tractions d\'affilée',fam:'pull',icon:'bar',tier:5,test:f=>f.pull>=70,prog:f=>[f.pull,70]},
+  {id:'w1',name:'Semaine pleine',how:'1 semaine complète',fam:'reg',icon:'flame',test:f=>f.fullWeeks>=1,prog:f=>[f.fullWeeks,1]},
+  {id:'w4',name:'Un mois sans faille',how:'4 semaines complètes',fam:'reg',icon:'flame',tier:3,test:f=>f.fullWeeks>=4,prog:f=>[f.fullWeeks,4]},
+  {id:'w12',name:'Trimestre de fer',how:'12 semaines complètes',fam:'reg',icon:'flame',tier:5,test:f=>f.fullWeeks>=12,prog:f=>[f.fullWeeks,12]},
+  {id:'c1',name:'Cycle bouclé',how:'1 mésocycle terminé',fam:'cyc',icon:'star',tier:2,test:f=>f.cycles>=1,prog:f=>[f.cycles,1]},
+  {id:'ton',name:'Dix tonnes',how:'10 t soulevées en une semaine',fam:'cyc',icon:'star',tier:4,test:f=>f.maxTon>=10000,prog:f=>[Math.round(f.maxTon/100)/10,10]}
 ];
 const BADGE_FAM={ses:['#FF7A5C','#C8321F'],pr:['#FFD86B','#C98A00'],pull:['#6FB4FF','#1E55C8'],reg:['#5FE0A0','#167A4A'],cyc:['#C08BFF','#6A2DD1']};
 const BADGE_ICON={
@@ -699,39 +699,58 @@ const BADGE_ICON={
   star:'M24 8 L28.5 18.5 L40 19.5 L31 27 L34 38 L24 32 L14 38 L17 27 L8 19.5 L19.5 18.5 Z'
 };
 let BADGE_UID=0;
-// Médailles : médaillon rond, jante chromée (bronze / argent / or selon le palier), émail profond avec rayonnement, grand chiffre ou glyphe embossé, lauriers pour les grands paliers.
+// Médailles : un médaillon chromé commun, un ornement propre à chaque famille (éclat, couronne, barre de traction, anneau de 7 jours, orbite),
+// guilloché et reflets, grand chiffre embossé. Non obtenues : silhouette sombre avec anneau de progression.
 const BADGE_META={s1:{big:'1',lab:'SÉANCE'},s10:{big:'10',lab:'SÉANCES'},s25:{big:'25',lab:'SÉANCES'},s50:{big:'50',lab:'SÉANCES'},s100:{big:'100',lab:'SÉANCES'},pr1:{glyph:'trophy',lab:'RECORD'},pr5:{big:'5',lab:'RECORDS'},pr15:{big:'15',lab:'RECORDS'},t1:{glyph:'pull',lab:'TEST'},t45:{big:'45',lab:'TRACTIONS'},t55:{big:'55',lab:'TRACTIONS'},t70:{big:'70',lab:'TRACTIONS'},w1:{big:'7/7',lab:'SEMAINE'},w4:{big:'4',lab:'SEMAINES'},w12:{big:'12',lab:'SEMAINES'},c1:{glyph:'cycle',lab:'CYCLE'},ton:{big:'10 t',lab:'SEMAINE'}};
 const GLYPH={
   trophy:'M-14 -16 H14 V-4 A14 14 0 0 1 0 10 A14 14 0 0 1 -14 -4 Z M-20 -13 H-14 V-4 A6 6 0 0 1 -20 -8 Z M14 -13 H20 V-8 A6 6 0 0 1 14 -4 Z M-4 10 H4 V15 H9 V20 H-9 V15 H-4 Z',
   pull:'M-20 -18 H20 V-13 H-20 Z M-13 -13 H-8 V-4 A8 8 0 0 0 8 -4 V-13 H13 V-4 A13 13 0 0 1 -13 -4 Z M-3 4 H3 V14 H-3 Z M-6 14 H6 V19 H-6 Z',
   cycle:'M0 -17 A17 17 0 1 1 -12 -12 L-16 -16 L-5 -17 L-6 -6 L-9 -9 A13 13 0 1 0 0 -13 Z'
 };
-function badgeSvg(b,size,locked){
+const FONT_D="-apple-system,BlinkMacSystemFont,'SF Pro Display','Segoe UI',Roboto,Inter,sans-serif";
+function badgeSvg(b,size,locked,facts){
   const [c1,c2]=BADGE_FAM[b.fam]||BADGE_FAM.ses; const u='b'+(++BADGE_UID); const tier=b.tier||1; const m=BADGE_META[b.id]||{big:'?',lab:''};
-  const metal=locked?['#E3E6EB','#A7ADB6','#6F757E','#C9CED6']:tier>=5?['#FFF6CC','#E8C04A','#A4761A','#FFE48A']:tier>=3?['#FFFFFF','#CFD4DC','#848B96','#EEF1F5']:['#F3D4B8','#C5885A','#7E4F2E','#E8B48E'];
-  const e1=locked?'#A9AFB8':c1, e2=locked?'#5E646D':c2; const dark=locked?'#3C4149':'#000';
-  const rays=[...Array(24)].map((_,i)=>`<path d="M50 50 L${(50+40*Math.cos(i*Math.PI/12)).toFixed(2)} ${(50+40*Math.sin(i*Math.PI/12)).toFixed(2)} L${(50+40*Math.cos((i+0.5)*Math.PI/12)).toFixed(2)} ${(50+40*Math.sin((i+0.5)*Math.PI/12)).toFixed(2)} Z"/>`).join('');
-  const leaf=(side)=>[...Array(6)].map((_,i)=>{ const ang=(-150+i*22)*Math.PI/180; const x=50+side*36*Math.cos(ang), y=50-36*Math.sin(ang); const rot=side>0?(-150+i*22+90):(150-i*22-90); return `<ellipse cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" rx="2.6" ry="5.5" transform="rotate(${rot} ${x.toFixed(1)} ${y.toFixed(1)})" fill="url(#${u}m)" stroke="${metal[2]}" stroke-width=".4"/>`; }).join('');
-  const center=m.big?`<text x="50" y="${m.lab?54:58}" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,'SF Pro Display','Segoe UI',Roboto,Inter,sans-serif" font-weight="900" font-size="${m.big.length>=4?22:m.big.length===3?26:30}" fill="${dark}" opacity=".3" transform="translate(0 1.6)">${m.big}</text><text x="50" y="${m.lab?54:58}" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,'SF Pro Display','Segoe UI',Roboto,Inter,sans-serif" font-weight="900" font-size="${m.big.length>=4?22:m.big.length===3?26:30}" fill="#fff" opacity="${locked?.6:.97}">${m.big}</text>`
-    :`<g transform="translate(50 42) scale(.9)"><path d="${GLYPH[m.glyph]}" fill="${dark}" opacity=".3" transform="translate(0 1.6)"/><path d="${GLYPH[m.glyph]}" fill="#fff" opacity="${locked?.6:.97}"/></g>`;
-  const label=m.lab?`<text x="50" y="68" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,'SF Pro Text','Segoe UI',Roboto,Inter,sans-serif" font-weight="800" font-size="6.2" letter-spacing=".9" fill="#fff" opacity="${locked?.55:.85}">${m.lab}</text>`:'';
-  return `<svg viewBox="0 0 100 100" width="${size}" height="${size}" class="badge ${locked?'lock':''}" aria-hidden="true"><defs>
+  const metal=tier>=5?['#FFF6CC','#E8C04A','#A4761A','#FFE48A']:tier>=3?['#FFFFFF','#CFD4DC','#848B96','#EEF1F5']:['#F3D4B8','#C5885A','#7E4F2E','#E8B48E'];
+  const P=Math.PI; const pt=(r,a)=>`${(50+r*Math.cos(a)).toFixed(2)} ${(50+r*Math.sin(a)).toFixed(2)}`;
+  // ornement par famille, derrière le médaillon
+  let orn='';
+  if(b.fam==='ses'){ const n=8+tier*2; orn=`<path d="${[...Array(n)].map((_,i)=>{ const a0=i*2*P/n, a1=a0+P/n; return `M${pt(49,a0-P/n/2)} L${pt(58,a0)} L${pt(49,a1-P/n/2)}`; }).join(' ')} Z" fill="url(#${u}m)" stroke="${metal[2]}" stroke-width=".4"/>`; }
+  if(b.fam==='pr'){ orn=`<path d="M18 24 L26 -4 L38 12 L50 -11 L62 12 L74 -4 L82 24 Z" fill="url(#${u}m)" stroke="${metal[2]}" stroke-width=".6" stroke-linejoin="round"/><circle cx="26" cy="-4" r="3" fill="${metal[3]}" stroke="${metal[2]}" stroke-width=".5"/><circle cx="50" cy="-11" r="3.6" fill="${metal[3]}" stroke="${metal[2]}" stroke-width=".5"/><circle cx="74" cy="-4" r="3" fill="${metal[3]}" stroke="${metal[2]}" stroke-width=".5"/><circle cx="50" cy="8" r="3" fill="${c1}" stroke="${metal[2]}" stroke-width=".5"/>`; }
+  if(b.fam==='pull'){ orn=`<rect x="4" y="2" width="92" height="7" rx="3.5" fill="url(#${u}m)" stroke="${metal[2]}" stroke-width=".5"/><path d="M33 9 L36 30 M67 9 L64 30" stroke="${metal[1]}" stroke-width="3" stroke-linecap="round"/><path d="M33 9 L36 30 M67 9 L64 30" stroke="${metal[0]}" stroke-width="1" stroke-linecap="round" opacity=".7"/>`; }
+  if(b.fam==='reg'){ const lit=Math.min(7,tier>=5?7:tier>=3?7:7); orn=[...Array(7)].map((_,i)=>{ const a0=-P/2+i*2*P/7+0.06, a1=-P/2+(i+1)*2*P/7-0.06; return `<path d="M${pt(53,a0)} A53 53 0 0 1 ${pt(53,a1)}" fill="none" stroke="${i<lit?c1:'#555'}" stroke-width="5" stroke-linecap="round"/>`; }).join(''); }
+  if(b.fam==='cyc'){ orn=`<ellipse cx="50" cy="50" rx="56" ry="20" fill="none" stroke="url(#${u}m)" stroke-width="3.5" transform="rotate(-25 50 50)"/><circle cx="${(50+56*Math.cos(-0.9)).toFixed(1)}" cy="${(50+20*Math.sin(-0.9)).toFixed(1)}" r="4" fill="${metal[3]}" stroke="${metal[2]}" stroke-width=".6" transform="rotate(-25 50 50)"/>`; }
+  const guil=[...Array(5)].map((_,i)=>`<circle cx="50" cy="50" r="${34-i*4}" fill="none" stroke="#fff" stroke-width=".5" opacity=".14"/>`).join('')+[...Array(36)].map((_,i)=>`<line x1="${pt(22,i*P/18).split(' ')[0]}" y1="${pt(22,i*P/18).split(' ')[1]}" x2="${pt(37,i*P/18).split(' ')[0]}" y2="${pt(37,i*P/18).split(' ')[1]}" stroke="#fff" stroke-width=".5" opacity=".12"/>`).join('');
+  const fs=m.big?(m.big.length>=4?22:m.big.length===3?26:30):0;
+  const center=m.big?`<text x="50" y="${m.lab?54:58}" text-anchor="middle" font-family="${FONT_D}" font-weight="900" font-size="${fs}" fill="#000" opacity=".35" transform="translate(0 1.8)">${m.big}</text><text x="50" y="${m.lab?54:58}" text-anchor="middle" font-family="${FONT_D}" font-weight="900" font-size="${fs}" fill="url(#${u}t)">${m.big}</text>`
+    :`<g transform="translate(50 42) scale(.9)"><path d="${GLYPH[m.glyph]}" fill="#000" opacity=".35" transform="translate(0 1.8)"/><path d="${GLYPH[m.glyph]}" fill="url(#${u}t)"/></g>`;
+  const label=m.lab?`<text x="50" y="68" text-anchor="middle" font-family="${FONT_D}" font-weight="800" font-size="6.2" letter-spacing=".9" fill="#fff" opacity=".85">${m.lab}</text>`:'';
+  const sparks=tier>=5?`<path d="M78 20 l2 5 l5 2 l-5 2 l-2 5 l-2 -5 l-5 -2 l5 -2 Z M24 72 l1.5 3.5 l3.5 1.5 l-3.5 1.5 l-1.5 3.5 l-1.5 -3.5 l-3.5 -1.5 l3.5 -1.5 Z" fill="#fff" opacity=".9"/>`:'';
+  const defs=`<defs>
     <linearGradient id="${u}m" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${metal[0]}"/><stop offset=".28" stop-color="${metal[1]}"/><stop offset=".5" stop-color="${metal[3]}"/><stop offset=".72" stop-color="${metal[1]}"/><stop offset="1" stop-color="${metal[2]}"/></linearGradient>
     <linearGradient id="${u}m2" x1="1" y1="1" x2="0" y2="0"><stop offset="0" stop-color="${metal[0]}"/><stop offset=".5" stop-color="${metal[1]}"/><stop offset="1" stop-color="${metal[2]}"/></linearGradient>
-    <radialGradient id="${u}e" cx=".5" cy=".42" r=".62"><stop offset="0" stop-color="${e1}"/><stop offset=".72" stop-color="${e2}"/><stop offset="1" stop-color="${dark}" stop-opacity=".55"/></radialGradient>
-    <linearGradient id="${u}g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".5"/><stop offset=".6" stop-color="#fff" stop-opacity="0"/></linearGradient>
-    <filter id="${u}s" x="-20%" y="-20%" width="140%" height="150%"><feDropShadow dx="0" dy="2.5" stdDeviation="2.2" flood-color="#000" flood-opacity="${locked?.12:.3}"/></filter>
-    <clipPath id="${u}c"><circle cx="50" cy="50" r="38"/></clipPath></defs>
-    <g filter="url(#${u}s)">
+    <radialGradient id="${u}e" cx=".5" cy=".4" r=".65"><stop offset="0" stop-color="${c1}"/><stop offset=".7" stop-color="${c2}"/><stop offset="1" stop-color="#000" stop-opacity=".6"/></radialGradient>
+    <linearGradient id="${u}t" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff"/><stop offset="1" stop-color="#fff" stop-opacity=".78"/></linearGradient>
+    <linearGradient id="${u}g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".55"/><stop offset=".6" stop-color="#fff" stop-opacity="0"/></linearGradient>
+    <radialGradient id="${u}h" cx=".5" cy=".5" r=".5"><stop offset=".6" stop-color="${c1}" stop-opacity=".35"/><stop offset="1" stop-color="${c1}" stop-opacity="0"/></radialGradient>
+    <filter id="${u}s" x="-25%" y="-25%" width="150%" height="160%"><feDropShadow dx="0" dy="2.5" stdDeviation="2.2" flood-color="#000" flood-opacity=".32"/></filter>
+    <clipPath id="${u}c"><circle cx="50" cy="50" r="38"/></clipPath></defs>`;
+  if(locked){
+    const pr=b.prog&&facts?b.prog(facts):null; const pct=pr?Math.max(0,Math.min(1,pr[0]/pr[1])):0; const L=2*P*46; 
+    return `<svg viewBox="-8 -8 116 116" width="${size}" height="${size}" class="badge lock" aria-hidden="true"><defs><linearGradient id="${u}d" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3A3F47"/><stop offset="1" stop-color="#1E2228"/></linearGradient></defs>
+      <g opacity=".92">${orn.replace(/url\(#[^)]+\)/g,'#2C3138').replace(new RegExp(c1,'g'),'#3A3F47').replace(/#[0-9A-F]{6}/gi,x=>['#2C3138','#3A3F47','#1E2228','#555'].includes(x)?x:'#2C3138')}</g>
+      <circle cx="50" cy="50" r="48" fill="url(#${u}d)"/><circle cx="50" cy="50" r="38" fill="#171A1F"/><circle cx="50" cy="50" r="38" fill="none" stroke="#fff" stroke-opacity=".08" stroke-width="1"/>
+      ${center.replace(/url\(#[^)]+\)/g,'#5A606A').replace(/opacity="\.35"/g,'opacity="0"')}${label.replace('opacity=".85"','opacity=".35"')}
+      ${pct>0?`<circle cx="50" cy="50" r="46" fill="none" stroke="${c1}" stroke-width="3.5" stroke-linecap="round" stroke-dasharray="${(L*pct).toFixed(1)} ${L.toFixed(1)}" transform="rotate(-90 50 50)"/>`:''}</svg>`;
+  }
+  return `<svg viewBox="-12 -12 124 124" width="${size}" height="${size}" class="badge" aria-hidden="true">${defs}
+    <circle cx="50" cy="50" r="60" fill="url(#${u}h)"/>
+    <g filter="url(#${u}s)">${orn}
       <circle cx="50" cy="50" r="48" fill="url(#${u}m)"/><circle cx="50" cy="50" r="48" fill="none" stroke="${metal[2]}" stroke-width=".8" opacity=".6"/>
       <circle cx="50" cy="50" r="43.5" fill="url(#${u}m2)"/><circle cx="50" cy="50" r="41" fill="none" stroke="${metal[0]}" stroke-width=".7" opacity=".7"/>
-      <circle cx="50" cy="50" r="38" fill="url(#${u}e)"/>
-      <g clip-path="url(#${u}c)" fill="#fff" opacity="${locked?.05:.09}">${rays}</g>
-      <circle cx="50" cy="50" r="38" fill="none" stroke="${dark}" stroke-opacity=".35" stroke-width="2.2"/>
-      <circle cx="50" cy="50" r="36.2" fill="none" stroke="#fff" stroke-opacity=".28" stroke-width=".7"/>
+      <circle cx="50" cy="50" r="38" fill="url(#${u}e)"/>${guil}
+      <circle cx="50" cy="50" r="38" fill="none" stroke="#000" stroke-opacity=".35" stroke-width="2.2"/><circle cx="50" cy="50" r="36.2" fill="none" stroke="#fff" stroke-opacity=".3" stroke-width=".7"/>
       <g clip-path="url(#${u}c)"><ellipse cx="42" cy="22" rx="30" ry="15" fill="url(#${u}g)"/></g>
-      ${tier>=4?leaf(-1)+leaf(1):''}
-      ${center}${label}
+      ${center}${label}${sparks}
     </g></svg>`;
 }
 function rankSvg(stage,size){
@@ -759,10 +778,10 @@ function showBadges(){
   const got=BADGES.filter(b=>f.unlocked.includes(b.id)).sort((x,y)=>(S.badgeDates[y.id]||'')<(S.badgeDates[x.id]||'')?-1:1); const latest=got[0];
   const dateOf=b=>S.badgeDates[b.id]?new Date(S.badgeDates[b.id]+'T12:00:00').toLocaleDateString('fr-FR',{day:'numeric',month:'long',year:'numeric'}):'';
   showSheet(`<div class="rkhead">${rankSvg(f.stage,64)}<div><span class="eyebrow">Rang ${f.stage} sur ${RANKS.length}</span><h3>${esc(f.stageName)}</h3><div class="xpbar"><i style="width:${f.pct}%"></i></div><p class="small muted">${f.xp} XP${f.next?` · ${f.next.xp-f.xp} avant « ${esc(f.next.name)} »`:' · rang maximal'} · ${got.length}/${BADGES.length} badges</p></div></div>
-    ${latest?`<div class="bhero">${badgeSvg(latest,132,false)}<b>${esc(latest.name)}</b><span>${esc(latest.how)}</span><small>${esc(dateOf(latest))}</small></div>`:''}
-    ${['ses','pr','pull','reg','cyc'].map(fam=>`<h4>${FAMN[fam]}</h4><div class="bgrid">${BADGES.filter(b=>b.fam===fam).map(b=>{ const ok=f.unlocked.includes(b.id); return `<button class="bcell ${ok?'':'lock'}" data-badge="${b.id}">${badgeSvg(b,64,!ok)}<b>${esc(b.name)}</b><small>${ok?esc(dateOf(b)):esc(b.how)}</small></button>`; }).join('')}</div>`).join('')}
+    ${latest?`<div class="bhero"><div class="bspin">${badgeSvg(latest,140,false)}</div><b>${esc(latest.name)}</b><span>${esc(latest.how)}</span><small>${esc(dateOf(latest))}</small></div>`:''}
+    ${['ses','pr','pull','reg','cyc'].map(fam=>`<h4>${FAMN[fam]}</h4><div class="bgrid">${BADGES.filter(b=>b.fam===fam).map(b=>{ const ok=f.unlocked.includes(b.id); const pr=b.prog?b.prog(f):null; return `<button class="bcell ${ok?'':'lock'}" data-badge="${b.id}">${badgeSvg(b,64,!ok,f)}<b>${esc(b.name)}</b><small>${ok?esc(dateOf(b)):(pr?`${String(pr[0]).replace('.',',')} / ${pr[1]}`:esc(b.how))}</small></button>`; }).join('')}</div>`).join('')}
     <p class="small muted">Expérience : séance terminée 10, record 15, test de tractions 5, semaine complète 25.</p><button class="btn" onclick="hideSheet()">Fermer</button>`);
-  document.querySelectorAll('[data-badge]').forEach(el=>el.onclick=()=>{ const b=BADGES.find(x=>x.id===el.dataset.badge); const ok=f.unlocked.includes(b.id); const sh=document.querySelector('#sheet .sheet-card'); const d=document.createElement('div'); d.className='bzoom'; d.innerHTML=`${badgeSvg(b,220,!ok)}<b>${esc(b.name)}</b><span>${esc(b.how)}</span><small>${ok?'Obtenu le '+esc(dateOf(b)):'Pas encore obtenu'}</small>`; d.onclick=()=>d.remove(); sh.appendChild(d); });
+  document.querySelectorAll('[data-badge]').forEach(el=>el.onclick=()=>{ const b=BADGES.find(x=>x.id===el.dataset.badge); const ok=f.unlocked.includes(b.id); const sh=document.querySelector('#sheet .sheet-card'); const d=document.createElement('div'); d.className='bzoom'; const pr=b.prog?b.prog(f):null; d.innerHTML=`<div class="bspin">${badgeSvg(b,220,!ok,f)}</div><b>${esc(b.name)}</b><span>${esc(b.how)}</span><small>${ok?'Obtenu le '+esc(dateOf(b)):(pr?`Progression : ${String(pr[0]).replace('.',',')} / ${pr[1]}`:'Pas encore obtenu')}</small>`; d.onclick=()=>d.remove(); sh.appendChild(d); });
   if(f.unlocked.some(id=>!seen.includes(id))){ S.badgesSeen=f.unlocked.slice(); save(); renderHome(); }
 }
 
@@ -794,7 +813,7 @@ function renderHome(){
   h+=`<div class="card wk"><div class="card-h"><b>Cette semaine</b><span class="muted">${weekDone}/${PROGRAM.sessions.length} séances · ${fmtD(a)} au ${fmtD(addDays(a,6))}</span></div><div class="dots">${dots}</div></div>`;
   // avatar + progression
   const recent=BADGES.filter(b=>af.unlocked.includes(b.id)).slice(-4);
-  h+=`<button class="card avcard" id="homeAvatar2"><div class="card-h"><b>${rankSvg(af.stage,22)} ${esc(af.stageName)}${newB.length?` <em class="pstar">${newB.length} nouveau${newB.length>1?'x':''}</em>`:''}</b><span class="muted">${af.unlocked.length}/${BADGES.length} badges</span></div><div class="xpbar"><i style="width:${af.pct}%"></i></div><div class="brow">${recent.map(b=>badgeSvg(b,40,false)).join('')}${af.nextBadge?badgeSvg(af.nextBadge,40,true):''}<span class="small muted">${af.nextBadge?`Prochain : ${esc(af.nextBadge.name.toLowerCase())} · ${esc(af.nextBadge.how)}`:'Tous les badges obtenus'}</span></div></button>`;
+  h+=`<button class="card avcard" id="homeAvatar2"><div class="card-h"><b>${rankSvg(af.stage,22)} ${esc(af.stageName)}${newB.length?` <em class="pstar">${newB.length} nouveau${newB.length>1?'x':''}</em>`:''}</b><span class="muted">${af.unlocked.length}/${BADGES.length} badges</span></div><div class="xpbar"><i style="width:${af.pct}%"></i></div><div class="brow">${recent.map(b=>badgeSvg(b,40,false)).join('')}${af.nextBadge?badgeSvg(af.nextBadge,40,true,af):''}<span class="small muted">${af.nextBadge?`Prochain : ${esc(af.nextBadge.name.toLowerCase())} · ${esc(af.nextBadge.how)}`:'Tous les badges obtenus'}</span></div></button>`;
   // chiffres : mois, tonnage semaine, série
   const month=date.slice(0,7); const nMonth=Object.values(S.logs).filter(l=>l.done&&l.date.startsWith(month)).length;
   let ton=0; Object.values(S.logs).filter(l=>l.date>=a&&l.date<=addDays(a,6)).forEach(l=>Object.values(l.sets||{}).flat().forEach(x=>{ if(x&&x.done) ton+=(x.w||0)*(x.r||0); }));
