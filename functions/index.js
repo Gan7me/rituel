@@ -304,7 +304,8 @@ exports.adminStats = onCall({ region: 'europe-west1' }, async (req) => {
   }
   const errs = await db.collection('errors').where('t', '>=', sinceMs).orderBy('t', 'desc').limit(100).get();
   const errors = errs.docs.map(d => d.data()).map(e => ({ t: e.t, uid: String(e.uid || '').slice(0, 6), src: e.src, msg: String(e.msg || '').slice(0, 160), ver: e.ver }));
-  return { users: users.length, withProgram, premium, sessions7, calls, costMonth: Math.round(costMonth * 100) / 100, errors, perUser: perUser.sort((a, b) => b.sessions7 - a.sessions7).slice(0, 50) };
+  const health = (await db.collection('system').doc('health').get()).data() || null;
+  return { users: users.length, withProgram, premium, sessions7, calls, costMonth: Math.round(costMonth * 100) / 100, errors, health, perUser: perUser.sort((a, b) => b.sessions7 - a.sessions7).slice(0, 50) };
 });
 
 // Forfait posé à la main par l'administrateur (Premium offert pour N mois, ou retiré). Un abonnement payant repasse par le webhook.
@@ -526,6 +527,24 @@ async function weekIndexDone(uid, prog) {
   logs.docs.map(d => d.data()).filter(l => isDone(l)).forEach(l => { const days = Math.round((new Date(l.date + 'T12:00:00') - new Date(start + 'T12:00:00')) / 86400000); weeks.add(Math.floor(days / 7)); });
   return weeks.size;
 }
+// Veille du service : toutes les heures, on vérifie que la clé API répond. État dans system/health (lu par le tableau de bord
+// administrateur) et notification aux administrateurs dès qu'elle tombe, puis quand elle revient.
+exports.healthCheck = onSchedule({ schedule: '7 * * * *', timeZone: 'Europe/Paris', region: 'europe-west1', secrets: [ANTHROPIC_API_KEY] }, async () => {
+  const ref = db.collection('system').doc('health'); const prev = (await ref.get()).data() || {};
+  let ok = false, status = 0, msg = '';
+  try {
+    const apiKey = String(ANTHROPIC_API_KEY.value() || '').replace(/[^\x21-\x7E]/g, '').replace(/^["']+|["']+$/g, '');
+    if (!/^sk-ant-/.test(apiKey)) { msg = 'clé absente ou mal formée'; }
+    else { const r = await fetch(API_BASE + '/v1/models?limit=1', { headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' } }); status = r.status; ok = r.ok; if (!ok) msg = r.status === 401 ? 'clé refusée (401) : révoquée ou invalide' : 'réponse ' + r.status; }
+  } catch (e) { msg = String(e && e.message || e); }
+  await ref.set({ ok, status, msg, at: Date.now(), since: ok === !!prev.ok ? (prev.since || Date.now()) : Date.now() });
+  if (ok !== !!prev.ok || (!ok && Date.now() - (prev.notifiedAt || 0) > 6 * 3600000)) {
+    for (const email of ADMIN_EMAILS) { try { const u = await admin.auth().getUserByEmail(email); await sendPush(u.uid, ok ? 'Kai est de retour' : 'Kai est hors service', ok ? 'La clé API répond à nouveau.' : 'Clé API : ' + msg + '. Régénère-la et enregistre-la (functions:secrets:set).', { tab: 'reglages' }); } catch (e) {} }
+    await ref.set({ notifiedAt: Date.now() }, { merge: true });
+  }
+  console.log(`[health] ${ok ? 'ok' : 'KO'} ${status} ${msg}`);
+});
+
 exports.weeklyReview = onSchedule({ schedule: '0 19 * * 0', timeZone: 'Europe/Paris', region: 'europe-west1', secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 540, memory: '1GiB' }, async () => {
   const apiKey = String(ANTHROPIC_API_KEY.value() || '').replace(/[^\x21-\x7E]/g, '');
   const model = await resolveModel(apiKey, MODEL.value());

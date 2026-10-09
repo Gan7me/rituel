@@ -12,13 +12,13 @@ window.addEventListener('error',e=>logErr('js',e.error||e.message)); window.addE
 function humanErr(e){ const c=(e&&e.code)||''; const m=(e&&e.message)||String(e||'');
   if(/unauthenticated/.test(c)) return 'Reconnecte-toi pour utiliser le coach.';
   if(/resource-exhausted/.test(c)){ const q=/QUOTA_FREE:([^:]+):(\d+)/.exec(m); if(q){ setTimeout(()=>showPaywall(q[1],q[2]),50); return `Limite gratuite atteinte : ${q[2]} ${q[1]} par mois.`; } return m; }
-  if(/failed-precondition/.test(c)) return m;
+  if(/failed-precondition/.test(c)){ if(/Clé API/i.test(m)) return (USER&&ADMIN_RE.test(USER.email||''))?m:'Le coach est momentanément indisponible (incident côté service). Tes séries sont enregistrées, réessaie un peu plus tard.'; return m; }
   if(/not-found/.test(c)) return 'Séance introuvable : ouvre-la depuis l\'onglet Séance puis relance.';
   if(/deadline|timeout/i.test(m)) return 'Le coach a mis trop de temps à répondre. Réessaie dans une minute.';
   if(/network|Failed to fetch|internet/i.test(m)||!navigator.onLine) return 'Pas de réseau. Le coach a besoin d\'une connexion ; tes séries sont enregistrées et partiront toutes seules.';
   if(/invalid-argument/.test(c)) return 'Le serveur n\'a pas compris la demande (version de l\'app en retard ?). Recharge l\'application depuis Réglages.';
   return m; }
-const APP_VERSION='3.23.1';
+const APP_VERSION='3.23.2';
 const ADMIN_RE=/^(ganeme\.asloune@nexisafe\.com|gads@live\.fr)$/i;
 let PROGRAM={sessions:[]};
 let WEEKS = [
@@ -235,7 +235,8 @@ async function showAdmin(){
   try{ const fn=fbFn.httpsCallable('adminStats'); const r=await fn({}); ADMIN_DATA=r.data; const d=r.data;
     const errs=d.errors||[]; const byMsg={}; errs.forEach(e=>{ const k=e.src+' · '+e.msg.slice(0,60); byMsg[k]=(byMsg[k]||0)+1; });
     $('#admMsg').textContent='7 derniers jours · coût IA du mois';
-    $('#admBody').innerHTML=`<div class="cs-grid adm"><div><b>${d.users}</b><span>comptes</span></div><div><b>${d.withProgram}</b><span>avec programme</span></div><div><b>${d.premium}</b><span>premium</span></div><div><b>${d.sessions7}</b><span>séances 7 j</span></div><div><b>${d.calls}</b><span>appels IA (mois)</span></div><div><b>${(d.costMonth*0.92).toFixed(2).replace('.',',')} €</b><span>coût IA (mois)</span></div></div>
+    const hl=d.health; const hlHtml=hl?`<div class="health ${hl.ok?'ok':'ko'}"><b>${hl.ok?'Kai opérationnel':'Kai hors service'}</b><span>${hl.ok?'clé API vérifiée':esc(hl.msg||'')} · ${new Date(hl.at).toLocaleString('fr-FR',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}${hl.since?' · depuis le '+new Date(hl.since).toLocaleDateString('fr-FR',{day:'numeric',month:'short'}):''}</span></div>`:'';
+    $('#admBody').innerHTML=hlHtml+`<div class="cs-grid adm"><div><b>${d.users}</b><span>comptes</span></div><div><b>${d.withProgram}</b><span>avec programme</span></div><div><b>${d.premium}</b><span>premium</span></div><div><b>${d.sessions7}</b><span>séances 7 j</span></div><div><b>${d.calls}</b><span>appels IA (mois)</span></div><div><b>${(d.costMonth*0.92).toFixed(2).replace('.',',')} €</b><span>coût IA (mois)</span></div></div>
       <h4>Erreurs (${errs.length})</h4>${errs.length?`<div class="hl2">${Object.entries(byMsg).sort((a,b)=>b[1]-a[1]).slice(0,12).map(([k,n])=>`<div class="hrow"><span class="s" style="white-space:normal">${esc(k)}</span><b>${n}</b></div>`).join('')}</div>`:'<p class="small muted">Aucune erreur remontée.</p>'}
       <h4>Abonnés (${(d.perUser||[]).filter(u=>u.plan==='premium').length})</h4><div class="hl2">${(d.perUser||[]).filter(u=>u.plan==='premium').map(u=>`<div class="hrow"><span class="d">${esc(u.name||u.email||u.uid)}</span><span class="s">${esc(u.email||'')} · ${u.source==='admin'?'offert':esc(u.store||'')}${u.expiresAt?' · jusqu\'au '+new Date(u.expiresAt).toLocaleDateString('fr-FR'):''}</span><b></b></div>`).join('')||'<p class="small muted">Aucun abonné.</p>'}</div>
       <h4>Utilisateurs</h4><div class="hl2 admu">${(d.perUser||[]).map(u=>`<div class="hrow"><span class="d">${esc(u.name||u.email||u.uid)}${u.admin?' <em class="pstar">admin</em>':''}</span><span class="s">${esc(u.email||'')}<br>${u.program?'programme':'sans programme'} · ${u.sessions7} séance${u.sessions7>1?'s':''} 7 j · ${u.plan}${u.cost?' · '+u.cost.toFixed(2)+' $':''}</span><b>${u.admin?'':u.plan==='premium'?`<button class="btn sm" data-plan="free" data-uid="${esc(u.uidFull)}">Retirer</button>`:`<button class="btn sm" data-plan="premium" data-uid="${esc(u.uidFull)}">Offrir 1 mois</button>`}</b></div>`).join('')}</div>`;
