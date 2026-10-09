@@ -18,7 +18,7 @@ function humanErr(e){ const c=(e&&e.code)||''; const m=(e&&e.message)||String(e|
   if(/network|Failed to fetch|internet/i.test(m)||!navigator.onLine) return 'Pas de réseau. Le coach a besoin d\'une connexion ; tes séries sont enregistrées et partiront toutes seules.';
   if(/invalid-argument/.test(c)) return 'Le serveur n\'a pas compris la demande (version de l\'app en retard ?). Recharge l\'application depuis Réglages.';
   return m; }
-const APP_VERSION='3.19.0';
+const APP_VERSION='3.19.1';
 let PROGRAM={sessions:[]};
 let WEEKS = [
   {n:1,label:'S1 calibrage',from:'2026-09-07',to:'2026-09-13',rirNote:'RIR 3 · établir les références, tout noter'},
@@ -906,7 +906,7 @@ function renderSeance(){
   const curIdx=current?states.findIndex(s=>s.ex.id===current.ex.id):-1;
   if(FOCUS){ h+=`<div class="fhead"><button class="fclose" id="fExit" aria-label="Quitter le mode séance">✕</button><div class="ftitle"><b>${esc(ses.name)}</b><span>${curIdx>=0?`Exercice ${curIdx+1} sur ${states.length}`:'Tous les exercices sont faits'} · ${nSets} série${nSets>1?'s':''} <span id="elapsed" class="el"></span></span></div><div class="fprog">${states.map(s=>`<i class="${s.complete?'ok':s.skip?'skip':(current&&current.ex.id===s.ex.id)?'now':''}"></i>`).join('')}</div></div>`; }
   h+=`<div class="sesshead"><h2>${esc(ses.name)}</h2><span class="meta">${esc(ses.sub)} · ${esc(ses.duration)}${ses.place?' · '+esc(ses.place):''} <span id="${FOCUS?'elapsed2':'elapsed'}"></span></span>
-    <div class="prog"><div class="bar"><i style="width:${Math.round(100*nDone/Math.max(1,states.length))}%"></i></div><span>${nDone}/${states.length} exercices · ${nSets} série${nSets>1?'s':''}</span><button class="wk" data-lex="semaine">${esc(W.label)} · ${esc((W.rirNote||'').split('·')[0].replace(/\(.*$/,'').trim())}</button></div></div>`;
+    <div class="prog"><div class="bar"><i style="width:${Math.round(100*nDone/Math.max(1,states.length))}%"></i></div><span>${nDone}/${states.length} exercices · ${nSets} série${nSets>1?'s':''}</span><button class="wk" id="wkChip">${esc(W.label)}${S.weekOverride?' · fixée':''} · ${esc((W.rirNote||'').split('·')[0].replace(/\(.*$/,'').trim())}</button></div></div>`;
   if(sub) h+=`<div class="banner info"><b>Séance sans salle.</b> ${esc(sub.intro)} <button class="link" id="subOff">Revenir à la séance prévue</button></div>`;
   else if(!log.done&&!nSets) h+=`<div class="row2 nogym"><button class="btn sm" id="subBtn">Pas de salle aujourd'hui ?</button></div>`;
   if(ses.note) h+=`<div class="banner">${esc(ses.note)}</div>`;
@@ -961,6 +961,7 @@ function renderSeance(){
   // events
   el.querySelectorAll('.days button').forEach(b=>b.onclick=()=>{ const id=b.dataset.s; if(id==='rest'){ el.innerHTML=`<div class="days">${el.querySelector('.days').innerHTML}</div><h2>Dimanche — repos</h2><p>Marche 30 à 60 min, mobilité hanches et épaules 20 min. Pas de tractions.</p>`; el.querySelectorAll('.days button').forEach(x=>x.onclick=()=>{S.session=x.dataset.s==='rest'?S.session:x.dataset.s;S.openEx=null;save();renderSeance();}); return; } S.session=id; S.sessionDate=todayISO(); S.openEx=null; save(); renderSeance(); window.scrollTo({top:0}); });
   el.querySelectorAll('[data-lex]').forEach(b=>b.onclick=e=>{ e.stopPropagation(); showLex(b.dataset.lex); });
+  const wc=$('#wkChip'); if(wc) wc.onclick=showWeekPicker;
   const fx=$('#fExit'); if(fx) fx.onclick=()=>exitFocus();
   const fe=$('#fEnd'); if(fe) fe.onclick=()=>{ const e2=$('#endBtn'); if(e2) e2.click(); };
   el.querySelectorAll('[data-open]').forEach(b=>b.onclick=()=>{ S.openEx=b.dataset.open; save(); renderSeance(); const c=el.querySelector('.ex.cur'); if(c) c.scrollIntoView({block:'start',behavior:'smooth'}); });
@@ -1024,7 +1025,7 @@ function updateElapsed(log){
 /* ---------- render: programme ---------- */
 function renderProgramme(){
   if(!$('#tab-programme')) return;
-  const auto=curWeek(), wk=PROG_WK||auto, today=new Date().getDay();
+  const auto=weekFor(todayISO()), wk=curWeek(), today=new Date().getDay();
   const DN=['Dim','Lun','Mar','Mer','Jeu','Ven','Sam'];
   const W=WEEKS[wk-1]||{}; const mono=(W.rirNote||'').split('·')[0].trim();
   if(PROG_OPEN===undefined){ const t=sessionForDay(); PROG_OPEN=t?t.id:(PROGRAM.sessions[0]||{}).id; }
@@ -1042,17 +1043,20 @@ function renderProgramme(){
     else if(prio.length) h+=`<div class="pprio">Priorité : ${esc(prio.join(', '))}</div>`;
     h+=`</div>`;
   });
-  if(PROG_WK&&PROG_WK!==auto) h+=`<p class="small muted center">Aperçu de la semaine ${wk} · <button class="link" id="wkAuto">Revenir à la semaine en cours</button></p>`;
+  if(S.weekOverride) h+=`<p class="small muted center">Semaine ${wk} fixée à la main pour toute l'app (séances, charges) · <button class="link" id="wkAuto">Revenir au calcul automatique (S${auto})</button></p>`;
   $('#tab-programme').innerHTML=h;
   const rb=$('#regenBtn'); if(rb) rb.onclick=regenerateProgram;
   $('#cycBtn').onclick=()=>showSheet(`<h3>${esc(PROGRAM.cycleName||'Le cycle')}</h3><div class="doc">${cycleHtml()}</div>`);
-  $('#tab-programme').querySelectorAll('[data-wk]').forEach(b=>b.onclick=()=>{ const n=+b.dataset.wk; PROG_WK=n===auto?null:n; renderProgramme(); });
-  const wa=$('#wkAuto'); if(wa) wa.onclick=()=>{ PROG_WK=null; renderProgramme(); };
+  $('#tab-programme').querySelectorAll('[data-wk]').forEach(b=>b.onclick=()=>setWeek(+b.dataset.wk));
+  const wa=$('#wkAuto'); if(wa) wa.onclick=()=>setWeek(null);
   $('#tab-programme').querySelectorAll('[data-toggle]').forEach(b=>b.onclick=()=>{ PROG_OPEN=PROG_OPEN===b.dataset.toggle?null:b.dataset.toggle; renderProgramme(); });
   $('#tab-programme').querySelectorAll('[data-go]').forEach(b=>b.onclick=()=>{ S.session=b.dataset.go; S.sessionDate=todayISO(); save(); showTab('seance'); });
   $('#tab-programme').querySelectorAll('[data-pex]').forEach(r=>r.onclick=()=>{ const ex=PROGRAM.sessions.flatMap(x=>x.exercises).find(e=>e.id===r.dataset.pex); if(ex) showDemo(ex); });
 }
-let PROG_OPEN, PROG_WK=null;
+let PROG_OPEN;
+// Semaine active pour toute l'app : choisie à la main (Programme ou pastille de semaine en Séance), sinon calculée.
+function setWeek(n){ const auto=weekFor(todayISO()); S.weekOverride=(n&&n!==auto)?n:null; save(); render(); toast(S.weekOverride?`Semaine ${n} activée`:`Semaine automatique : S${auto}`,'ok'); }
+function showWeekPicker(){ const auto=weekFor(todayISO()), wk=curWeek(); showSheet(`<h3>Semaine du cycle</h3><p class="small muted">La semaine détermine les séries, les répétitions et les consignes de RIR de chaque séance. Calcul automatique : S${auto}${S.weekOverride?' · actuellement fixée à S'+wk:''}.</p><div class="wkpick">${WEEKS.map((w,i)=>`<button class="row" data-pick="${i+1}" aria-pressed="${i+1===wk}"><span><b>S${i+1}</b> · ${esc(String(w.label||'').replace(/^S\d+\s*/,''))}<br><small class="muted">${esc(w.rirNote||'')}</small></span>${i+1===wk?'<i class="chk"></i>':''}</button>`).join('')}</div>${S.weekOverride?`<button class="btn" id="wkAutoBtn">Revenir au calcul automatique (S${auto})</button>`:''}`); document.querySelectorAll('[data-pick]').forEach(b=>b.onclick=()=>{ hideSheet(); setWeek(+b.dataset.pick); }); const a=$('#wkAutoBtn'); if(a) a.onclick=()=>{ hideSheet(); setWeek(null); }; }
 
 
 /* ---------- suivi enrichi : groupes musculaires, assiduité, records ---------- */
