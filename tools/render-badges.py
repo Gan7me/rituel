@@ -58,10 +58,29 @@ def text_mask(txt, font_path, size_units, y_units, spacing=0):
         d.text((cx, cy + y_units * R0), txt, font=f, fill=255, anchor='mm')
     return np.asarray(im).astype(np.float64) / 255
 
+def arc_text(txt, radius_units, font_path, size_units, top=True, spacing_deg=None):
+    """texte le long d'un arc (centré en haut ou en bas), rendu en masque"""
+    f = ImageFont.truetype(font_path, int(size_units * R0)); im = Image.new('L', (N, N), 0)
+    widths = [f.getlength(ch) for ch in txt]; rad = radius_units * R0
+    gap = (spacing_deg if spacing_deg is not None else 1.2)
+    angs = [math.degrees(w / rad) for w in widths]; total = sum(angs) + gap * (len(txt) - 1)
+    a = -total / 2
+    for ch, w, da in zip(txt, widths, angs):
+        mid = a + da / 2; a += da + gap
+        theta = math.radians(mid)
+        if top: x = cx + rad * math.sin(theta); y = cy - rad * math.cos(theta); rot = -mid
+        else: x = cx + rad * math.sin(theta); y = cy + rad * math.cos(theta); rot = mid
+        g = Image.new('L', (int(w) + 40, int(size_units * R0 * 1.6)), 0); ImageDraw.Draw(g).text((g.width / 2, g.height / 2), ch, font=f, fill=255, anchor='mm')
+        g = g.rotate(rot, resample=Image.BICUBIC, expand=True)
+        im.paste(g, (int(x - g.width / 2), int(y - g.height / 2)), g)
+    return np.asarray(im).astype(np.float64) / 255
+
 def ornament(fam, tier):
     """retourne (hauteur, masque métal, masque émail, masque alpha) de l'ornement derrière le médaillon"""
     h = np.zeros((N, N)); metal = np.zeros((N, N)); enamel = np.zeros((N, N))
     if fam == 'ses':
+        pass
+    elif fam == 'ses_old':
         n = 8 + tier * 2
         def rays(d):
             for i in range(n):
@@ -70,6 +89,10 @@ def ornament(fam, tier):
                 d.polygon(pts, fill=255)
         m = mask_from_draw(rays); metal = m; h = 0.10 * smooth(m, N * 0.006) + 0.04 * smooth(m, N * 0.03)
     elif fam == 'pr':
+        def handle(d):
+            d.arc([P(-0.62, -1.58), P(0.62, -0.30)], start=180, end=360, fill=255, width=int(0.17 * R0))
+        m = mask_from_draw(handle); metal = m; h = 0.16 * smooth(m, N * 0.006) + 0.05 * smooth(m, N * 0.02)
+    elif fam == 'pr_old':
         def crown(d):
             pts = [P(-0.70, -0.55), P(-0.52, -1.18), P(-0.26, -0.80), P(0, -1.32), P(0.26, -0.80), P(0.52, -1.18), P(0.70, -0.55)]
             d.polygon(pts, fill=255)
@@ -102,45 +125,46 @@ def ornament(fam, tier):
     return h, metal, enamel, alpha
 
 def render(bid, fam, tier, big, lab, locked):
-    # --- hauteur et matériaux du médaillon
+    # --- disque de musculation : bord caoutchouc bombé, collerette acier, face plate avec lettrage en relief, moyeu acier
     h = np.zeros((N, N))
-    rim = (R >= 0.78) & (R <= 1.0)
-    t = np.clip((R - 0.89) / 0.11, -1, 1)
-    h = np.where(rim, 0.18 * np.sqrt(np.clip(1 - t * t, 0, 1)) + 0.02, h)
-    band = (R >= 0.72) & (R < 0.78); h = np.where(band, 0.10, h)
-    bev = (R >= 0.695) & (R < 0.72); h = np.where(bev, 0.10 - (0.72 - R) / 0.025 * 0.07, h)
-    dome = R < 0.695; h = np.where(dome, 0.03 + 0.07 * (1 - (R / 0.695) ** 2), h)
-    # guilloché : fines rainures concentriques + rayons
-    metal = (R >= 0.695).astype(np.float64); enamel = (R < 0.695).astype(np.float64)
-    # chiffre en relief (métal) et légende gravée
+    edge = (R >= 0.90) & (R <= 1.0); t = np.clip((R - 0.95) / 0.05, -1, 1)
+    h = np.where(edge, 0.10 + 0.08 * np.sqrt(np.clip(1 - t * t, 0, 1)), h)
+    collar = (R >= 0.845) & (R < 0.90); tc = np.clip((R - 0.8725) / 0.0275, -1, 1)
+    h = np.where(collar, 0.12 + 0.05 * np.sqrt(np.clip(1 - tc * tc, 0, 1)), h)
+    face = (R >= 0.43) & (R < 0.845); h = np.where(face, 0.10, h)
+    hubbev = (R >= 0.37) & (R < 0.43); h = np.where(hubbev, 0.10 + (0.43 - R) / 0.06 * 0.06, h)
+    hub = R < 0.37; h = np.where(hub, 0.16 + 0.04 * (1 - (R / 0.37) ** 2), h)
+    metal = (collar | hubbev | hub).astype(np.float64); enamel = (edge | face).astype(np.float64)
+    # lettrage moulé en relief sur la face : marque en haut, légende en bas ; fines rainures concentriques
+    brand = arc_text('RITUEL', 0.655, FONT_LAB, 0.16, top=True, spacing_deg=4)
+    h = h + 0.06 * smooth(brand, N * 0.0015)
+    lm = arc_text(lab, 0.655, FONT_LAB, 0.135, top=False, spacing_deg=3) if lab else np.zeros((N, N))
+    h = h + 0.06 * smooth(lm, N * 0.0015)
+    h = np.where(face, h + 0.004 * np.sin(R * 160) * (R > 0.47) * (R < 0.80), h)
+    # chiffre gravé dans le moyeu
     if big.startswith('^'):
         n = int(big[1:])
         def chev(d):
             for i in range(n):
-                y0 = -0.02 + (i - (n - 1) / 2) * 0.17
-                d.line([P(-0.30, y0 + 0.12), P(0, y0 - 0.08), P(0.30, y0 + 0.12)], fill=255, width=int(0.13 * R0), joint='curve')
-        tm = mask_from_draw(chev); lab = ''
-    elif big in ('★', '↑', '∞'):
-        glyph = {'★': 'M', '↑': 'T', '∞': '∞'}[big]
-        if big == '★':
-            def star(d):
-                pts = [P(0.33 * math.cos(math.radians(-90 + i * 36)) * (1 if i % 2 == 0 else 0.42), -0.06 + 0.33 * math.sin(math.radians(-90 + i * 36)) * (1 if i % 2 == 0 else 0.42)) for i in range(10)]
-                d.polygon(pts, fill=255)
-            tm = mask_from_draw(star)
-        elif big == '↑':
-            def arrow(d):
-                d.polygon([P(0, -0.40), P(0.30, -0.08), P(0.13, -0.08), P(0.13, 0.26), P(-0.13, 0.26), P(-0.13, -0.08), P(-0.30, -0.08)], fill=255)
-            tm = mask_from_draw(arrow)
-        else:
-            tm = text_mask('∞', FONT_BIG, 0.80, -0.08)
+                y0 = 0.0 + (i - (n - 1) / 2) * 0.11
+                d.line([P(-0.19, y0 + 0.08), P(0, y0 - 0.05), P(0.19, y0 + 0.08)], fill=255, width=int(0.08 * R0), joint='curve')
+        tm = mask_from_draw(chev)
+    elif big == '★':
+        def star(d):
+            pts = [P(0.24 * math.cos(math.radians(-90 + i * 36)) * (1 if i % 2 == 0 else 0.42), 0.02 + 0.24 * math.sin(math.radians(-90 + i * 36)) * (1 if i % 2 == 0 else 0.42)) for i in range(10)]
+            d.polygon(pts, fill=255)
+        tm = mask_from_draw(star)
+    elif big == '↑':
+        def arrow(d):
+            d.polygon([P(0, -0.24), P(0.21, -0.02), P(0.09, -0.02), P(0.09, 0.22), P(-0.09, 0.22), P(-0.09, -0.02), P(-0.21, -0.02)], fill=255)
+        tm = mask_from_draw(arrow)
+    elif big == '∞':
+        tm = text_mask('∞', FONT_BIG, 0.52, 0.0)
     else:
-        sz = 0.62 if len(big) <= 2 else 0.50 if len(big) == 3 else 0.42
-        tm = text_mask(big, FONT_BIG, sz, -0.06)
-    tmb = smooth(tm, N * 0.0025)
-    guil = (0.0028 * np.sin(R * 110) + 0.0015 * np.sin(ANG * 48) * (R > 0.25)) * (R < 0.66) * (1 - smooth(tm, N * 0.006))
-    h = h + guil + 0.09 * tmb; metal = np.clip(metal + tm, 0, 1); enamel = np.clip(enamel - tm, 0, 1)
-    lm = text_mask(lab, FONT_LAB, 0.105, 0.34, spacing=0.012) if lab else np.zeros((N, N))
-    h = h + 0.03 * smooth(lm, N * 0.0015); metal = np.clip(metal + lm, 0, 1); enamel = np.clip(enamel - lm, 0, 1)
+        sz = 0.42 if len(big) <= 2 else 0.33 if len(big) == 3 else 0.27
+        tm = text_mask(big, FONT_BIG, sz, 0.02)
+    tmb = smooth(tm, N * 0.002)
+    h = h - 0.05 * tmb
     # --- ornement
     oh, om, oe, oa = ornament(fam, tier) if fam != 'rank' else (np.zeros((N, N)),) * 4
     inside = (R <= 1.0).astype(np.float64)
@@ -167,16 +191,16 @@ def render(bid, fam, tier, big, lab, locked):
     metal_rgb = mc[None, None, :] * (0.25 + 0.75 * env)[..., None] * (0.75 + 0.25 * ndl1)[..., None] + spec_m[..., None] * np.array([1, 1, 0.95])
     diff = 0.50 + 0.60 * ndl1 + 0.18 * ndl2
     fres = (1 - nz) ** 2
-    vign = 1 - 0.40 * np.clip(R / 0.695, 0, 1) ** 3
+    vign = 1 - 0.22 * np.clip(R, 0, 1) ** 4
     spec_e = (0.55 * ndh1 ** 120 + 0.18 * ndh2 ** 50) * (0.4 if locked else 1.0)
     enamel_rgb = ec[None, None, :] * (diff * vign)[..., None] * (1 + 0.6 * fres)[..., None] + spec_e[..., None] * np.array([1, 1, 1]) + (0.10 * fres * (not locked))[..., None] * np.array([1, 1, 1])
     # reflet glacé en haut du dôme
-    gloss = np.clip(1 - ((X) ** 2 / 0.30 + (Y + 0.36) ** 2 / 0.05), 0, 1) * (R < 0.68) * (0.12 if locked else 0.35)
+    gloss = np.clip(1 - ((X) ** 2 / 0.55 + (Y + 0.62) ** 2 / 0.03), 0, 1) * (R < 0.84) * (R > 0.44) * (0.10 if locked else 0.22)
     enamel_rgb = enamel_rgb + gloss[..., None]
     rgb = metal_rgb * metal[..., None] + enamel_rgb * enamel[..., None]
     # ombre d'occlusion sous la jante intérieure
-    ao = 1 - 0.25 * np.clip(1 - np.abs(R - 0.695) / 0.05, 0, 1)
-    rgb = rgb * ao[..., None]
+    ao = (1 - 0.22 * np.clip(1 - np.abs(R - 0.43) / 0.04, 0, 1)) * (1 - 0.18 * np.clip(1 - np.abs(R - 0.845) / 0.03, 0, 1))
+    rgb = rgb * ao[..., None] * (1 - 0.28 * tmb)[..., None]
     rgb = np.clip(rgb, 0, 1) ** (1 / 1.05)
     # --- composition avec ombre portée
     a = smooth(alpha, N * 0.002)
