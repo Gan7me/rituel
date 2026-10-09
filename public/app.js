@@ -18,7 +18,7 @@ function humanErr(e){ const c=(e&&e.code)||''; const m=(e&&e.message)||String(e|
   if(/network|Failed to fetch|internet/i.test(m)||!navigator.onLine) return 'Pas de réseau. Le coach a besoin d\'une connexion ; tes séries sont enregistrées et partiront toutes seules.';
   if(/invalid-argument/.test(c)) return 'Le serveur n\'a pas compris la demande (version de l\'app en retard ?). Recharge l\'application depuis Réglages.';
   return m; }
-const APP_VERSION='3.19.2';
+const APP_VERSION='3.19.3';
 let PROGRAM={sessions:[]};
 let WEEKS = [
   {n:1,label:'S1 calibrage',from:'2026-09-07',to:'2026-09-13',rirNote:'RIR 3 · établir les références, tout noter'},
@@ -699,35 +699,47 @@ const BADGE_ICON={
   star:'M24 8 L28.5 18.5 L40 19.5 L31 27 L34 38 L24 32 L14 38 L17 27 L8 19.5 L19.5 18.5 Z'
 };
 let BADGE_UID=0;
-// Écussons façon médailles : forme par famille, jante métallique, émail dégradé, icône embossée, paliers en points.
-const BADGE_SHAPE={ses:'medal',pr:'shield',pull:'hex',reg:'ring',cyc:'star'};
+// Médailles : médaillon rond, jante chromée (bronze / argent / or selon le palier), émail profond avec rayonnement, grand chiffre ou glyphe embossé, lauriers pour les grands paliers.
+const BADGE_META={s1:{big:'1',lab:'SÉANCE'},s10:{big:'10',lab:'SÉANCES'},s25:{big:'25',lab:'SÉANCES'},s50:{big:'50',lab:'SÉANCES'},s100:{big:'100',lab:'SÉANCES'},pr1:{glyph:'trophy',lab:'RECORD'},pr5:{big:'5',lab:'RECORDS'},pr15:{big:'15',lab:'RECORDS'},t1:{glyph:'pull',lab:'TEST'},t45:{big:'45',lab:'TRACTIONS'},t55:{big:'55',lab:'TRACTIONS'},t70:{big:'70',lab:'TRACTIONS'},w1:{big:'7/7',lab:'SEMAINE'},w4:{big:'4',lab:'SEMAINES'},w12:{big:'12',lab:'SEMAINES'},c1:{glyph:'cycle',lab:'CYCLE'},ton:{big:'10 t',lab:'SEMAINE'}};
+const GLYPH={
+  trophy:'M-14 -16 H14 V-4 A14 14 0 0 1 0 10 A14 14 0 0 1 -14 -4 Z M-20 -13 H-14 V-4 A6 6 0 0 1 -20 -8 Z M14 -13 H20 V-8 A6 6 0 0 1 14 -4 Z M-4 10 H4 V15 H9 V20 H-9 V15 H-4 Z',
+  pull:'M-20 -18 H20 V-13 H-20 Z M-13 -13 H-8 V-4 A8 8 0 0 0 8 -4 V-13 H13 V-4 A13 13 0 0 1 -13 -4 Z M-3 4 H3 V14 H-3 Z M-6 14 H6 V19 H-6 Z',
+  cycle:'M0 -17 A17 17 0 1 1 -12 -12 L-16 -16 L-5 -17 L-6 -6 L-9 -9 A13 13 0 1 0 0 -13 Z'
+};
 function badgeSvg(b,size,locked){
-  const [c1,c2]=BADGE_FAM[b.fam]||BADGE_FAM.ses; const u='b'+(++BADGE_UID); const tier=b.tier||1; const shape=BADGE_SHAPE[b.fam]||'medal';
-  const metal=locked?['#D9DCE1','#9AA0A8','#6E747C']:tier>=5?['#FFF1B8','#E2B93B','#9A7210']:tier>=3?['#F7F8FA','#C3C8D1','#7E8590']:['#E9C9A9','#B9865A','#7A5232'];
-  const e1=locked?'#B9BEC6':c1, e2=locked?'#7C838C':c2;
-  const outer={medal:'M50 4 A46 46 0 1 1 49.9 4 Z',shield:'M50 4 L90 16 V50 C90 74 72 90 50 97 C28 90 10 74 10 50 V16 Z',hex:'M50 3 L91 26 V74 L50 97 L9 74 V26 Z',ring:'M50 4 A46 46 0 1 1 49.9 4 Z',star:'M50 3 L62 30 L91 33 L69 52 L76 81 L50 66 L24 81 L31 52 L9 33 L38 30 Z'}[shape];
-  const inner={medal:'M50 14 A36 36 0 1 1 49.9 14 Z',shield:'M50 13 L82 23 V50 C82 69 68 82 50 88 C32 82 18 69 18 50 V23 Z',hex:'M50 13 L82 31 V69 L50 87 L18 69 V31 Z',ring:'M50 16 A34 34 0 1 1 49.9 16 Z',star:'M50 14 L59 34 L81 36 L64 51 L69 73 L50 62 L31 73 L36 51 L19 36 L41 34 Z'}[shape];
-  const icon=BADGE_ICON[b.icon]||BADGE_ICON.star; // dessinée dans un repère 48×48, centrée
-  const dots=tier>1?[...Array(Math.min(tier,5))].map((_,i)=>`<circle cx="${50-(tier-1)*4+i*8}" cy="${shape==='star'?60:shape==='shield'?76:80}" r="2.4" fill="url(#${u}m)" stroke="${metal[2]}" stroke-width=".5"/>`).join(''):'';
+  const [c1,c2]=BADGE_FAM[b.fam]||BADGE_FAM.ses; const u='b'+(++BADGE_UID); const tier=b.tier||1; const m=BADGE_META[b.id]||{big:'?',lab:''};
+  const metal=locked?['#E3E6EB','#A7ADB6','#6F757E','#C9CED6']:tier>=5?['#FFF6CC','#E8C04A','#A4761A','#FFE48A']:tier>=3?['#FFFFFF','#CFD4DC','#848B96','#EEF1F5']:['#F3D4B8','#C5885A','#7E4F2E','#E8B48E'];
+  const e1=locked?'#A9AFB8':c1, e2=locked?'#5E646D':c2; const dark=locked?'#3C4149':'#000';
+  const rays=[...Array(24)].map((_,i)=>`<path d="M50 50 L${(50+40*Math.cos(i*Math.PI/12)).toFixed(2)} ${(50+40*Math.sin(i*Math.PI/12)).toFixed(2)} L${(50+40*Math.cos((i+0.5)*Math.PI/12)).toFixed(2)} ${(50+40*Math.sin((i+0.5)*Math.PI/12)).toFixed(2)} Z"/>`).join('');
+  const leaf=(side)=>[...Array(6)].map((_,i)=>{ const ang=(-150+i*22)*Math.PI/180; const x=50+side*36*Math.cos(ang), y=50-36*Math.sin(ang); const rot=side>0?(-150+i*22+90):(150-i*22-90); return `<ellipse cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" rx="2.6" ry="5.5" transform="rotate(${rot} ${x.toFixed(1)} ${y.toFixed(1)})" fill="url(#${u}m)" stroke="${metal[2]}" stroke-width=".4"/>`; }).join('');
+  const center=m.big?`<text x="50" y="${m.lab?54:58}" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,'SF Pro Display','Segoe UI',Roboto,Inter,sans-serif" font-weight="900" font-size="${m.big.length>=4?22:m.big.length===3?26:30}" fill="${dark}" opacity=".3" transform="translate(0 1.6)">${m.big}</text><text x="50" y="${m.lab?54:58}" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,'SF Pro Display','Segoe UI',Roboto,Inter,sans-serif" font-weight="900" font-size="${m.big.length>=4?22:m.big.length===3?26:30}" fill="#fff" opacity="${locked?.6:.97}">${m.big}</text>`
+    :`<g transform="translate(50 42) scale(.9)"><path d="${GLYPH[m.glyph]}" fill="${dark}" opacity=".3" transform="translate(0 1.6)"/><path d="${GLYPH[m.glyph]}" fill="#fff" opacity="${locked?.6:.97}"/></g>`;
+  const label=m.lab?`<text x="50" y="68" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,'SF Pro Text','Segoe UI',Roboto,Inter,sans-serif" font-weight="800" font-size="6.2" letter-spacing=".9" fill="#fff" opacity="${locked?.55:.85}">${m.lab}</text>`:'';
   return `<svg viewBox="0 0 100 100" width="${size}" height="${size}" class="badge ${locked?'lock':''}" aria-hidden="true"><defs>
-    <linearGradient id="${u}m" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${metal[0]}"/><stop offset=".5" stop-color="${metal[1]}"/><stop offset="1" stop-color="${metal[2]}"/></linearGradient>
-    <linearGradient id="${u}m2" x1="1" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${metal[0]}"/><stop offset=".5" stop-color="${metal[1]}"/><stop offset="1" stop-color="${metal[2]}"/></linearGradient>
-    <radialGradient id="${u}e" cx=".35" cy=".3" r=".8"><stop offset="0" stop-color="${e1}"/><stop offset="1" stop-color="${e2}"/></radialGradient>
-    <linearGradient id="${u}g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".55"/><stop offset=".55" stop-color="#fff" stop-opacity="0"/></linearGradient>
-    <filter id="${u}s" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="#000" flood-opacity="${locked?.12:.28}"/></filter>
-    <clipPath id="${u}c"><path d="${inner}"/></clipPath></defs>
-    ${shape==='medal'&&!locked?`<path d="M36 70 L28 98 L40 93 L50 100 L60 93 L72 98 L64 70 Z" fill="${c2}"/><path d="M44 72 L50 100 L56 72 Z" fill="${c1}" opacity=".8"/>`:''}
-    <g filter="url(#${u}s)"><path d="${outer}" fill="url(#${u}m)"/><path d="${outer}" fill="none" stroke="${metal[2]}" stroke-width="1" opacity=".5"/>
-    <path d="${inner}" fill="url(#${u}m2)" transform="translate(50 50) scale(1.07) translate(-50 -50)" opacity=".9"/>
-    <path d="${inner}" fill="url(#${u}e)"/><path d="${inner}" fill="none" stroke="#000" stroke-opacity=".18" stroke-width="2"/>
-    <g clip-path="url(#${u}c)"><ellipse cx="42" cy="26" rx="34" ry="18" fill="url(#${u}g)"/></g>
-    <g transform="translate(26 ${shape==='star'?24:22}) scale(1)"><path d="${icon}" fill="#000" opacity=".25" transform="translate(0 1.5)"/><path d="${icon}" fill="#fff" opacity="${locked?.5:.95}"/></g>
-    ${dots}</g></svg>`;
+    <linearGradient id="${u}m" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${metal[0]}"/><stop offset=".28" stop-color="${metal[1]}"/><stop offset=".5" stop-color="${metal[3]}"/><stop offset=".72" stop-color="${metal[1]}"/><stop offset="1" stop-color="${metal[2]}"/></linearGradient>
+    <linearGradient id="${u}m2" x1="1" y1="1" x2="0" y2="0"><stop offset="0" stop-color="${metal[0]}"/><stop offset=".5" stop-color="${metal[1]}"/><stop offset="1" stop-color="${metal[2]}"/></linearGradient>
+    <radialGradient id="${u}e" cx=".5" cy=".42" r=".62"><stop offset="0" stop-color="${e1}"/><stop offset=".72" stop-color="${e2}"/><stop offset="1" stop-color="${dark}" stop-opacity=".55"/></radialGradient>
+    <linearGradient id="${u}g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".5"/><stop offset=".6" stop-color="#fff" stop-opacity="0"/></linearGradient>
+    <filter id="${u}s" x="-20%" y="-20%" width="140%" height="150%"><feDropShadow dx="0" dy="2.5" stdDeviation="2.2" flood-color="#000" flood-opacity="${locked?.12:.3}"/></filter>
+    <clipPath id="${u}c"><circle cx="50" cy="50" r="38"/></clipPath></defs>
+    <g filter="url(#${u}s)">
+      <circle cx="50" cy="50" r="48" fill="url(#${u}m)"/><circle cx="50" cy="50" r="48" fill="none" stroke="${metal[2]}" stroke-width=".8" opacity=".6"/>
+      <circle cx="50" cy="50" r="43.5" fill="url(#${u}m2)"/><circle cx="50" cy="50" r="41" fill="none" stroke="${metal[0]}" stroke-width=".7" opacity=".7"/>
+      <circle cx="50" cy="50" r="38" fill="url(#${u}e)"/>
+      <g clip-path="url(#${u}c)" fill="#fff" opacity="${locked?.05:.09}">${rays}</g>
+      <circle cx="50" cy="50" r="38" fill="none" stroke="${dark}" stroke-opacity=".35" stroke-width="2.2"/>
+      <circle cx="50" cy="50" r="36.2" fill="none" stroke="#fff" stroke-opacity=".28" stroke-width=".7"/>
+      <g clip-path="url(#${u}c)"><ellipse cx="42" cy="22" rx="30" ry="15" fill="url(#${u}g)"/></g>
+      ${tier>=4?leaf(-1)+leaf(1):''}
+      ${center}${label}
+    </g></svg>`;
 }
 function rankSvg(stage,size){
-  const [c1,c2]=stage>=5?['#FFE08A','#C98A00']:stage>=4?['#D7DCE6','#7F8794']:stage>=3?['#FF9A7A','#B62C21']:stage>=2?['#8FD0A8','#1E8E5A']:['#C9CFD8','#6B7280']; const id='rk'+(++BADGE_UID);
-  const chev=[...Array(stage)].map((_,i)=>`<path d="M15 ${19+i*5} L24 ${14+i*5} L33 ${19+i*5}" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" opacity="${.95-i*.08}"/>`).join('');
-  return `<svg viewBox="0 0 48 48" width="${size}" height="${size}" class="rank" aria-hidden="true"><defs><linearGradient id="${id}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${c1}"/><stop offset="1" stop-color="${c2}"/></linearGradient></defs><circle cx="24" cy="24" r="22" fill="url(#${id})"/><circle cx="24" cy="24" r="19" fill="none" stroke="#fff" stroke-width="1.2" opacity=".45"/>${chev}</svg>`;
+  const [c1,c2]=stage>=5?['#FFD86B','#B07400']:stage>=4?['#7AD3FF','#1E55C8']:stage>=3?['#FF7A5C','#B62C21']:stage>=2?['#5FE0A0','#167A4A']:['#B8C0CC','#5B6472'];
+  const metal=stage>=5?['#FFF6CC','#E8C04A','#A4761A','#FFE48A']:stage>=3?['#FFFFFF','#CFD4DC','#848B96','#EEF1F5']:['#F3D4B8','#C5885A','#7E4F2E','#E8B48E']; const u='rk'+(++BADGE_UID);
+  const chev=[...Array(stage)].map((_,i)=>`<path d="M36 ${44+i*7-(stage-1)*3.5} L50 ${34+i*7-(stage-1)*3.5} L64 ${44+i*7-(stage-1)*3.5}" fill="none" stroke="#000" stroke-opacity=".3" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" transform="translate(0 1.5)"/><path d="M36 ${44+i*7-(stage-1)*3.5} L50 ${34+i*7-(stage-1)*3.5} L64 ${44+i*7-(stage-1)*3.5}" fill="none" stroke="#fff" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" opacity="${.97-i*.1}"/>`).join('');
+  return `<svg viewBox="0 0 100 100" width="${size}" height="${size}" class="rank" aria-hidden="true"><defs><linearGradient id="${u}m" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${metal[0]}"/><stop offset=".28" stop-color="${metal[1]}"/><stop offset=".5" stop-color="${metal[3]}"/><stop offset=".72" stop-color="${metal[1]}"/><stop offset="1" stop-color="${metal[2]}"/></linearGradient><radialGradient id="${u}e" cx=".5" cy=".42" r=".62"><stop offset="0" stop-color="${c1}"/><stop offset=".72" stop-color="${c2}"/><stop offset="1" stop-color="#000" stop-opacity=".5"/></radialGradient><linearGradient id="${u}g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".5"/><stop offset=".6" stop-color="#fff" stop-opacity="0"/></linearGradient><clipPath id="${u}c"><circle cx="50" cy="50" r="40"/></clipPath><filter id="${u}s" x="-20%" y="-20%" width="140%" height="150%"><feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="#000" flood-opacity=".28"/></filter></defs>
+    <g filter="url(#${u}s)"><circle cx="50" cy="50" r="48" fill="url(#${u}m)"/><circle cx="50" cy="50" r="40" fill="url(#${u}e)"/><circle cx="50" cy="50" r="40" fill="none" stroke="#000" stroke-opacity=".3" stroke-width="2"/><g clip-path="url(#${u}c)"><ellipse cx="42" cy="24" rx="32" ry="16" fill="url(#${u}g)"/></g>${chev}</g></svg>`;
 }
 function progressFacts(){
   const logs=Object.values(S.logs).filter(l=>l.done); const sessions=logs.length;
