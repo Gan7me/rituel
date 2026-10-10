@@ -1179,3 +1179,13 @@ main>section{overflow-x:clip}
 .fadd input{text-transform:uppercase;letter-spacing:.15em;font-family:var(--mono)}
 .lrow>span:last-child{white-space:nowrap}
 .lrow>span b{display:inline;font-size:15px}
+/* analyses lisibles */
+.anahl{display:flex;align-items:center;gap:10px;margin:8px 0 6px}
+.anahl i{width:10px;height:10px;border-radius:50%;background:var(--muted);flex:0 0 auto}
+.anahl.t-good i{background:var(--ok)}.anahl.t-warn i{background:var(--accent)}
+.anahl b{font-family:var(--disp);font-size:17px;font-weight:800;letter-spacing:-.01em;line-height:1.25}
+.anatk{margin:0 0 10px;padding:0 0 0 18px;color:var(--ink2);font-size:15px;line-height:1.45}
+.anatk li{margin:0 0 5px}
+.lesson{background:var(--accent-soft);border-radius:14px;padding:12px 14px;margin:6px 0 12px}
+.lesson b{display:block;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--accent-ink);margin-bottom:4px}
+.lesson p{margin:0;font-size:15px;line-height:1.45;color:var(--ink)}

@@ -18,7 +18,7 @@ function humanErr(e){ const c=(e&&e.code)||''; const m=(e&&e.message)||String(e|
   if(/network|Failed to fetch|internet/i.test(m)||!navigator.onLine) return 'Pas de réseau. Le coach a besoin d\'une connexion ; tes séries sont enregistrées et partiront toutes seules.';
   if(/invalid-argument/.test(c)) return 'Le serveur n\'a pas compris la demande (version de l\'app en retard ?). Recharge l\'application depuis Réglages.';
   return m; }
-const APP_VERSION='3.25.0';
+const APP_VERSION='3.26.0';
 const ADMIN_RE=/^(ganeme\.asloune@nexisafe\.com|gads@live\.fr)$/i;
 let PROGRAM={sessions:[]};
 let WEEKS = [
@@ -85,7 +85,7 @@ function rx(ex, wk){ // prescription for a week (cycle de 3 à 6 semaines, la de
 }
 function logKey(date,sid){ return date+'_'+sid; }
 function getLog(date,sid){ const k=logKey(date,sid); if(!S.logs[k]) S.logs[k]={date,session:sid,week:weekFor(date),sets:{},gtg:[false,false,false],notes:'',done:false,updatedAt:0}; return S.logs[k]; }
-function touch(log){ log.updatedAt=Date.now(); save(); writeDoc('logs',logKey(log.date,log.session),log); requestWake(); }
+function touch(log){ log.updatedAt=Date.now(); if(log.date===todayISO()) log.week=curWeek(); save(); writeDoc('logs',logKey(log.date,log.session),log); requestWake(); }
 
 
 // history of an exercise: [{date,week,sets:[{w,r,rir}]}] newest first
@@ -307,7 +307,7 @@ function renderReglages(){
   const bwArr=Object.values(S.bw||{}).sort((x,y)=>x.date<y.date?1:-1); const kg=bwArr[0]?bwArr[0].kg:P.weight;
   const tests=Object.values(S.tests||{}).sort((x,y)=>x.date<y.date?1:-1); const pull=tests[0]?tests[0].reps:null;
   const nDone=Object.values(S.logs).filter(l=>l.done).length;
-  const goals={force:'Force',masse:'Muscle',seche:'Sèche',endurance:'Endurance',puissance:'Puissance',tractions:'Tractions',jambes:'Jambes',bras:'Bras & pecs',sante:'Santé',perf:'Performance'};
+  const goals={force:'Force',masse:'Muscle',perte:'Perte de poids',seche:'Sèche',silhouette:'Silhouette',fessiers:'Fessiers',endurance:'Endurance',cardio:'Souffle',puissance:'Puissance',tractions:'Tractions',jambes:'Jambes',bras:'Bras & pecs',sante:'Santé',perf:'Performance'};
   el.innerHTML=`<div class="phero prof"><button class="pav rk" id="profAvatar" aria-label="Mes badges">${rankSvg(progressFacts().stage,76)}</button><h2>${esc(name||'Mon profil')}</h2><p class="small muted">${P.level?LV[P.level]+' · ':''}${P.age?P.age+' ans · ':''}${P.height?P.height+' cm':''}</p>
     <div class="pills">${(P.goals||[]).slice(0,4).map(g=>`<span class="pill">${esc(goals[g]||g)}</span>`).join('')}<span class="pill ${pi.plan==='premium'?'prem':''}">${pi.plan==='premium'?'Premium':'Gratuit'}</span></div>
     ${(()=>{ const f=progressFacts(); const got=BADGES.filter(b=>f.unlocked.includes(b.id)); return got.length?`<button class="brow center" id="profBadges">${got.slice(-6).map(b=>badgeSvg(b,34,false)).join('')}${got.length>6?`<span class="small muted">+${got.length-6}</span>`:''}</button>`:''; })()}
@@ -468,7 +468,9 @@ function renderCoach(){
     const lbl={ok:'Conforme',up:'Charger',hold:'Plus de reps',warn:'À revoir'};
     const needs=it.adjustments&&it.adjustments.length&&!it.applied;
     cards+=`<div class="ana ${needs?'needs':''}" data-ana="${esc(it.id)}"><div class="anah"><span class="kind">Analyse</span><b>${esc(it.title||it.logKey||'')}</b><em>${when}</em></div>`;
-    if(it.analysis) cards+=`<div class="anab clamp4">${lexify(esc(it.analysis)).replace(/\n/g,'<br>')}</div>`;
+    if(it.headline) cards+=`<div class="anahl t-${esc(it.tone||'ok')}"><i></i><b>${esc(it.headline)}</b></div>`;
+    if(it.takeaways&&it.takeaways.length) cards+=`<ul class="anatk">${it.takeaways.map(t=>`<li>${lexify(esc(t))}</li>`).join('')}</ul>`;
+    else if(it.analysis) cards+=`<div class="anab clamp4">${lexify(esc(it.analysis)).replace(/\n/g,'<br>')}</div>`;
     if(exs.length) cards+=`<div class="exl2">`+exs.map(e=>{ const a=adjBy[e.exId]; const fx=findEx(e.exId); return `<div class="exc ${fx&&demoId(fx)?'hasimg':''}">${fx?demoThumb(fx):''}<div class="l1"><b>${esc(e.name)}</b><span class="st s-${esc(e.status||'ok')}">${lbl[e.status]||'Conforme'}</span></div><div class="l2"><span class="done">${esc(e.done||'—')}</span>${a?`<span class="arrow">→</span><span class="next">${esc(a.change)}</span>`:''}</div></div>`; }).join('')+`</div>`;
     if(it.questions&&it.questions.length) cards+=`<div class="cq">${coachAvatar('attention','xs')}<div><b>${esc(COACH_NAME)} te demande</b>${it.questions.map(q=>`<p>${esc(q)} <button class="link" data-ask="${esc(q)}">Répondre</button></p>`).join('')}</div></div>`;
     cards+=`<div class="anaf"><button class="link" data-detail="${esc(it.id)}">Lire l'analyse complète</button>${it.adjustments&&it.adjustments.length?(it.applied?'<span class="tag ok">charges appliquées</span>':`<button class="btn sm fill" data-apply="${esc(it.id)}">Appliquer les charges</button>`):''}</div></div>`;
@@ -488,7 +490,7 @@ function renderCoach(){
   updateCoachBadge();
 }
 function showAnalysisDetail(it){ if(!it) return; const adjBy={}; (it.adjustments||[]).forEach(a=>adjBy[a.exId]=a); const exs=it.exercises||[];
-  showSheet(`<div class="chead sm">${coachAvatar('idle')}<h3>${esc(it.title||'')}</h3></div><p>${lexify(esc(it.analysis||'')).replace(/\n/g,'<br>')}</p>${exs.length?`<div class="exl">${exs.map(e=>{ const a=adjBy[e.exId]; return `<div class="exr s-${esc(e.status||'ok')}"><i></i><div><b>${esc(e.name)}</b><div class="read">${lexify(esc(e.read||''))}${a&&a.reason?' <span class="muted">— '+lexify(esc(a.reason))+'</span>':''}</div></div></div>`; }).join('')}</div>`:''}${it.cue?`<p class="coachline cue"><b>Point technique</b> ${lexify(esc(it.cue))}</p>`:''}${it.nextFocus?`<p class="coachline"><b>Prochaine fois</b> ${lexify(esc(it.nextFocus))}</p>`:''}<button class="btn" onclick="hideSheet()">Fermer</button>`); }
+  showSheet(`<div class="chead sm">${coachAvatar('idle')}<h3>${esc(it.title||'')}</h3></div>${it.headline?`<div class="anahl t-${esc(it.tone||'ok')}"><i></i><b>${esc(it.headline)}</b></div>`:''}${it.takeaways&&it.takeaways.length?`<ul class="anatk">${it.takeaways.map(t=>`<li>${lexify(esc(t))}</li>`).join('')}</ul>`:''}${it.lesson?`<div class="lesson"><b>À retenir</b><p>${lexify(esc(it.lesson))}</p></div>`:''}${it.analysis?`<details class="more"><summary>Lecture détaillée</summary><p>${lexify(esc(it.analysis)).replace(/\n/g,'<br>')}</p></details>`:''}${exs.length?`<div class="exl">${exs.map(e=>{ const a=adjBy[e.exId]; return `<div class="exr s-${esc(e.status||'ok')}"><i></i><div><b>${esc(e.name)}</b><div class="read">${lexify(esc(e.read||''))}${a&&a.reason?' <span class="muted">— '+lexify(esc(a.reason))+'</span>':''}</div></div></div>`; }).join('')}</div>`:''}${it.cue?`<p class="coachline cue"><b>Point technique</b> ${lexify(esc(it.cue))}</p>`:''}${it.nextFocus?`<p class="coachline"><b>Prochaine fois</b> ${lexify(esc(it.nextFocus))}</p>`:''}<button class="btn" onclick="hideSheet()">Fermer</button>`); }
 function renderChatList(el){
   const threads=Object.values(S.chats||{}).filter(t=>t&&Array.isArray(t.messages)&&t.messages.length).sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0));
   el.innerHTML=`<div class="kbar"><button class="back" id="kBack">‹ ${esc(COACH_NAME)}</button><b>Conversations</b><span></span></div>
@@ -526,7 +528,7 @@ function updateCoachBadge(){ const t=document.querySelector('.tabs button[data-t
 let PROFILE=null, USAGE=null, PROGRAM_LOADED=false, DEFAULT_PROGRAM=null, DEFAULT_CYCLE_HTML='';
 const REF_TESTS=[['tractions','Tractions strictes d\'affilée'],['pompes','Pompes d\'affilée'],['dips','Dips d\'affilée'],['squats','Squats au poids du corps en 2 min'],['burpees','Burpees en 2 min'],['gainage','Gainage en secondes']];
 function refTest(){ const id=(PROFILE&&PROFILE.refTest)||'tractions'; const t=REF_TESTS.find(x=>x[0]===id)||REF_TESTS[0]; return {id:t[0],label:t[1],short:{tractions:'Tractions',pompes:'Pompes',dips:'Dips',squats:'Squats 2 min',burpees:'Burpees 2 min',gainage:'Gainage (s)'}[t[0]],unit:t[0]==='gainage'?'s':'reps',goal:(PROFILE&&(PROFILE.refGoal||PROFILE.pullGoal))||null}; }
-const GOALS=[['force','Force maximale'],['masse','Prise de muscle'],['seche','Sécher, se dessiner'],['endurance','Endurance musculaire'],['puissance','Puissance, vitesse'],['tractions','Tractions (nombre)'],['jambes','Rattraper les jambes'],['bras','Bras et pectoraux'],['sante','Santé, mobilité, dos'],['perf','Performance sportive / opérationnelle']];
+const GOALS=[['force','Force maximale'],['masse','Prise de muscle'],['perte','Perdre du poids'],['seche','Sécher, se dessiner'],['silhouette','Tonifier, silhouette'],['fessiers','Fessiers, bas du corps'],['endurance','Endurance musculaire'],['cardio','Souffle, condition physique'],['puissance','Puissance, vitesse'],['tractions','Tractions (nombre)'],['jambes','Rattraper les jambes'],['bras','Bras et pectoraux'],['sante','Santé, mobilité, dos'],['perf','Performance sportive / opérationnelle']];
 const GEAR=[['salle','Salle complète (machines, barres, poulies)'],['halteres','Haltères'],['barre','Barre olympique et disques'],['kettlebell','Kettlebells'],['elastiques','Élastiques'],['traction','Barre de traction'],['trx','TRX / sangles'],['corps','Poids du corps uniquement'],['cardio','Cardio (vélo, rameur, tapis)']];
 const LEVELS=[['debutant','Débutant (moins d’un an)'],['intermediaire','Intermédiaire (1 à 3 ans)'],['confirme','Confirmé (3 ans et plus)'],['avance','Avancé, entraînement quotidien']];
 
