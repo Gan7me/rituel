@@ -14,6 +14,11 @@ service cloud.firestore {
     match /users/{uid}/{coll}/{doc=**} {
       allow read, write: if owner(uid) && coll != 'meta';
     }
+    // Fiche publique minimale pour le classement entre amis : lisible par tout utilisateur connecté, écrite par son propriétaire.
+    match /public/{uid} {
+      allow read: if request.auth != null;
+      allow write: if owner(uid) && request.resource.data.keys().hasOnly(['name','code','weekXp','weekKey','stage','xp','updatedAt']) && request.resource.data.name is string && request.resource.data.name.size() < 40;
+    }
     // Rapports d'erreur envoyés par l'app : création seulement, par l'utilisateur concerné, petits documents.
     match /errors/{id} {
       allow create: if request.auth != null && request.resource.data.uid == request.auth.uid && request.resource.data.msg is string && request.resource.data.msg.size() < 400;

@@ -1160,3 +1160,22 @@ main>section{overflow-x:clip}
 .cmpd[open] summary::after{transform:rotate(-135deg)}
 .pplan .tag2{background:var(--accent);color:#fff;font-size:10.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;padding:3px 9px;border-radius:999px;white-space:nowrap}
 .pplan{margin-top:6px}
+.ucard.off{opacity:.6}
+.pstar.off{background:var(--surface2);color:var(--muted)}
+.amenu{position:fixed;inset:0;z-index:90;background:rgba(0,0,0,.45);display:flex;align-items:flex-end;justify-content:center;opacity:0;transition:opacity .2s}
+.amenu.on{opacity:1}
+.menu-card{background:var(--surface);border-radius:var(--r-lg) var(--r-lg) 0 0;padding:14px 16px calc(18px + env(safe-area-inset-bottom));width:100%;max-width:640px;display:grid;gap:6px}
+.menu-card h4{margin:0 0 6px;font-size:15px}
+.menu-card button{width:100%;text-align:left;padding:13px 14px;border-radius:12px;background:var(--surface2);font-size:15px;color:var(--ink)}
+.menu-card button.danger{color:var(--accent-ink)}
+.frhead{text-align:center;padding:10px 0 12px;display:block}
+.frhead h2{font-family:var(--disp);font-size:28px;font-weight:800;margin:2px 0 4px}
+.lrow .pos{font-family:var(--disp);font-weight:800;font-size:18px;color:var(--muted);width:48px;text-align:center}
+.lrow.now .pos{color:var(--accent-ink)}
+.fcode{text-align:center;background:var(--surface);border-radius:var(--r);padding:14px;margin:16px 0 10px;box-shadow:var(--shadow)}
+.fcode b{display:block;font-family:var(--mono);font-size:28px;letter-spacing:.2em;margin:4px 0 8px}
+.fcode .row2{justify-content:center}
+.fadd{margin:0 0 8px}
+.fadd input{text-transform:uppercase;letter-spacing:.15em;font-family:var(--mono)}
+.lrow>span:last-child{white-space:nowrap}
+.lrow>span b{display:inline;font-size:15px}

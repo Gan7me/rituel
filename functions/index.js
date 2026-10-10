@@ -298,9 +298,9 @@ exports.adminStats = onCall({ region: 'europe-west1' }, async (req) => {
     const usage = us.exists ? us.data() : {}; if (usage.month === month) { costMonth += usage.costUsd || 0; calls += (usage.analyse || 0) + (usage.chat || 0) + (usage.program || 0) + (usage.substitute || 0) + (usage.demo || 0); }
     const n7 = lg.docs.filter(d => isDone(d.data())).length; sessions7 += n7;
     const plan = bl.exists && bl.data().plan === 'premium' && (!bl.data().expiresAt || bl.data().expiresAt > Date.now()) ? 'premium' : 'free'; if (plan === 'premium') premium++;
-    let email = ''; try { email = (await admin.auth().getUser(u.id)).email || ''; } catch (e) {}
+    let email = '', disabled = false, created = null; try { const au = await admin.auth().getUser(u.id); email = au.email || ''; disabled = !!au.disabled; created = au.metadata && au.metadata.creationTime ? new Date(au.metadata.creationTime).getTime() : null; } catch (e) {}
     const bd = bl.exists ? bl.data() : {};
-    perUser.push({ uid: u.id.slice(0, 6), uidFull: u.id, email, admin: ADMIN_EMAILS.includes(email.toLowerCase()), name: pr.exists ? (pr.data().name || '') : '', program: hasProg, sessions7: n7, plan: ADMIN_EMAILS.includes(email.toLowerCase()) ? 'premium' : plan, source: bd.source || '', store: bd.store || '', expiresAt: bd.expiresAt || null, cost: usage.month === month ? Math.round((usage.costUsd || 0) * 100) / 100 : 0, lastMode: usage.lastMode || '' });
+    perUser.push({ uid: u.id.slice(0, 6), uidFull: u.id, email, disabled, created, lastAt: usage.updatedAt || null, admin: ADMIN_EMAILS.includes(email.toLowerCase()), name: pr.exists ? (pr.data().name || '') : '', program: hasProg, sessions7: n7, plan: ADMIN_EMAILS.includes(email.toLowerCase()) ? 'premium' : plan, source: bd.source || '', store: bd.store || '', expiresAt: bd.expiresAt || null, cost: usage.month === month ? Math.round((usage.costUsd || 0) * 100) / 100 : 0, lastMode: usage.lastMode || '' });
   }
   const errs = await db.collection('errors').where('t', '>=', sinceMs).orderBy('t', 'desc').limit(100).get();
   const errors = errs.docs.map(d => d.data()).map(e => ({ t: e.t, uid: String(e.uid || '').slice(0, 6), src: e.src, msg: String(e.msg || '').slice(0, 160), ver: e.ver }));
@@ -316,6 +316,18 @@ exports.adminSetPlan = onCall({ region: 'europe-west1' }, async (req) => {
   const ref = db.collection('users').doc(uid).collection('meta').doc('billing');
   if (plan === 'premium') { const exp = new Date(); exp.setMonth(exp.getMonth() + (months || 1)); await ref.set({ plan: 'premium', source: 'admin', store: '', expiresAt: exp.getTime(), since: Date.now(), updatedAt: Date.now() }, { merge: true }); console.log(`[billing] admin premium uid=${uid.slice(0, 6)} ${months || 1} mois`); return { plan, expiresAt: exp.getTime() }; }
   await ref.set({ plan: 'free', source: 'admin', expiresAt: Date.now(), updatedAt: Date.now() }, { merge: true }); console.log(`[billing] admin free uid=${uid.slice(0, 6)}`); return { plan };
+});
+
+// Actions d'administration sur un compte : remise à zéro des compteurs du mois, notification, blocage, suppression.
+exports.adminAction = onCall({ region: 'europe-west1' }, async (req) => {
+  if (!req.auth || !ADMIN_EMAILS.includes(String(req.auth.token && req.auth.token.email || '').toLowerCase())) throw new HttpsError('permission-denied', 'Réservé à l\'administrateur.');
+  const { uid, action, text } = req.data || {}; if (!uid || !action) throw new HttpsError('invalid-argument', 'uid et action requis');
+  const base = db.collection('users').doc(String(uid));
+  if (action === 'resetQuota') { await base.collection('meta').doc('usage').set({ month: parisISO().slice(0, 7), program: 0, analyse: 0, chat: 0, substitute: 0, demo: 0, updatedAt: Date.now() }, { merge: true }); await base.collection('meta').doc('genstate').delete().catch(() => {}); return { ok: true }; }
+  if (action === 'push') { await sendPush(String(uid), 'Rituel', String(text || '').slice(0, 200), { tab: 'home' }); return { ok: true }; }
+  if (action === 'block' || action === 'unblock') { await admin.auth().updateUser(String(uid), { disabled: action === 'block' }); return { ok: true, disabled: action === 'block' }; }
+  if (action === 'delete') { await db.recursiveDelete(base); await admin.auth().deleteUser(String(uid)).catch(() => {}); return { ok: true }; }
+  throw new HttpsError('invalid-argument', 'action inconnue');
 });
 
 // Webhook RevenueCat : source de vérité du forfait payant. L'app_user_id est l'uid Firebase (posé par la coquille à la connexion).

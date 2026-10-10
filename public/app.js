@@ -18,7 +18,7 @@ function humanErr(e){ const c=(e&&e.code)||''; const m=(e&&e.message)||String(e|
   if(/network|Failed to fetch|internet/i.test(m)||!navigator.onLine) return 'Pas de réseau. Le coach a besoin d\'une connexion ; tes séries sont enregistrées et partiront toutes seules.';
   if(/invalid-argument/.test(c)) return 'Le serveur n\'a pas compris la demande (version de l\'app en retard ?). Recharge l\'application depuis Réglages.';
   return m; }
-const APP_VERSION='3.24.1';
+const APP_VERSION='3.25.0';
 const ADMIN_RE=/^(ganeme\.asloune@nexisafe\.com|gads@live\.fr)$/i;
 let PROGRAM={sessions:[]};
 let WEEKS = [
@@ -260,8 +260,32 @@ async function showAdmin(){
     $('#admBody').innerHTML=hlHtml+`<div class="cs-grid adm"><div><b>${d.users}</b><span>comptes</span></div><div><b>${d.withProgram}</b><span>avec programme</span></div><div><b>${d.premium}</b><span>premium</span></div><div><b>${d.sessions7}</b><span>séances 7 j</span></div><div><b>${d.calls}</b><span>appels IA (mois)</span></div><div><b>${(d.costMonth*0.92).toFixed(2).replace('.',',')} €</b><span>coût IA (mois)</span></div></div>
       <h4>Erreurs (${errs.length})</h4>${errs.length?`<div class="hl2">${Object.entries(byMsg).sort((a,b)=>b[1]-a[1]).slice(0,12).map(([k,n])=>`<div class="hrow"><span class="s" style="white-space:normal">${esc(k)}</span><b>${n}</b></div>`).join('')}</div>`:'<p class="small muted">Aucune erreur remontée.</p>'}
       <h4>Abonnés (${(d.perUser||[]).filter(u=>u.plan==='premium').length})</h4><div class="hl2">${(d.perUser||[]).filter(u=>u.plan==='premium').map(u=>`<div class="hrow"><span class="d">${esc(u.name||u.email||u.uid)}</span><span class="s">${esc(u.email||'')} · ${u.source==='admin'?'offert':esc(u.store||'')}${u.expiresAt?' · jusqu\'au '+new Date(u.expiresAt).toLocaleDateString('fr-FR'):''}</span><b></b></div>`).join('')||'<p class="small muted">Aucun abonné.</p>'}</div>
-      <h4>Utilisateurs</h4><div class="hl2 admu">${(d.perUser||[]).map(u=>`<div class="hrow"><span class="d">${esc(u.name||u.email||u.uid)}${u.admin?' <em class="pstar">admin</em>':''}</span><span class="s">${esc(u.email||'')}<br>${u.program?'programme':'sans programme'} · ${u.sessions7} séance${u.sessions7>1?'s':''} 7 j · ${u.plan}${u.cost?' · '+u.cost.toFixed(2)+' $':''}</span><b>${u.admin?'':u.plan==='premium'?`<button class="btn sm" data-plan="free" data-uid="${esc(u.uidFull)}">Retirer</button>`:`<button class="btn sm" data-plan="premium" data-uid="${esc(u.uidFull)}">Offrir 1 mois</button>`}</b></div>`).join('')}</div>`;
-    $('#admBody').querySelectorAll('[data-plan]').forEach(b=>b.onclick=async()=>{ const months=b.dataset.plan==='premium'?parseInt(prompt('Offrir Premium pour combien de mois ?','1'))||0:0; if(b.dataset.plan==='premium'&&!months) return; b.disabled=true; try{ const fn=fbFn.httpsCallable('adminSetPlan'); await fn({uid:b.dataset.uid,plan:b.dataset.plan,months}); toast(b.dataset.plan==='premium'?'Premium offert':'Premium retiré','ok'); showAdmin(); }catch(e){ b.disabled=false; toast('Échec : '+(e.message||e)); } });
+      <h4>Utilisateurs (${(d.perUser||[]).length})</h4><div class="hl2 admu">${(d.perUser||[]).map(u=>`<div class="hrow ucard ${u.disabled?'off':''}"><span class="d">${esc(u.name||u.email||u.uid)}${u.admin?' <em class="pstar">admin</em>':''}${u.disabled?' <em class="pstar off">bloqué</em>':''}</span><span class="s">${esc(u.email||'')}<br>${u.program?'programme':'sans programme'} · ${u.sessions7} séance${u.sessions7>1?'s':''} 7 j · ${u.plan}${u.cost?' · '+u.cost.toFixed(2)+' $':''}${u.created?' · inscrit le '+new Date(u.created).toLocaleDateString('fr-FR'):''}</span><b>${u.admin?'':`<button class="btn sm" data-umenu="${esc(u.uidFull)}" data-uname="${esc(u.name||u.email||u.uid)}" data-uplan="${u.plan}" data-udis="${u.disabled?1:0}">Gérer</button>`}</b></div>`).join('')}</div>`;
+    const act=async(uid,action,extra)=>{ const fn=fbFn.httpsCallable('adminAction'); await fn(Object.assign({uid,action},extra||{})); };
+    $('#admBody').querySelectorAll('[data-umenu]').forEach(b=>b.onclick=()=>{ const uid=b.dataset.umenu, name=b.dataset.uname, prem=b.dataset.uplan==='premium', dis=b.dataset.udis==='1';
+      const m=document.createElement('div'); m.className='amenu'; m.innerHTML=`<div class="menu-card"><h4>${esc(name)}</h4>
+        <button data-a="${prem?'free':'premium'}">${prem?'Retirer Premium':'Offrir Premium (N mois)'}</button>
+        <button data-a="resetQuota">Remettre les compteurs du mois à zéro</button>
+        <button data-a="push">Envoyer une notification</button>
+        <button data-a="${dis?'unblock':'block'}">${dis?'Débloquer le compte':'Bloquer le compte'}</button>
+        <button data-a="delete" class="danger">Supprimer le compte et ses données</button>
+        <button data-a="x">Annuler</button></div>`;
+      document.body.appendChild(m); requestAnimationFrame(()=>m.classList.add('on'));
+      const close=()=>{ m.classList.remove('on'); setTimeout(()=>m.remove(),200); };
+      m.onclick=e=>{ if(e.target===m) close(); };
+      m.querySelectorAll('[data-a]').forEach(x=>x.onclick=async()=>{ const a=x.dataset.a; if(a==='x'){ close(); return; }
+        try{
+          if(a==='premium'){ const months=parseInt(prompt(`Offrir Premium à ${name} pour combien de mois ?`,'1'))||0; if(!months) return; const fn=fbFn.httpsCallable('adminSetPlan'); await fn({uid,plan:'premium',months}); toast('Premium offert','ok'); }
+          else if(a==='free'){ if(!confirm(`Retirer Premium à ${name} ?`)) return; const fn=fbFn.httpsCallable('adminSetPlan'); await fn({uid,plan:'free',months:0}); toast('Premium retiré','ok'); }
+          else if(a==='resetQuota'){ await act(uid,'resetQuota'); toast('Compteurs remis à zéro','ok'); }
+          else if(a==='push'){ const text=prompt(`Message pour ${name} (notification) :`,''); if(!text) return; await act(uid,'push',{text}); toast('Notification envoyée','ok'); }
+          else if(a==='block'){ if(!confirm(`Bloquer ${name} ? Il ne pourra plus se connecter.`)) return; await act(uid,'block'); toast('Compte bloqué','ok'); }
+          else if(a==='unblock'){ await act(uid,'unblock'); toast('Compte débloqué','ok'); }
+          else if(a==='delete'){ if(!confirm(`Supprimer définitivement le compte de ${name} et toutes ses données ?`)) return; if(prompt('Tape SUPPRIMER pour confirmer')!=='SUPPRIMER') return; await act(uid,'delete'); toast('Compte supprimé','ok'); }
+          close(); showAdmin();
+        }catch(e){ toast('Échec : '+(e.message||e)); }
+      });
+    });
   }catch(e){ $('#admMsg').textContent='Échec : '+(e.message||e); }
 }
 function showDiag(){ const recent=Object.values(S.logs).filter(l=>Object.keys(l.sets||{}).length||l.done).sort((a,b)=>a.date<b.date?1:-1).slice(0,8).map(l=>`${l.date} ${l.session} ${l.done?'terminée':'en cours'} ${Object.values(l.sets||{}).flat().filter(x=>x&&x.done).length} séries`).join('\n');
@@ -287,7 +311,7 @@ function renderReglages(){
   el.innerHTML=`<div class="phero prof"><button class="pav rk" id="profAvatar" aria-label="Mes badges">${rankSvg(progressFacts().stage,76)}</button><h2>${esc(name||'Mon profil')}</h2><p class="small muted">${P.level?LV[P.level]+' · ':''}${P.age?P.age+' ans · ':''}${P.height?P.height+' cm':''}</p>
     <div class="pills">${(P.goals||[]).slice(0,4).map(g=>`<span class="pill">${esc(goals[g]||g)}</span>`).join('')}<span class="pill ${pi.plan==='premium'?'prem':''}">${pi.plan==='premium'?'Premium':'Gratuit'}</span></div>
     ${(()=>{ const f=progressFacts(); const got=BADGES.filter(b=>f.unlocked.includes(b.id)); return got.length?`<button class="brow center" id="profBadges">${got.slice(-6).map(b=>badgeSvg(b,34,false)).join('')}${got.length>6?`<span class="small muted">+${got.length-6}</span>`:''}</button>`:''; })()}
-    <div class="pstats"><div><b>${kg?String(kg).replace('.',','):'—'}</b><span>kg</span></div><div><b>${pull!=null?pull:'—'}</b><span>tractions${P.pullGoal?' / '+P.pullGoal:''}</span></div><div><b>${nDone}</b><span>séance${nDone>1?'s':''}</span></div></div>
+    <div class="pstats"><div><b>${kg?String(kg).replace('.',','):'—'}</b><span>kg</span></div><div><b>${pull!=null?pull:'—'}</b><span>${esc(refTest().short.toLowerCase())}${refTest().goal?' / '+refTest().goal:''}</span></div><div><b>${nDone}</b><span>séance${nDone>1?'s':''}</span></div></div>
     <div class="row2"><button class="btn sm" id="profBtn">Modifier le profil</button></div></div>
   ${pi.plan==='premium'?`<button class="card plancard prem" id="planCard"><div class="pcin"><div class="card-h"><b>Rituel Premium</b><span>actif ›</span></div><p>Kai sans compter : analyses de chaque séance, questions, nouveaux cycles, séances sans salle.</p></div></button>`:`<button class="card plancard free" id="planCard"><div class="pcin"><b>Forfait Découverte</b><p>${USAGE?(USAGE.analyse||0):0}/${pi.lim.analyse} analyses · ${USAGE?(USAGE.chat||0):0}/${pi.lim.chat} questions ce mois-ci</p><span class="cta">Passer Premium</span></div><div class="pcbar"><i style="width:${Math.min(100,Math.round(100*(USAGE?(USAGE.analyse||0):0)/Math.max(1,pi.lim.analyse)))}%"></i></div></button>`}
   <div class="grp"><div class="grp-t">Entraînement</div>
@@ -500,6 +524,8 @@ function updateCoachBadge(){ const t=document.querySelector('.tabs button[data-t
    users/{uid}/meta/program  — son programme, généré par le coach à partir du profil (ou importé)
    Sans compte : écran d'accueil uniquement. */
 let PROFILE=null, USAGE=null, PROGRAM_LOADED=false, DEFAULT_PROGRAM=null, DEFAULT_CYCLE_HTML='';
+const REF_TESTS=[['tractions','Tractions strictes d\'affilée'],['pompes','Pompes d\'affilée'],['dips','Dips d\'affilée'],['squats','Squats au poids du corps en 2 min'],['burpees','Burpees en 2 min'],['gainage','Gainage en secondes']];
+function refTest(){ const id=(PROFILE&&PROFILE.refTest)||'tractions'; const t=REF_TESTS.find(x=>x[0]===id)||REF_TESTS[0]; return {id:t[0],label:t[1],short:{tractions:'Tractions',pompes:'Pompes',dips:'Dips',squats:'Squats 2 min',burpees:'Burpees 2 min',gainage:'Gainage (s)'}[t[0]],unit:t[0]==='gainage'?'s':'reps',goal:(PROFILE&&(PROFILE.refGoal||PROFILE.pullGoal))||null}; }
 const GOALS=[['force','Force maximale'],['masse','Prise de muscle'],['seche','Sécher, se dessiner'],['endurance','Endurance musculaire'],['puissance','Puissance, vitesse'],['tractions','Tractions (nombre)'],['jambes','Rattraper les jambes'],['bras','Bras et pectoraux'],['sante','Santé, mobilité, dos'],['perf','Performance sportive / opérationnelle']];
 const GEAR=[['salle','Salle complète (machines, barres, poulies)'],['halteres','Haltères'],['barre','Barre olympique et disques'],['kettlebell','Kettlebells'],['elastiques','Élastiques'],['traction','Barre de traction'],['trx','TRX / sangles'],['corps','Poids du corps uniquement'],['cardio','Cardio (vélo, rameur, tapis)']];
 const LEVELS=[['debutant','Débutant (moins d’un an)'],['intermediaire','Intermédiaire (1 à 3 ans)'],['confirme','Confirmé (3 ans et plus)'],['avance','Avancé, entraînement quotidien']];
@@ -595,6 +621,8 @@ function profileForm(p){
     <div class="grid2"><label>Taille (cm)<input name="height" type="number" inputmode="numeric" value="${p.height||''}" required></label>
     <label>Poids (kg)<input name="weight" type="number" inputmode="decimal" step="0.1" value="${p.weight||''}" required></label></div>
     <label>Niveau<select name="level">${LEVELS.map(([v,l])=>`<option value="${v}" ${p.level===v?'selected':''}>${l}</option>`).join('')}</select></label>
+    <div class="grid2"><label>Test de référence<select name="refTest">${REF_TESTS.map(([v,l])=>`<option value="${v}" ${(p.refTest||'tractions')===v?'selected':''}>${l}</option>`).join('')}</select></label>
+    <label>Objectif sur ce test<input name="refGoal" type="number" inputmode="numeric" min="1" value="${p.refGoal||p.pullGoal||''}" placeholder="ex. 70"></label></div>
     <fieldset><legend>Objectifs (2 à 4, par ordre d'importance en cochant)</legend><div class="chks">${chk(GOALS,p.goals)}</div></fieldset>
     <label>Précision sur tes objectifs<textarea name="goalsText" rows="2" placeholder="Ex. : passer de 35 à 70 tractions, rattraper des jambes faibles, rester à 69 kg">${esc(p.goalsText||'')}</textarea></label>
     <div class="grid2"><label>Séances par semaine<select name="days">${[2,3,4,5,6].map(n=>`<option ${String(p.days||4)===String(n)?'selected':''}>${n}</option>`).join('')}</select></label>
@@ -608,7 +636,7 @@ function profileForm(p){
 }
 function bindProfileForm(after,root){
   $('#profForm',root||document).onsubmit=async e=>{ e.preventDefault(); const f=new FormData(e.target); const p={}; for(const [k,v] of f.entries()){ if(k==='goals'||k==='gear') (p[k]=p[k]||[]).push(v); else p[k]=String(v).trim(); } if(!p.gear) p.gear=[];
-    ['age','height','weight','days','minutes'].forEach(k=>p[k]=Number(p[k])); p.updatedAt=Date.now(); if(!PROFILE||!PROFILE.createdAt) p.createdAt=Date.now(); else p.createdAt=PROFILE.createdAt;
+    ['age','height','weight','days','minutes'].forEach(k=>p[k]=Number(p[k])); p.refGoal=p.refGoal?Number(p.refGoal):null; if(!p.refGoal) delete p.refGoal; if(PROFILE&&PROFILE.pullGoal&&!p.refGoal&&(p.refTest||'tractions')==='tractions') p.refGoal=PROFILE.pullGoal; p.updatedAt=Date.now(); if(!PROFILE||!PROFILE.createdAt) p.createdAt=Date.now(); else p.createdAt=PROFILE.createdAt;
     PROFILE=p; try{ await fbDb.collection('users').doc(USER.uid).collection('meta').doc('profile').set(p); }catch(err){ alert('Enregistrement impossible : '+err.message); return; }
     after&&after(); };
 }
@@ -711,7 +739,7 @@ const BADGES=[
   {id:'pr1',name:'Premier record',how:'1 record personnel',fam:'pr',icon:'trophy',test:f=>f.prs>=1,prog:f=>[f.prs,1]},
   {id:'pr5',name:'Cinq records',how:'5 records personnels',fam:'pr',icon:'trophy',tier:3,test:f=>f.prs>=5,prog:f=>[f.prs,5]},
   {id:'pr15',name:'Collectionneur',how:'15 records personnels',fam:'pr',icon:'trophy',tier:5,test:f=>f.prs>=15,prog:f=>[f.prs,15]},
-  {id:'t1',name:'Premier test',how:'1 test de référence noté (tractions par défaut)',fam:'pull',icon:'bar',test:f=>f.tests>=1,prog:f=>[f.tests,1]},
+  {id:'t1',name:'Premier test',how:'1 test de référence noté',fam:'pull',icon:'bar',test:f=>f.tests>=1,prog:f=>[f.tests,1]},
   {id:'tp10',name:'+10 %',how:'10 % de mieux que ton premier test',fam:'pull',icon:'bar',tier:2,test:f=>f.gain>=10,prog:f=>[Math.max(0,f.gain),10]},
   {id:'tp25',name:'+25 %',how:'25 % de mieux que ton premier test',fam:'pull',icon:'bar',tier:3,test:f=>f.gain>=25,prog:f=>[Math.max(0,f.gain),25]},
   {id:'tp50',name:'+50 %',how:'50 % de mieux que ton premier test',fam:'pull',icon:'bar',tier:4,test:f=>f.gain>=50,prog:f=>[Math.max(0,f.gain),50]},
@@ -839,9 +867,30 @@ function weeklyChallenges(iso){
 }
 function challengeXp(){ let n=0; Object.values(S.challengesDone||{}).forEach(arr=>n+=(arr||[]).length); return n*20; }
 function syncChallenges(){ const w=weeklyChallenges(); S.challengesDone=S.challengesDone||{}; const prev=S.challengesDone[w.monday]||[]; const now=w.list.filter(c=>c.ok).map(c=>c.id); const fresh=now.filter(id=>!prev.includes(id)); if(fresh.length){ S.challengesDone[w.monday]=Array.from(new Set(prev.concat(now))); save(); fresh.forEach(id=>{ const c=w.list.find(x=>x.id===id); toast(`Défi tenu : ${c.name} · +20 XP`,'ok'); }); native({type:'haptic',kind:'success'}); } }
+// Classement entre amis : chacun publie une fiche minimale (prénom, code ami, XP de la semaine, rang) ; on suit ses amis par leur code.
+function friendCode(uid){ let h=0; for(const ch of uid) h=(h*31+ch.charCodeAt(0))>>>0; const A='ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; let c=''; for(let i=0;i<6;i++){ c+=A[h%A.length]; h=Math.floor(h/A.length)+i*7; } return c; }
+function weekXp(){ const monday=weekKeyOf(todayISO()), sunday=addDays(monday,6); const logs=Object.values(S.logs).filter(l=>l.done&&l.date>=monday&&l.date<=sunday); let xp=logs.length*10; let prs=0; logs.forEach(l=>Object.values(l.sets||{}).forEach(arr=>{ if((arr||[]).some(x=>x&&x.pr)) prs++; })); xp+=prs*15; xp+=Object.values(S.tests||{}).filter(t=>t.date>=monday&&t.date<=sunday).length*5; xp+=((S.challengesDone||{})[monday]||[]).length*20; return xp; }
+let PUB_LAST='';
+function publishPublic(){ if(!USER||!fbDb) return; const f=progressFacts(); const doc={name:(PROFILE&&PROFILE.name)||(USER.displayName||'').split(' ')[0]||'Athlète',code:friendCode(USER.uid),weekXp:weekXp(),weekKey:weekKeyOf(todayISO()),stage:f.stage,xp:f.xp,updatedAt:Date.now()}; const sig=JSON.stringify([doc.name,doc.weekXp,doc.weekKey,doc.stage,doc.xp]); if(sig===PUB_LAST) return; PUB_LAST=sig; try{ const r=fbDb.collection('public').doc(USER.uid); if(r&&typeof r.set==='function') r.set(doc).catch(e=>logErr('public',e)); }catch(e){} }
+async function addFriendByCode(code){ code=String(code||'').trim().toUpperCase(); if(code.length!==6) throw new Error('Code à 6 caractères'); if(code===friendCode(USER.uid)) throw new Error('C\'est ton propre code'); const q=await fbDb.collection('public').where('code','==',code).limit(1).get(); if(q.empty) throw new Error('Aucun athlète avec ce code (il doit avoir ouvert l\'app au moins une fois)'); const uid=q.docs[0].id; const friends=(PROFILE&&PROFILE.friends)||[]; if(friends.includes(uid)) return q.docs[0].data(); const nf=friends.concat(uid); PROFILE.friends=nf; await col('meta').doc('profile').set({friends:nf},{merge:true}); return q.docs[0].data(); }
+async function loadFriends(){ const ids=((PROFILE&&PROFILE.friends)||[]).slice(0,30); const out=[]; for(const uid of ids){ try{ const d=await fbDb.collection('public').doc(uid).get(); if(d.exists) out.push(Object.assign({uid},d.data())); }catch(e){} } return out; }
+async function renderFriends(el){
+  const f=progressFacts(); const me={uid:USER?USER.uid:'me',name:(PROFILE&&PROFILE.name)||'Toi',weekXp:weekXp(),stage:f.stage,xp:f.xp,me:true}; const wk=weekKeyOf(todayISO());
+  el.innerHTML=`<p class="tsub center">Chargement…</p>`; let friends=[]; try{ friends=await loadFriends(); }catch(e){}
+  const rows=[me].concat(friends.map(x=>Object.assign({},x,{weekXp:x.weekKey===wk?(x.weekXp||0):0}))).sort((a,b)=>b.weekXp-a.weekXp);
+  const myPos=rows.findIndex(r=>r.me)+1;
+  el.innerHTML=`<div class="frhead"><p class="eyebrow">Cette semaine</p><h2>${friends.length?`${myPos}${myPos===1?'er':'e'} sur ${rows.length}`:'Ton classement'}</h2><p class="tsub">${friends.length?'XP gagnée depuis lundi, entre amis.':'Ajoute des amis avec leur code pour vous comparer chaque semaine.'}</p></div>
+    <div class="ladder">${rows.map((r,i)=>`<div class="lrow ${r.me?'now':''}"><span class="pos">${i+1}</span><div><b>${esc(r.name||'Athlète')}${r.me?' (toi)':''}</b><small>${RANKS[(r.stage||1)-1]?RANKS[(r.stage||1)-1].name:''} · ${r.xp||0} XP au total</small></div><span><b>${r.weekXp||0}</b> XP</span></div>`).join('')}</div>
+    <div class="fcode"><p class="eyebrow">Ton code ami</p><b>${USER?friendCode(USER.uid):'------'}</b><div class="row2"><button class="btn sm" id="fShare">Partager mon code</button></div></div>
+    <form class="qf fadd" id="fAdd"><input placeholder="Code d'un ami" maxlength="6" autocapitalize="characters" aria-label="Code ami"><button class="btn sm fill" type="submit">Ajouter</button></form>
+    ${friends.length?`<p class="small muted">Pour retirer un ami, appuie longuement sur sa ligne.</p>`:''}`;
+  const sh=el.querySelector('#fShare'); if(sh) sh.onclick=async()=>{ const code=friendCode(USER.uid); const text=`Rejoins-moi sur Rituel et ajoute mon code ami : ${code}`; try{ if(navigator.share) await navigator.share({text}); else { await navigator.clipboard.writeText(code); toast('Code copié','ok'); } }catch(e){} };
+  const fa=el.querySelector('#fAdd'); if(fa) fa.onsubmit=async e=>{ e.preventDefault(); const inp=fa.querySelector('input'); try{ const d=await addFriendByCode(inp.value); toast(`${d.name} ajouté`,'ok'); renderFriends(el); }catch(err){ toast(err.message||'Ajout impossible'); } };
+  el.querySelectorAll('.lrow:not(.now)').forEach((row,i)=>{ let t=null; const uid=rows.filter(r=>!r.me)[0]?null:null; row.addEventListener('touchstart',()=>{ t=setTimeout(()=>{ const r=rows[Array.from(el.querySelectorAll('.lrow')).indexOf(row)]; if(r&&!r.me&&confirm(`Retirer ${r.name} de tes amis ?`)){ PROFILE.friends=(PROFILE.friends||[]).filter(x=>x!==r.uid); col('meta').doc('profile').set({friends:PROFILE.friends},{merge:true}); renderFriends(el); } },700); },{passive:true}); row.addEventListener('touchend',()=>clearTimeout(t)); row.addEventListener('touchmove',()=>clearTimeout(t)); });
+}
 // Trophées : écran plein avec deux volets, Rang (échelle des 5 rangs, XP) et Médailles (collection) ; détail d'une médaille en écran dédié.
 const FAM_NAME={ses:'Séances',pr:'Records',pull:'Progression',reg:'Régularité',cyc:'Cycle'};
-const FAM_DESC={ses:'Chaque séance terminée compte. La médaille est un disque de musculation.',pr:'Un record, c\'est une charge ou un nombre de répétitions jamais atteint sur un exercice. La médaille est une kettlebell.',pull:'Ta progression sur ton test de référence (tractions d\'affilée par défaut, noté depuis l\'accueil), mesurée par rapport à ton premier test : elle vaut pour tout le monde, quel que soit le niveau de départ. La médaille est une tête d\'haltère suspendue à la barre.',reg:'Une semaine complète, c\'est toutes les séances du programme faites dans la semaine. La médaille est un chronomètre.',cyc:'Les mésocycles bouclés et les gros volumes. La médaille est un écusson.'};
+const FAM_DESC={ses:'Chaque séance terminée compte. La médaille est un disque de musculation.',pr:'Un record, c\'est une charge ou un nombre de répétitions jamais atteint sur un exercice. La médaille est une kettlebell.',pull:'Ta progression sur ton test de référence (choisi dans ton profil : tractions, pompes, dips, squats, burpees ou gainage ; noté depuis l\'accueil), mesurée par rapport à ton premier test : elle vaut pour tout le monde, quel que soit le niveau de départ. La médaille est une tête d\'haltère suspendue à la barre.',reg:'Une semaine complète, c\'est toutes les séances du programme faites dans la semaine. La médaille est un chronomètre.',cyc:'Les mésocycles bouclés et les gros volumes. La médaille est un écusson.'};
 let TROPHY_VIEW='rang';
 function showBadges(view){ if(view) TROPHY_VIEW=view; showTrophies(); }
 function showTrophies(){
@@ -849,7 +898,8 @@ function showTrophies(){
   if(fresh){ el=document.createElement('div'); el.className='trophies'; document.body.appendChild(el); document.body.classList.add('unlocking'); requestAnimationFrame(()=>el.classList.add('on')); }
   const dateOf=b=>S.badgeDates&&S.badgeDates[b.id]?new Date(S.badgeDates[b.id]+'T12:00:00').toLocaleDateString('fr-FR',{day:'numeric',month:'long',year:'numeric'}):'';
   let body='';
-  if(TROPHY_VIEW==='rang'){
+  if(TROPHY_VIEW==='amis'){ body='<div id="friendsBox"></div>'; }
+  else if(TROPHY_VIEW==='rang'){
     body=`<div class="thero"><div class="tilt" id="tRank">${rankSvg(f.stage,180)}</div><p class="eyebrow">Rang ${f.stage} sur ${RANKS.length}</p><h2>${esc(f.stageName)}</h2><div class="xpbar"><i style="width:${f.pct}%"></i></div><p class="tsub">${f.xp} XP${f.next?` · encore ${f.next.xp-f.xp} XP pour devenir « ${esc(f.next.name)} »`:' · rang maximal'}</p></div>
       <h4>L'échelle des rangs</h4><div class="ladder">${RANKS.map((r,i)=>{ const st=i+1; const cls=st===f.stage?'now':st<f.stage?'done':'todo'; return `<div class="lrow ${cls}">${rankSvg(st,48)}<div><b>${esc(r.name)}</b><small>${st<f.stage?'acquis':st===f.stage?'ton rang actuel':`à ${r.xp} XP · il te manque ${r.xp-f.xp}`}</small></div><span>${r.xp} XP</span></div>`; }).join('')}</div>
       <h4>Comment gagner de l'XP</h4><div class="xprules"><div><b>+10</b><span>séance terminée</span></div><div><b>+15</b><span>record personnel</span></div><div><b>+5</b><span>test de référence</span></div><div><b>+25</b><span>semaine complète</span></div><div><b>+20</b><span>défi de la semaine</span></div></div>
@@ -857,11 +907,11 @@ function showTrophies(){
   } else {
     body=`<p class="tsub center">${f.unlocked.length} médaille${f.unlocked.length>1?'s':''} sur ${BADGES.length}. Touche une médaille pour la voir en grand.</p>`+['ses','pr','pull','reg','cyc'].map(fam=>`<h4>${FAM_NAME[fam]}</h4><p class="small muted famd">${FAM_DESC[fam]}</p><div class="bgrid">${BADGES.filter(b=>b.fam===fam).map((b,i)=>{ const ok=f.unlocked.includes(b.id); const pr=b.prog?b.prog(f):null; return `<button class="bcell ${ok?'':'lock'}" data-badge="${b.id}" style="animation-delay:${i*60}ms">${badgeSvg(b,84,!ok,f)}<b>${esc(b.name)}</b><small>${ok?esc(dateOf(b)):(pr?`${String(pr[0]).replace('.',',')} / ${pr[1]}`:esc(b.how))}</small></button>`; }).join('')}</div>`).join('');
   }
-  el.innerHTML=`<div class="tbar"><button class="tclose" id="tClose" aria-label="Fermer">✕</button><div class="seg"><button data-tv="rang" aria-selected="${TROPHY_VIEW==='rang'}">Rang</button><button data-tv="medailles" aria-selected="${TROPHY_VIEW!=='rang'}">Médailles</button></div><span></span></div><div class="tbody">${body}</div>`;
+  el.innerHTML=`<div class="tbar"><button class="tclose" id="tClose" aria-label="Fermer">✕</button><div class="seg"><button data-tv="rang" aria-selected="${TROPHY_VIEW==='rang'}">Rang</button><button data-tv="medailles" aria-selected="${TROPHY_VIEW==='medailles'}">Médailles</button><button data-tv="amis" aria-selected="${TROPHY_VIEW==='amis'}">Amis</button></div><span></span></div><div class="tbody">${body}</div>`;
   el.querySelector('#tClose').onclick=()=>{ el.classList.remove('on'); setTimeout(()=>{ el.remove(); document.body.classList.remove('unlocking'); },250); };
   el.querySelectorAll('[data-tv]').forEach(b=>b.onclick=()=>{ TROPHY_VIEW=b.dataset.tv; showTrophies(); el.querySelector('.tbody').scrollTop=0; });
   el.querySelectorAll('[data-badge]').forEach(b=>b.onclick=()=>showBadgeDetail(BADGES.find(x=>x.id===b.dataset.badge)));
-  const tr=el.querySelector('#tRank'); if(tr) tilt(tr);
+  const tr=el.querySelector('#tRank'); if(tr) tilt(tr); const fb=el.querySelector('#friendsBox'); if(fb) renderFriends(fb);
   if(!UNLOCK_BUSY&&f.unlocked.some(id=>!(S.badgesSeen||[]).includes(id))){ S.badgesSeen=f.unlocked.slice(); save(); renderHome(); }
 }
 function showBadgeDetail(b){
@@ -908,7 +958,7 @@ function renderHome(){
   h+=`<div class="card chal"><div class="card-h"><b>Défis de la semaine</b><span class="muted">${chDone}/3 · +20 XP chacun</span></div>${CH.list.map(c=>`<div class="crow ${c.ok?'ok':''}"><i></i><div><b>${esc(c.name)}</b><small>${esc(c.how)}</small></div><span>${c.ok?'tenu':`${c.cur}/${c.goal}`}</span><div class="cbar"><em style="width:${c.pct}%"></em></div></div>`).join('')}</div>`;
   // avatar + progression
   const recent=BADGES.filter(b=>af.unlocked.includes(b.id)).slice(-4);
-  h+=`<button class="card avcard" id="homeAvatar2"><div class="card-h"><b>${rankSvg(af.stage,22)} Rang ${af.stage} · ${esc(af.stageName)}${newB.length?` <em class="pstar">${newB.length} nouveau${newB.length>1?'x':''}</em>`:''}</b><span class="muted">${af.unlocked.length}/${BADGES.length} médailles</span></div><div class="xpbar"><i style="width:${af.pct}%"></i></div><div class="brow">${recent.map(b=>badgeSvg(b,40,false)).join('')}${af.nextBadge?badgeSvg(af.nextBadge,40,true,af):''}<span class="small muted">${af.nextBadge?`Prochain : ${esc(af.nextBadge.name.toLowerCase())} · ${esc(af.nextBadge.how)}`:'Tous les badges obtenus'}</span></div></button>`;
+  h+=`<button class="card avcard" id="homeAvatar2"><div class="card-h"><b>${rankSvg(af.stage,22)} Rang ${af.stage} · ${esc(af.stageName)}${newB.length?` <em class="pstar">${newB.length} nouveau${newB.length>1?'x':''}</em>`:''}</b><span class="muted">${af.unlocked.length}/${BADGES.length} médailles · ${weekXp()} XP cette semaine</span></div><div class="xpbar"><i style="width:${af.pct}%"></i></div><div class="brow">${recent.map(b=>badgeSvg(b,40,false)).join('')}${af.nextBadge?badgeSvg(af.nextBadge,40,true,af):''}<span class="small muted">${af.nextBadge?`Prochain : ${esc(af.nextBadge.name.toLowerCase())} · ${esc(af.nextBadge.how)}`:'Tous les badges obtenus'}</span></div></button>`;
   // chiffres : mois, tonnage semaine, série
   const month=date.slice(0,7); const nMonth=Object.values(S.logs).filter(l=>l.done&&l.date.startsWith(month)).length;
   let ton=0; Object.values(S.logs).filter(l=>l.date>=a&&l.date<=addDays(a,6)).forEach(l=>Object.values(l.sets||{}).flat().forEach(x=>{ if(x&&x.done) ton+=(x.w||0)*(x.r||0); }));
@@ -916,9 +966,9 @@ function renderHome(){
   h+=`<div class="tiles3"><button class="tr" data-view="forme"><span class="l">Ce mois</span><b>${nMonth}</b><small>séance${nMonth>1?'s':''}</small></button><button class="tr" data-view="force"><span class="l">Tonnage</span><b>${ton>=1000?(ton/1000).toFixed(1).replace('.',',')+' t':ton+' kg'}</b><small>cette semaine</small></button><button class="tr" data-view="forme"><span class="l">Série</span><b>${streak}</b><small>semaine${streak>1?'s':''} d'affilée</small></button></div>`;
   // poids et tractions : saisie rapide
   const bws=Object.values(S.bw||{}).sort((x,y)=>x.date<y.date?-1:1); const lastBw=bws[bws.length-1]; const ago=bws.filter(x=>x.date<=addDays(date,-7)).pop(); const dBw=lastBw&&ago?Math.round((lastBw.kg-ago.kg)*10)/10:null;
-  const tests=Object.values(S.tests||{}).sort((x,y)=>x.date<y.date?-1:1); const lastT=tests[tests.length-1]; const goal=(PROFILE&&PROFILE.pullGoal)||null;
+  const tests=Object.values(S.tests||{}).sort((x,y)=>x.date<y.date?-1:1); const lastT=tests[tests.length-1]; const RT=refTest(); const goal=RT.goal;
   h+=`<div class="tiles2"><div class="card qk"><div class="card-h"><b>Poids</b>${dBw!=null?`<i class="${dBw<0?'down':dBw>0?'up':'flat'}">${dBw>0?'+':''}${String(dBw).replace('.',',')} kg / 7 j</i>`:''}</div><div class="qv"><b>${lastBw?String(lastBw.kg).replace('.',','):'—'}</b><span>kg${lastBw?' · '+fmtD(lastBw.date):''}</span></div><form class="qf" id="bwQuick"><input type="number" step="0.1" inputmode="decimal" placeholder="${lastBw?String(lastBw.kg):'69,0'}" aria-label="Poids du jour"><button class="btn sm fill" type="submit">OK</button></form></div>
-    <div class="card qk"><div class="card-h"><b>Tractions</b>${goal?`<span class="muted">objectif ${goal}</span>`:''}</div><div class="qv"><b>${lastT?lastT.reps:'—'}</b><span>${lastT?'le '+fmtD(lastT.date):'pas encore testé'}</span></div>${goal&&lastT?`<div class="xpbar ok"><i style="width:${Math.min(100,Math.round(100*lastT.reps/goal))}%"></i></div>`:''}<form class="qf" id="tQuick"><input type="number" inputmode="numeric" placeholder="reps" aria-label="Tractions d'affilée"><button class="btn sm" type="submit">Noter</button></form></div></div>`;
+    <div class="card qk"><div class="card-h"><b>${esc(RT.short)}</b>${goal?`<span class="muted">objectif ${goal}</span>`:''}</div><div class="qv"><b>${lastT?lastT.reps:'—'}</b><span>${lastT?'le '+fmtD(lastT.date):'pas encore testé'}</span></div>${goal&&lastT?`<div class="xpbar ok"><i style="width:${Math.min(100,Math.round(100*lastT.reps/goal))}%"></i></div>`:''}<form class="qf" id="tQuick"><input type="number" inputmode="numeric" placeholder="${RT.unit}" aria-label="${esc(RT.label)}"><button class="btn sm" type="submit">Noter</button></form></div></div>`;
   // dernier mot du coach
   const last=COACH.items[0];
   if(last){ const txt=last.type==='bilan'||last.type==='cycleEnd'?(last.nextWeek||last.analysis):last.type==='nudge'?last.analysis:(last.nextFocus||last.analysis); h+=`<div class="card coachcard" id="homeCoach" role="button" tabindex="0"><div class="card-h"><b>${coachAvatar(last.adjustments&&last.adjustments.length&&!last.applied?'attention':'idle','xs')} ${esc(COACH_NAME)}</b><span class="muted">${last.createdAt?new Date(last.createdAt).toLocaleDateString('fr-FR',{day:'numeric',month:'short'}):''}</span></div><p>${lexify(esc(String(txt||'').slice(0,180)))}${String(txt||'').length>180?'…':''}</p>${last.adjustments&&last.adjustments.length&&!last.applied?'<span class="tag">charges à appliquer</span>':''}</div>`; }
@@ -993,7 +1043,7 @@ async function showDemo(ex){
 document.addEventListener('click',e=>{ const b=e.target.closest&&e.target.closest('[data-demo]'); if(b){ e.preventDefault(); e.stopPropagation(); showDemo(findEx(b.dataset.demo)); } },true);
 
 /* ---------- render: séance ---------- */
-function render(){ if(!PROGRAM.sessions.length||!PROGRAM_LOADED||!$('#tab-seance')) return; renderHome(); if(!RENDER_UNLOCK_T){ RENDER_UNLOCK_T=setTimeout(()=>{ if(!document.querySelector('.onb')&&!document.querySelector('#sheet.on')) checkUnlocks(); },2500); } renderSeance(); renderProgramme(); renderSuivi(); renderReglages(); renderCoach(); const w=WEEKS[curWeek()-1]; $('#weekChip').textContent=`Semaine ${w.n}`; }
+function render(){ if(!PROGRAM.sessions.length||!PROGRAM_LOADED||!$('#tab-seance')) return; renderHome(); setTimeout(publishPublic,1200); if(!RENDER_UNLOCK_T){ RENDER_UNLOCK_T=setTimeout(()=>{ if(!document.querySelector('.onb')&&!document.querySelector('#sheet.on')) checkUnlocks(); },2500); } renderSeance(); renderProgramme(); renderSuivi(); renderReglages(); renderCoach(); const w=WEEKS[curWeek()-1]; $('#weekChip').textContent=`Semaine ${w.n}`; }
 
 function shortName(n){ n=String(n||''); if(n.length<=9) return n; const w=n.split(/\s+/); return w[0]+(w.length>1&&/^[A-Z]$/.test(w[w.length-1])?' '+w[w.length-1]:''); }
 const LEX={
@@ -1275,7 +1325,7 @@ function suiviForme(date){
   h+=`<div class="trends">
     <button class="tr" data-view="force"><span class="l">Force</span><b>${f&&f.pts.length?f.pts[f.pts.length-1].v+' kg':'—'}</b>${f&&f.delta!=null?trend(f.delta,' %'):'<i class="flat">cycle en cours</i>'}<small>somme des <span class="lx" data-lex="e1rm">e1RM</span>, ${f?f.n:0} exercices</small></button>
     <button class="tr" data-view="corps"><span class="l">Poids</span><b>${w7!=null?w7.toFixed(1)+' kg':bws[0]?bws[0].kg.toFixed(1)+' kg':'—'}</b>${w7!=null&&w28!=null?trend(Math.round((w7-w28)*10)/10,' kg',true):'<i class="flat">moyenne 7 j</i>'}<small>${w28!=null?'sur 4 semaines':'pèse-toi 2 à 3 fois par semaine'}</small></button>
-    <button class="tr" data-view="corps"><span class="l">Tractions</span><b>${tests[0]?tests[0].reps:'—'}</b>${tests.length>1?trend(tests[0].reps-tests[tests.length-1].reps,''):'<i class="flat">max d\'affilée</i>'}<small>${PROFILE&&PROFILE.pullGoal?'objectif '+PROFILE.pullGoal:tests[0]?'dernier test '+fmtD(tests[0].date):'fais un test'}</small></button></div>`;
+    <button class="tr" data-view="corps"><span class="l">${esc(refTest().short)}</span><b>${tests[0]?tests[0].reps:'—'}</b>${tests.length>1?trend(tests[0].reps-tests[tests.length-1].reps,''):'<i class="flat">max d\'affilée</i>'}<small>${PROFILE&&PROFILE.pullGoal?'objectif '+PROFILE.pullGoal:tests[0]?'dernier test '+fmtD(tests[0].date):'fais un test'}</small></button></div>`;
   // semaines
   const maxSets=Math.max(1,...st.weeks.map(w=>w.total));
   h+=`<div class="card"><div class="card-h"><b>Semaines</b><span class="muted">séances faites · séries</span></div><div class="wkbars">${st.weeks.map(w=>`<div class="wkb ${w===cur?'cur':''} ${w.future?'fut':''}"><div class="bar"><i style="height:${Math.round(100*w.total/maxSets)}%"></i></div><div class="dots2">${Array.from({length:w.planned},(_,i)=>`<i class="${i<w.done?'ok':''}"></i>`).join('')}</div><span>S${w.k+1}</span></div>`).join('')}</div></div>`;
@@ -1312,9 +1362,9 @@ function suiviCorps(date){
     <div class="bwbig"><b>${lastBw?lastBw.kg.toFixed(1):'—'}</b><span>kg${lastBw?' · '+fmtD(lastBw.date):''}</span></div>
     ${bws.length>1?sparkSvg(bws.slice(-30).map(b=>({x:fmtD(b.date),v:b.kg})),{h:120,fmt:v=>v.toFixed(1),goal:PROFILE&&PROFILE.targetWeight||null}):'<p class="small muted">Deux pesées et la courbe apparaît. Le matin à jeun, 2 à 3 fois par semaine : c\'est la moyenne qui compte, pas la pesée du jour.</p>'}
     <div class="quick"><button class="step" data-bw="-0.1">−</button><input type="number" step="0.1" inputmode="decimal" id="bwKg" value="${base.toFixed(1)}"><button class="step" data-bw="0.1">+</button><input type="date" id="bwDate" value="${date}"><button class="btn fill" id="bwAdd">Enregistrer</button></div></div>`;
-  const goal=(PROFILE&&PROFILE.pullGoal)||null; const lastT=tests[tests.length-1];
-  h+=`<div class="card"><div class="card-h"><b>Tractions max</b><span class="muted">test d\'affilée, strictes</span></div>
-    <div class="bwbig"><b>${lastT?lastT.reps:'—'}</b><span>reps${lastT?' · '+fmtD(lastT.date):''}</span></div>
+  const goal=refTest().goal; const lastT=tests[tests.length-1];
+  h+=`<div class="card"><div class="card-h"><b>${esc(refTest().short)}</b><span class="muted">${esc(refTest().label)}</span></div>
+    <div class="bwbig"><b>${lastT?lastT.reps:'—'}</b><span>${refTest().unit}${lastT?' · '+fmtD(lastT.date):''}</span></div>
     ${goal&&lastT?`<div class="goalbar"><i style="width:${Math.min(100,Math.round(100*lastT.reps/goal))}%"></i><span>${Math.min(100,Math.round(100*lastT.reps/goal))} % de l\'objectif ${goal}</span></div>`:''}
     ${tests.length>1?sparkSvg(tests.slice(-20).map(t=>({x:fmtD(t.date),v:t.reps})),{h:110,fmt:v=>Math.round(v),goal}):'<p class="small muted">Un test toutes les 3 à 4 semaines, frais, en début de séance. Pas plus souvent : le test fatigue.</p>'}
     <div class="quick"><input type="number" inputmode="numeric" id="tReps" placeholder="reps"><input type="date" id="tDate" value="${date}"><button class="btn fill" id="tAdd">Enregistrer</button></div></div>`;
