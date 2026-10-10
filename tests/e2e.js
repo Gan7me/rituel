@@ -232,7 +232,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   await p.evaluate(() => { NATIVE = false; S.health = false; });
   assert((await p.$$('.grp')).length >= 3 && !!(await p.$('.phero.prof .pstats')), 'profil en tête avec stats, réglages en groupes');
   await p.evaluate(() => document.querySelector('#themeSeg [data-theme="dark"]').click()); await sleep(100);
-  assert(await p.evaluate(() => document.documentElement.dataset.theme === 'dark' && getComputedStyle(document.body).backgroundColor === 'rgb(11, 13, 16)'), 'apparence sombre forcée depuis Profil');
+  assert(await p.evaluate(() => document.documentElement.dataset.theme === 'dark' && getComputedStyle(document.body).backgroundColor === 'rgb(11, 12, 16)'), 'apparence sombre forcée depuis Profil');
   await p.evaluate(() => document.querySelector('#themeSeg [data-theme="auto"]').click()); await sleep(100);
   assert(await p.evaluate(() => !document.documentElement.dataset.theme), 'apparence auto rétablie');
   await p.evaluate(() => document.querySelector('#profAvatar').click()); await sleep(300);
@@ -264,7 +264,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   console.log('Thème sombre');
   await p.emulateMediaFeatures([{ name: 'prefers-color-scheme', value: 'dark' }]); await sleep(150);
   const bg = await p.evaluate(() => getComputedStyle(document.body).backgroundColor);
-  assert(bg === 'rgb(11, 13, 16)', 'fond sombre appliqué (' + bg + ')');
+  assert(bg === 'rgb(11, 12, 16)', 'fond sombre appliqué (' + bg + ')');
 
   await b.close(); srv.close();
   console.log(`\n${failures} échec(s), ${errors.length} erreur(s) JS`);
