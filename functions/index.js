@@ -388,7 +388,10 @@ async function generateProgramFor(uid, meta, apiKey, model) {
     const sys = systemFor(meta.profile, null);
     const safety = { debutant: 'Débutant : 3 séances max, 4 à 6 exercices par séance, 12 à 16 séries, RIR jamais sous 2, pas de techniques d\'intensification, machines guidées et mouvements simples, échauffement détaillé, aucune charge suggérée en kg.', intermediaire: 'Intermédiaire : 16 à 22 séries par séance, RIR 3 → 1, une seule technique d\'intensification en S3.', confirme: 'Confirmé : 22 à 28 séries, RIR jusqu\'à 0 sur les isolations en S3, intensification ciblée.', avance: 'Avancé : volume et intensité d\'athlète, techniques d\'intensification justifiées.' }[(meta.profile || {}).level] || '';
     const constraints = (meta.profile || {}).constraints ? `Respecte strictement les contraintes déclarées (blessures, douleurs, métier) : exclus tout exercice qui les sollicite et propose une alternative. ` : '';
-    const user = `Construis le mésocycle de 4 semaines de cet athlète (départ le ${nextMonday()}). Sois concret et exigeant au niveau déclaré. ${safety} ${constraints}${PROGRAM_SCHEMA}`;
+    const pr = meta.profile || {}; const gear = pr.gear || [];
+    const noGym = gear.length && !gear.includes('salle') ? 'Pas de salle : aucune machine guidée, aucune poulie, aucun nom de marque ; uniquement ' + gear.join(', ') + '. ' : '';
+    const personal = `Ce programme doit être visiblement construit pour ${pr.name || 'cette personne'} et pour personne d'autre : le "rationale" commence par « Pour ${pr.name || 'toi'} » et relie explicitement chaque choix majeur à ses objectifs (${(pr.goals || []).join(', ') || 'non précisés'}), son niveau (${pr.level || '?'}), son matériel, ses ${pr.days || '?'} jours et ${pr.minutes || '?'} minutes, ses contraintes et ses autres pratiques. Les noms de séances reflètent ses objectifs. Un programme interchangeable avec celui d'un autre profil est un échec. `;
+    const user = `Construis le mésocycle de cet athlète (départ le ${nextMonday()}). Sois concret et exigeant au niveau déclaré. ${personal}${safety} ${noGym}${constraints}${PROGRAM_SCHEMA}`;
     let prog;
     try {
       const text = await claude(apiKey, model, sys, [{ role: 'user', content: user }], 16000);
@@ -427,7 +430,7 @@ async function coachImpl(req) {
     catch (e) { await genRef.set({ status: 'error', message: String(e && e.message || e).slice(0, 300), at: Date.now() }); throw e; }
   }
 
-  const prog = meta.program || program; // repli : programme embarqué
+  const prog = meta.program || { cycleName: '', weeks: [], sessions: [] }; // sans programme généré : contexte vide, jamais le programme embarqué d'un autre profil
   const context = await loadContext(uid, prog);
   const idx = exerciseIndex(prog);
   // Repères temporels explicites : date du jour (Paris), séances faites sur 7 jours, semaine effective du cycle.

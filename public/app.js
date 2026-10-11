@@ -18,7 +18,7 @@ function humanErr(e){ const c=(e&&e.code)||''; const m=(e&&e.message)||String(e|
   if(/network|Failed to fetch|internet/i.test(m)||!navigator.onLine) return 'Pas de réseau. Le coach a besoin d\'une connexion ; tes séries sont enregistrées et partiront toutes seules.';
   if(/invalid-argument/.test(c)) return 'Le serveur n\'a pas compris la demande (version de l\'app en retard ?). Recharge l\'application depuis Réglages.';
   return m; }
-const APP_VERSION='3.28.0';
+const APP_VERSION='3.29.0';
 const ADMIN_RE=/^(ganeme\.asloune@nexisafe\.com|gads@live\.fr)$/i;
 let PROGRAM={sessions:[]};
 let WEEKS = [
@@ -571,12 +571,12 @@ function showOnboarding(step){ ONB_STEP=step;
     <div id="genWait" hidden><div class="wait">${coachAvatar('busy')}<div><b id="genStep">${esc(COACH_NAME)} lit ton profil…</b><p class="small muted">Une à deux minutes. Tu peux garder l'écran ouvert ou revenir plus tard, le programme t'attendra.</p></div></div></div>
     <p class="small err" id="genMsg"></p>
     <p class="small muted"><button class="link" id="onbDiag">Un problème ? Voir le diagnostic</button></p>
-    ${DEFAULT_PROGRAM?`<div id="genAlt" ${GEN_STATE&&GEN_STATE.status==='error'?'':'hidden'}><p class="small">Si ${esc(COACH_NAME)} n'y arrive pas, tu peux démarrer avec le programme de base « ${esc(DEFAULT_PROGRAM.cycleName||'Fondations')} » (4 semaines, force et hypertrophie) : il l'adaptera ensuite à tes retours.</p><button class="btn sm" id="importBtn">Démarrer avec le programme de base</button></div>`:''}
+    ${DEFAULT_PROGRAM&&USER&&ADMIN_RE.test(USER.email||'')?`<div id="genAlt" ${GEN_STATE&&GEN_STATE.status==='error'?'':'hidden'}><p class="small">Si ${esc(COACH_NAME)} n'y arrive pas, tu peux démarrer avec le programme de base « ${esc(DEFAULT_PROGRAM.cycleName||'Fondations')} » (4 semaines, force et hypertrophie) : il l'adaptera ensuite à tes retours.</p><button class="btn sm" id="importBtn">Démarrer avec le programme de base</button></div>`:''}
     <p class="small muted"><button class="link" id="backProf">Modifier mon profil</button></p>
   </section>`;
   $('#genBtn').onclick=()=>generateProgram(); const od=$('#onbDiag'); if(od) od.onclick=showDiag;
   if(GEN_STATE&&GEN_STATE.status==='running'&&Date.now()-(GEN_STATE.startedAt||0)<8*60000){ $('#genBtn').hidden=true; $('#genWait').hidden=false; GENERATING=true; }
-  else if(GEN_STATE&&GEN_STATE.status==='error'&&!GENERATING){ $('#genMsg').textContent='La dernière tentative a échoué : '+GEN_STATE.message+'. Réessaie, ou démarre avec le programme de base.'; $('#genBtn').textContent='Réessayer'; }
+  else if(GEN_STATE&&GEN_STATE.status==='error'&&!GENERATING){ $('#genMsg').textContent='La dernière tentative a échoué : '+GEN_STATE.message+'. Réessaie, le programme est construit uniquement à partir de ton profil.'; $('#genBtn').textContent='Réessayer'; }
   $('#backProf').onclick=()=>onbStep(0);
   const ib=$('#importBtn'); if(ib) ib.onclick=async()=>{ ib.disabled=true; try{ await saveProgram(DEFAULT_PROGRAM, DEFAULT_CYCLE_HTML); toast('Programme de base installé','ok'); }catch(e){ ib.disabled=false; $('#genMsg').textContent=humanErr(e); logErr('import',e); } };
 }
@@ -650,7 +650,7 @@ async function generateProgram(){
   try{ const fn=fbFn.httpsCallable('coach',{timeout:540000}); await fn({mode:'program'}); }
   catch(e){ logErr('program',e); const m=(e&&e.message)||''; const cut=/deadline|timeout|network|Failed to fetch|internal|unavailable/i.test(m+' '+(e&&e.code||''));
     if(cut){ // la connexion a lâché mais le serveur continue : on attend le programme par Firestore (jusqu'à 8 min), puis on propose le repli
-      let n=0; const poll=setInterval(()=>{ n++; if(PROGRAM_LOADED){ clearInterval(poll); clearInterval(iv); GENERATING=false; endJob(true,'Programme prêt'); return; } if(GEN_STATE&&GEN_STATE.status==='error'){ clearInterval(poll); clearInterval(iv); GENERATING=false; endJob(false,GEN_STATE.message); if(msg) msg.textContent=GEN_STATE.message; if(btn){ btn.hidden=false; btn.textContent='Réessayer'; } if(wait) wait.hidden=true; const ga=$('#genAlt'); if(ga) ga.hidden=false; } else if(n>96){ clearInterval(poll); clearInterval(iv); GENERATING=false; endJob(false,'Trop long'); if(msg) msg.textContent='Le coach met trop de temps. Réessaie, ou démarre avec le programme de base.'; if(btn){ btn.hidden=false; btn.textContent='Réessayer'; } if(wait) wait.hidden=true; const ga=$('#genAlt'); if(ga) ga.hidden=false; } },5000); return; }
+      let n=0; const poll=setInterval(()=>{ n++; if(PROGRAM_LOADED){ clearInterval(poll); clearInterval(iv); GENERATING=false; endJob(true,'Programme prêt'); return; } if(GEN_STATE&&GEN_STATE.status==='error'){ clearInterval(poll); clearInterval(iv); GENERATING=false; endJob(false,GEN_STATE.message); if(msg) msg.textContent=GEN_STATE.message; if(btn){ btn.hidden=false; btn.textContent='Réessayer'; } if(wait) wait.hidden=true; const ga=$('#genAlt'); if(ga) ga.hidden=false; } else if(n>96){ clearInterval(poll); clearInterval(iv); GENERATING=false; endJob(false,'Trop long'); if(msg) msg.textContent='Le coach met trop de temps. Réessaie dans une minute, ton profil est enregistré.'; if(btn){ btn.hidden=false; btn.textContent='Réessayer'; } if(wait) wait.hidden=true; const ga=$('#genAlt'); if(ga) ga.hidden=false; } },5000); return; }
     GENERATING=false; endJob(false,humanErr(e)); if(msg) msg.textContent=humanErr(e); if(btn){ btn.hidden=false; btn.textContent='Réessayer'; } if(wait) wait.hidden=true; const ga=$('#genAlt'); if(ga) ga.hidden=false; clearInterval(iv); return; }
   clearInterval(iv); GENERATING=false; endJob(true,'Programme prêt');
 }
@@ -694,8 +694,8 @@ function listenMeta(){
     else { PROGRAM_LOADED=false; const step=prof?'program':'profile'; if(ONB_STEP!==step||!document.querySelector('.onb')) showOnboarding(step); }
   }, err=>{ console.warn('meta',err); logErr('listen meta',err); }));
 }
-async function regenerateProgram(){
-  if(!confirm('Générer un nouveau mésocycle ? Le programme actuel est remplacé, ton journal est conservé.')) return;
+async function regenerateProgram(force){
+  if(force!==true&&!confirm('Générer un nouveau mésocycle ? Le programme actuel est remplacé, ton journal est conservé.')) return;
   const el=$('#tab-programme'); el.insertAdjacentHTML('afterbegin','<div class="banner info" id="regenMsg">Le coach rédige le nouveau cycle, une à deux minutes…</div>');
   try{ const fn=fbFn.httpsCallable('coach',{timeout:540000}); await fn({mode:'program'}); }
   catch(e){ const m=$('#regenMsg'); if(m) m.textContent='Échec : '+(e.message||e); }
@@ -978,7 +978,8 @@ function renderHome(){
   // prochaine séance
   const nextS=[1,2,3,4,5,6,7].map(i=>{ const d=(new Date().getDay()+i)%7; return PROGRAM.sessions.find(x=>x.day===d); }).find(Boolean);
   if(nextS&&nextS.id!==ses.id) h+=`<p class="small muted center">Prochaine : ${esc(nextS.dayName)} · ${esc(nextS.name)}</p>`;
-  el.innerHTML=h;
+  if(isGenericProgram()) h=builtForHtml()+h;
+  el.innerHTML=h; const hg=$('#genericBtn',el); if(hg) hg.onclick=()=>{ showTab('programme'); regenerateProgram(true); };
   const go=()=>{ S.session=ses.id; S.sessionDate=todayISO(); save(); showTab('seance'); };
   const st=$('#homeStart'); if(st) st.onclick=()=>{ S.session=ses.id; S.sessionDate=todayISO(); save(); showTab('seance'); enterFocus(); };
   const op=$('#homeOpen'); if(op) op.onclick=go;
@@ -1226,6 +1227,17 @@ function updateElapsed(log){
   f(); if(!log.done) elapsedTimer=setInterval(f,30000);
 }
 /* ---------- render: programme ---------- */
+
+// Personnalisation visible : ce que le coach a pris en compte pour construire ce cycle. Programme générique (sans génération) signalé clairement.
+const GOAL_FR={force:'force',masse:'masse',seche:'sèche',endurance:'endurance',puissance:'puissance',tractions:'tractions',jambes:'jambes',bras:'bras et pecs',sante:'santé',perf:'performance',perte:'perte de poids',fessiers:'fessiers',silhouette:'silhouette',cardio:'souffle'};
+const GEAR_FR={salle:'salle',halteres:'haltères',barre:'barre',kettlebell:'kettlebell',elastiques:'élastiques',traction:'barre de traction',trx:'TRX',corps:'poids du corps',cardio:'cardio'};
+function isGenericProgram(){ return !!(PROGRAM&&PROGRAM.sessions&&PROGRAM.sessions.length&&!PROGRAM.generatedAt); }
+function builtForHtml(){
+  if(isGenericProgram()) return `<div class="banner warn" id="genericBan"><b>Programme générique.</b> Ce cycle n'a pas été construit pour toi : ${esc(COACH_NAME)} peut en écrire un à partir de ton profil (objectifs, niveau, matériel, jours). <button class="btn sm" id="genericBtn">Construire mon programme</button></div>`;
+  const ps=PROGRAM.profileSnapshot||PROFILE; if(!ps) return '';
+  const goals=(ps.goals||[]).map(g=>GOAL_FR[g]||g).join(', '); const gear=(ps.gear||[]).map(g=>GEAR_FR[g]||g).join(', ');
+  return `<div class="builtfor"><span class="eyebrow">Construit pour ${esc(ps.name||'toi')}</span><p class="small">${esc([ps.level,goals,ps.days?ps.days+' séances/sem':'',ps.minutes?ps.minutes+' min':'',gear,ps.constraints?'contraintes : '+ps.constraints:''].filter(Boolean).join(' · '))}</p></div>`;
+}
 function renderProgramme(){
   if(!$('#tab-programme')) return;
   const auto=weekFor(todayISO()), wk=curWeek(), today=new Date().getDay();
@@ -1235,6 +1247,7 @@ function renderProgramme(){
   let h=`<div class="phero"><div class="eyebrow">Cycle en cours</div><h2>${esc(String(PROGRAM.cycleName||'Programme').split(' · ')[0])}</h2>${String(PROGRAM.cycleName||'').includes(' · ')?`<p class="small muted" style="margin:0 0 8px">${esc(String(PROGRAM.cycleName).split(' · ').slice(1).join(' · '))}</p>`:''}${PROGRAM.cycleReason?`<p class="pwhy">${esc(PROGRAM.cycleReason)}</p>`:''}
     <div class="wkchips">${WEEKS.map((w,i)=>`<button data-wk="${i+1}" aria-pressed="${i+1===wk}"><b>S${i+1}</b><span>${i+1===auto?'en cours':esc(String(w.label||'').replace(/^S\d+\s*/,'').split(' ')[0])}</span></button>`).join('')}</div>
     <p class="small muted">${esc(String(W.label||'').replace(/^S\d+\s*/,''))}${mono?' · '+esc(mono):''}${W.from?' · '+fmtD(W.from)+'–'+fmtD(W.to):''}</p>
+    ${builtForHtml()}
     <div class="row2"><button class="btn sm" id="cycBtn">Lire le cycle</button><button class="btn sm" id="regenBtn">Nouveau cycle avec Kai</button></div></div>`;
   PROGRAM.sessions.forEach(s=>{
     const open=s.id===PROG_OPEN; const n=s.exercises.length; const sets=s.exercises.reduce((t,ex)=>t+(rx(ex,wk).sets||0),0);
@@ -1248,7 +1261,7 @@ function renderProgramme(){
   });
   if(S.weekOverride) h+=`<p class="small muted center">Semaine ${wk} fixée à la main pour toute l'app (séances, charges) · <button class="link" id="wkAuto">Revenir au calcul automatique (S${auto})</button></p>`;
   $('#tab-programme').innerHTML=h;
-  const rb=$('#regenBtn'); if(rb) rb.onclick=regenerateProgram;
+  const rb=$('#regenBtn'); if(rb) rb.onclick=regenerateProgram; const gb=$('#genericBtn'); if(gb) gb.onclick=()=>regenerateProgram(true);
   $('#cycBtn').onclick=()=>showSheet(`<h3>${esc(PROGRAM.cycleName||'Le cycle')}</h3><div class="doc">${cycleHtml()}</div>`);
   $('#tab-programme').querySelectorAll('[data-wk]').forEach(b=>b.onclick=()=>setWeek(+b.dataset.wk));
   const wa=$('#wkAuto'); if(wa) wa.onclick=()=>setWeek(null);

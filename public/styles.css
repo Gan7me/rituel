@@ -1189,3 +1189,9 @@ main>section{overflow-x:clip}
 .lesson{background:var(--accent-soft);border-radius:14px;padding:12px 14px;margin:6px 0 12px}
 .lesson b{display:block;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--accent-ink);margin-bottom:4px}
 .lesson p{margin:0;font-size:15px;line-height:1.45;color:var(--ink)}
+
+/* Personnalisation visible du cycle (v3.29) */
+.builtfor{margin:4px 0 10px;padding:10px 12px;border-radius:var(--r-sm);background:var(--surface2)}
+.builtfor .eyebrow{display:block;margin-bottom:2px}
+.builtfor p{margin:0;color:var(--ink2)}
+.banner.warn .btn{margin-top:8px;display:inline-block}
