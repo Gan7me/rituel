@@ -30,6 +30,22 @@ async function resolveModel(apiKey, wanted) {
 
 const COACH_STYLE = `Style : tu parles à ton athlète comme un coach de salle qui le connaît, en français naturel, en « tu », phrases complètes. Direct et exigeant, sans réassurance, sans ton de prof, mais pas télégraphique : jamais de notation abrégée dans un texte qui lui est adressé (pas de « 10 reps = bas de fourchette », pas de « @RIR », pas de « → », pas de « +2,5 % justifié »). Tu dis la même chose en clair : « tu as fait 10 reps sur une cible de 10 à 12, tu es au bas de la cible : on garde la charge et on vise 12 avant de monter ». Le jargon (RIR, fourchette, tempo) est utilisé seulement si tu le dis en clair à côté la première fois (« RIR 2, c'est-à-dire deux reps en réserve »). Une personne qui débute doit comprendre chaque phrase ; un athlète confirmé reçoit en plus le vrai niveau de détail (techniques d'intensification, tempo, arbitrages). Pas de listes à puces sauf pour les ajustements. Tu es honnête : si la récupération ne suit pas, si une charge est incohérente, si un choix est une erreur, tu le dis.`;
 
+
+// Fiche structurée issue de l'entretien guidé : jours nommés, zones à ménager avec sévérité, refus et préférences. Lignes ajoutées au profil.
+const DAY_FR = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'];
+const ZONE_FR = { epaule: 'épaule', coude: 'coude', poignet: 'poignet', dos: 'dos et lombaires', hanche: 'hanche', genou: 'genou', cheville: 'cheville', cou: 'cou et cervicales' };
+const REFUSE_FR = { cardio: 'aucun cardio long (finishers de 5 à 8 minutes au maximum)', burpees: 'aucun burpee', '1h': 'aucune séance au-delà de 60 minutes, échauffement compris', nobar: 'aucune barre olympique, haltères et machines seulement', nomachine: 'aucune machine guidée, barre et haltères seulement', nofail: 'aucune série à l\'échec, RIR 1 minimum même en intensification', nobody: 'aucune remarque sur le physique ou l\'apparence', nonotif: 'pas de relance' };
+const LIKE_FR = { lourd: 'aime les charges lourdes : garde un exercice de force lourde par séance', circuits: 'aime les circuits : un circuit ou finisher par séance', tractions: 'aime les tractions : présentes à chaque séance de tirage', bras: 'aime l\'isolation des bras : la prévoir en fin de séance', mobilite: 'aime la mobilité : un bloc de mobilité par séance', explosif: 'aime l\'explosif : un mouvement explosif en début de séance', court: 'aime les séances courtes et intenses : densité élevée, repos courts' };
+function specLines(p) {
+  const s = p.spec; if (!s) return '';
+  const out = [];
+  if (Array.isArray(s.daysList) && s.daysList.length) out.push(`Jours d'entraînement fixés : ${s.daysList.map(k => DAY_FR[k]).join(', ')} (une séance par jour, "day" = 1 lundi … 6 samedi, 0 dimanche).`);
+  if (Array.isArray(s.zones) && s.zones.length) out.push('Zones à ménager : ' + s.zones.map(z => `${ZONE_FR[z.zone] || z.zone} ${z.sev === 'opere' ? 'opéré(e) : exclusion stricte de tout exercice qui le sollicite directement, remplacement obligatoire' : z.sev === 'douleur' ? 'douloureux(se) : exclusion des exercices à risque, amplitude réduite ailleurs' : 'fragile : pas de charge maximale ni d\'amplitude extrême'}${z.note ? ' (' + z.note + ')' : ''}`).join(' ; ') + '.');
+  if (Array.isArray(s.refuse) && s.refuse.length) out.push('Refus non négociables : ' + s.refuse.map(r => REFUSE_FR[r] || r).join(' ; ') + '.');
+  if (Array.isArray(s.likes) && s.likes.length) out.push('Préférences : ' + s.likes.map(l => LIKE_FR[l] || l).join(' ; ') + '.');
+  if (s.goalMain) out.push(`Objectif principal « ${s.goalMain} »${s.goalSecond ? ', secondaire « ' + s.goalSecond + ' »' : ''} : le principal gagne tous les arbitrages.`);
+  return out.length ? '\n' + out.join('\n') : '';
+}
 function systemFor(profile, program) {
   const p = profile || {};
   const GOAL_LABELS = { force: 'force maximale', masse: 'prise de muscle', seche: 'sécher et se dessiner', endurance: 'endurance musculaire', puissance: 'puissance et vitesse', tractions: 'nombre de tractions', jambes: 'rattraper les jambes', bras: 'bras et pectoraux', sante: 'santé, mobilité, dos', perf: 'performance sportive ou opérationnelle', perte: 'perdre du poids (gras) en gardant le muscle', fessiers: 'fessiers et bas du corps (galbe, force)', silhouette: 'tonifier, silhouette harmonieuse', cardio: 'souffle et condition physique' };
@@ -42,7 +58,7 @@ function systemFor(profile, program) {
 Profil : ${p.name || 'athlète'}, ${p.sex === 'f' ? 'femme' : 'homme'}, ${p.age || '?'} ans, ${p.height || '?'} cm, ${p.weight || '?'} kg. Niveau : ${p.level || 'non précisé'}. Objectifs : ${goals || 'non précisés'}${p.goalsText ? ' — ' + p.goalsText : ''}. ${p.days || '?'} séances/semaine, ${p.minutes || '?'} min par séance.
 Matériel disponible : ${(p.gear || []).length ? p.gear.map(g => ({ salle: 'salle complète (machines guidées, barres, poulies)', halteres: 'haltères', barre: 'barre olympique et disques', kettlebell: 'kettlebells', elastiques: 'élastiques', traction: 'barre de traction', trx: 'TRX / sangles', corps: 'poids du corps uniquement', cardio: 'cardio' }[g] || g)).join(', ') : 'non précisé'}${p.equipment ? ' — ' + p.equipment : ''}. Règle absolue : ne prescris que des exercices réalisables avec ce matériel ; s'il n'y a pas de salle, aucune machine.
 Autres pratiques à intégrer : ${p.sports || 'aucune'}${p.sports ? ' — organise le volume et la récupération autour de ces pratiques, ne les contredis pas.' : ''}
-Contraintes : ${p.constraints || 'aucune déclarée'}.
+Contraintes : ${p.constraints || 'aucune déclarée'}.${specLines(p)}
 Repères : ${p.experience || 'aucun déclaré'}.${p.refTest ? ` Test de référence suivi : ${p.refTest}${p.refGoal ? ' (objectif ' + p.refGoal + ')' : ''}.` : ''}
 ${rules ? rules + '\n' : ''}${prog}
 
@@ -436,8 +452,16 @@ function checkProgram(prog, profile) {
     if (bad.length) errors.push('Machine ou poulie sans salle : ' + [...new Set(bad)].slice(0, 6).join(', ') + '.');
   }
   prog.sessions.forEach(s => { if (!s.exercises.length) errors.push(`${s.name} : aucun exercice.`); });
+  const sp = p.spec || {};
+  if (Array.isArray(sp.daysList) && sp.daysList.length && prog.sessions.length === sp.daysList.length) {
+    const want = sp.daysList.map(k => (k + 1) % 7).sort().join(','); const got = prog.sessions.map(s => s.day).sort().join(',');
+    if (want !== got) { const order = sp.daysList.slice().sort((a, b) => a - b); prog.sessions.sort((a, b) => ((a.day + 6) % 7) - ((b.day + 6) % 7)).forEach((s, i) => { s.day = (order[i] + 1) % 7; s.dayName = DAY_FR[order[i]]; }); warnings.push('Jours replacés sur ceux de la fiche.'); }
+  }
+  (sp.zones || []).forEach(z => { const m = CONSTRAINT_MAP.find(([cre]) => cre.test(ZONE_FR[z.zone] || z.zone)); if (!m) return; const hit = prog.sessions.flatMap(s => s.exercises).filter(e => m[1].test(e.name)).map(e => e.name); if (!hit.length) return; const msg = `${ZONE_FR[z.zone] || z.zone} (${z.sev}) : ${[...new Set(hit)].slice(0, 4).join(', ')}.`; if (z.sev === 'opere' || z.sev === 'douleur') errors.push('Zone à ménager sollicitée, ' + msg); else warnings.push('Zone fragile, vérifier ' + msg); });
+  if ((sp.refuse || []).includes('nomachine')) { const bad = prog.sessions.flatMap(s => s.exercises).filter(e => MACHINE_RE.test(e.name + ' ' + e.machine)).map(e => e.name); if (bad.length) errors.push('Refus des machines non respecté : ' + [...new Set(bad)].slice(0, 5).join(', ') + '.'); }
+  if ((sp.refuse || []).includes('nobar')) { const bad = prog.sessions.flatMap(s => s.exercises).filter(e => /\bbarre\b|barbell|olympique/i.test(e.name + ' ' + e.machine) && !/traction|pull|dip/i.test(e.name)).map(e => e.name); if (bad.length) errors.push('Refus de la barre non respecté : ' + [...new Set(bad)].slice(0, 5).join(', ') + '.'); }
   const c = String(p.constraints || '');
-  if (c) CONSTRAINT_MAP.forEach(([cre, ere, label]) => { if (cre.test(c)) { const hit = prog.sessions.flatMap(s => s.exercises).filter(e => ere.test(e.name)).map(e => e.name); if (hit.length) warnings.push(`Contrainte « ${label} » : vérifier ${[...new Set(hit)].slice(0, 4).join(', ')}.`); } });
+  if (c && !(sp.zones || []).length) CONSTRAINT_MAP.forEach(([cre, ere, label]) => { if (cre.test(c)) { const hit = prog.sessions.flatMap(s => s.exercises).filter(e => ere.test(e.name)).map(e => e.name); if (hit.length) warnings.push(`Contrainte « ${label} » : vérifier ${[...new Set(hit)].slice(0, 4).join(', ')}.`); } });
   if (p.minutes) prog.sessions.forEach(s => { const sets = s.exercises.reduce((a, e) => a + e.sets, 0); const est = Math.round(sets * ((s.exercises.reduce((a, e) => a + e.restSec, 0) / Math.max(1, s.exercises.length)) + 45) / 60) + 8; if (est > Number(p.minutes) * 1.35) warnings.push(`${s.name} : ≈${est} min estimées pour ${p.minutes} prévues.`); });
   const sig = prog.sessions.map(s => s.exercises.map(e => e.name.toLowerCase().replace(/[^a-zà-ÿ]/g, '')).join('|')).join('||');
   return { errors, warnings, signature: sig };

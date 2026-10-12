@@ -18,7 +18,7 @@ function humanErr(e){ const c=(e&&e.code)||''; const m=(e&&e.message)||String(e|
   if(/network|Failed to fetch|internet/i.test(m)||!navigator.onLine) return 'Pas de réseau. Le coach a besoin d\'une connexion ; tes séries sont enregistrées et partiront toutes seules.';
   if(/invalid-argument/.test(c)) return 'Le serveur n\'a pas compris la demande (version de l\'app en retard ?). Recharge l\'application depuis Réglages.';
   return m; }
-const APP_VERSION='3.32.0';
+const APP_VERSION='3.33.0';
 const ADMIN_RE=/^(ganeme\.asloune@nexisafe\.com|gads@live\.fr)$/i;
 let PROGRAM={sessions:[]};
 let WEEKS = [
@@ -352,7 +352,8 @@ function renderReglages(){
   const pa=$('#profAvatar'); if(pa) pa.onclick=()=>showBadges('rang'); const pb2=$('#profBadges'); if(pb2) pb2.onclick=()=>showBadges('medailles');
   const ts=$('#themeSeg'); if(ts) ts.querySelectorAll('button').forEach(b=>b.onclick=()=>{ S.theme=b.dataset.theme; save(); applyTheme(); renderReglages(); });
   const adb=$('#adminBtn'); if(adb) adb.onclick=showAdmin;
-  $('#profBtn').onclick=()=>{ if(!USER) return; const sheet=showSheet(`<h3>Mon profil</h3>`+profileForm(PROFILE||{})); bindProfileForm(()=>{ hideSheet(); toast('Profil enregistré','ok'); renderReglages(); }, sheet); };
+  $('#profBtn').onclick=()=>{ if(!USER) return; const before=JSON.stringify([PROFILE&&PROFILE.goals,PROFILE&&PROFILE.gear,PROFILE&&PROFILE.days,PROFILE&&PROFILE.level,PROFILE&&PROFILE.constraints]); document.querySelector('.tabs').hidden=true; $('#weekChip').hidden=true;
+    IV.start(PROFILE||{},{step:9,onDone:()=>{ restoreShell(); render(); showTab('reglages'); toast('Profil enregistré','ok'); const after=JSON.stringify([PROFILE.goals,PROFILE.gear,PROFILE.days,PROFILE.level,PROFILE.constraints]); if(after!==before&&PROGRAM.sessions.length&&confirm('Ton profil a changé. Demander à '+COACH_NAME+' un nouveau cycle construit dessus ?')){ showTab('programme'); regenerateProgram(true); } }}); };
   $('#progBtn').onclick=()=>document.querySelector('.tabs button[data-tab="programme"]').click();
   $('#diagBtn').onclick=showDiag;
   $('#lexBtn').onclick=()=>showSheet(`<h3>Lexique</h3>`+Object.entries(LEX).map(([k,v])=>`<details class="more"><summary>${esc(v[0])}</summary><p class="small">${esc(v[1])}</p></details>`).join('')+`<button class="btn" onclick="hideSheet()">Fermer</button>`);
@@ -567,10 +568,119 @@ function restoreShell(){
   document.querySelector('.tabs').hidden=false; document.querySelector('.top').hidden=false; const av=$('#settingsBtn'); if(av&&USER) av.textContent=(USER.displayName||USER.email||'?').slice(0,1).toUpperCase();
 }
 let GENERATING=false, ONB_STEP=null;
+/* ---------- Entretien guidé (remplace le formulaire de profil) ----------
+   Une question par écran, choix cliquables, réaction du coach à chaque étape. Produit un profil compatible
+   (name, age, sex, height, weight, level, goals, days, minutes, gear, equipment, sports, constraints, experience)
+   et une fiche structurée `spec` qui pilote les règles de construction et la consigne du coach. */
+const IV_GOALS=[['force','Être plus fort','Charges, barres, machines lourdes','🏋️'],['masse','Prendre du muscle','Volume, dessin, bras, pecs','💪'],['perte','Perdre du gras','En gardant le muscle','🔥'],['sante','Santé, dos, mobilité','Bouger mieux, sans douleur','🧘'],['perf','Performance sportive','Pour un sport ou un métier','🏃'],['corps','Poids du corps','Tractions, dips, gainage','🤸']];
+const IV_GOAL2=[['tractions','Plus de tractions'],['jambes','Rattraper les jambes'],['bras','Bras et pectoraux'],['fessiers','Fessiers'],['seche','Sécher, me dessiner'],['endurance','Endurance musculaire'],['puissance','Puissance, vitesse'],['cardio','Souffle'],['silhouette','Silhouette harmonieuse']];
+const IV_YEARS=[['0','Jamais'],['1','Moins d\'un an'],['2','1 à 3 ans'],['3','Plus de 3 ans']];
+const IV_SKILLS=[['pull10','10 tractions strictes'],['squat','Squat barre propre'],['dl','Soulevé de terre > mon poids'],['none','Aucun des trois']];
+const IV_PLACES=[['salle','Salle','🏢'],['maison','Maison','🏠'],['deux','Les deux','🔁']];
+const IV_GYM=[['machines','Machines guidées'],['poulies','Poulies'],['barres','Barres et disques'],['halteres','Haltères'],['traction','Station de traction'],['rack','Rack à squat'],['presse','Presse à cuisses'],['hack','Hack squat'],['cardio','Cardio']];
+const IV_HOME=[['halteres','Haltères'],['barre','Barre et disques'],['kettlebell','Kettlebells'],['elastiques','Élastiques'],['traction','Barre de traction'],['trx','TRX / sangles'],['banc','Banc'],['corps','Rien, poids du corps']];
+const IV_BRANDS=['ON AIR','Basic-Fit','Fitness Park','Keep Cool','L\'Orange Bleue','Autre'];
+const IV_ZONES=[['epaule','Épaule'],['coude','Coude'],['poignet','Poignet'],['dos','Dos, lombaires'],['hanche','Hanche'],['genou','Genou'],['cheville','Cheville'],['cou','Cou, cervicales']];
+const IV_SEV=[['opere','Opéré'],['douleur','Douleur'],['fragile','Fragile']];
+const IV_SPORTS=['Course','Trail','Vélo','Natation','Sport co','Arts martiaux','Escalade','CrossFit','Yoga','Rugby','Football','Tennis'];
+const IV_REFUSE=[['cardio','Pas de cardio long'],['burpees','Pas de burpees'],['1h','Séances jamais plus d\'une heure'],['nobar','Pas de barre, haltères seulement'],['nomachine','Pas de machines, barre seulement'],['nofail','Pas de séries à l\'échec'],['nobody','Pas de remarques sur mon physique'],['nonotif','Pas de notifications']];
+const IV_LIKES=[['lourd','Charges lourdes'],['circuits','Circuits'],['tractions','Tractions'],['bras','Isolation bras'],['mobilite','Mobilité'],['explosif','Explosif, sauts'],['court','Séances courtes et intenses']];
+const IV_DAYS=['L','M','M','J','V','S','D']; const IV_DAYN=['Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi','Dimanche'];
+const IV_LEVEL_FR={debutant:'débutant',intermediaire:'intermédiaire',confirme:'confirmé',avance:'avancé'};
+// Niveau déduit : ancienneté + compétences concrètes, jamais auto-déclaré.
+function ivLevel(s){ const y=Number(s.years||0); const sk=(s.skills||[]).filter(x=>x!=='none').length; if(y===0||(y===1&&sk===0)) return 'debutant'; if(y===3&&sk===3) return 'avance'; if((y===3&&sk>=1)||(y===2&&sk>=2)) return 'confirme'; return 'intermediaire'; }
+function ivGear(s){ const g=new Set(); const gym=s.gymGear||[], home=s.homeGear||[]; if(s.place==='salle'||s.place==='deux'){ g.add('salle'); if(gym.includes('halteres')) g.add('halteres'); if(gym.includes('barres')) g.add('barre'); if(gym.includes('traction')) g.add('traction'); if(gym.includes('cardio')) g.add('cardio'); } if(s.place==='maison'||s.place==='deux'){ home.forEach(h=>{ if(h==='banc') return; g.add(h); }); } if(!g.size) g.add('corps'); return [...g]; }
+// Répartition de la semaine par les règles (aperçu avant la fin de l'entretien, même logique côté serveur).
+function ivSplit(s){ const n=(s.daysList||[]).length||Number(s.days)||3; const g=s.goalMain||'force'; const corps=g==='corps'||(s.place==='maison'&&(s.homeGear||[]).includes('corps')&&(s.homeGear||[]).length===1);
+  const T={2:[['Corps entier A','squat, développé, tirage'],['Corps entier B','charnière, dips ou pompes, tractions']],3:[['Corps entier A','jambes, poussée, tirage'],['Corps entier B','charnière, poussée verticale, tirage'],['Corps entier C','jambes, bras, gainage']],4:[['Bas du corps, force','squat, charnière, ischios'],['Haut du corps, force','développé, tractions, rowing'],['Bas du corps, volume','fentes, leg curl, mollets'],['Haut du corps, volume','incliné, tirage, bras']],5:[['Jambes','squat, presse, ischios'],['Poussée','développé, épaules, triceps'],['Tirage','tractions, rowing, biceps'],['Jambes, volume','charnière, fentes, mollets'],['Haut du corps','pecs, dos, bras']],6:[['Poussée A','développé, épaules, triceps'],['Tirage A','tractions, rowing, biceps'],['Jambes A','squat, presse, ischios'],['Poussée B','incliné, dips, épaules'],['Tirage B','tirage, rowing, arrière d\'épaule'],['Jambes B','charnière, fentes, mollets']]}[Math.max(2,Math.min(6,n))];
+  const byGoal={perte:x=>[x[0].replace('force','densité').replace('volume','circuit'),x[1]+' · finisher court'],sante:x=>[x[0].replace('force','contrôle').replace('volume','mobilité'),x[1]],corps:x=>[x[0],x[1].replace('développé','pompes').replace('squat','pistol ou squat sauté').replace('presse','fentes')]};
+  return T.map(x=>(byGoal[g]||(y=>y))(x)).map(([name,sub])=>({name,sub}));
+}
+const IV=(function(){ let d={}, i=0, mode='onb'; let onDone=null;
+  const chip=(name,v,l,on,multi)=>`<button type="button" class="ivchip ${on?'on':''}" data-f="${name}" data-v="${esc(v)}" data-multi="${multi?1:0}">${esc(l)}</button>`;
+  const card=(name,v,t,s,ico,on,cls)=>`<button type="button" class="ivcard ${on?'on':''} ${cls||''}" data-f="${name}" data-v="${esc(v)}"><span class="ivico">${ico||''}</span><b>${esc(t)}</b>${s?`<span>${esc(s)}</span>`:''}</button>`;
+  const say=t=>`<div class="kaisay">${coachAvatar('idle')}<p>${t}</p></div>`;
+  const has=(f,v)=>Array.isArray(d[f])?d[f].includes(v):d[f]===v;
+  const screens=[
+    {t:'Toi, en deux lignes',s:'Le minimum pour régler les charges et le volume.',h:()=>`<form class="form" id="ivForm"><label>Prénom<input name="name" value="${esc(d.name||'')}" required autocomplete="given-name"></label>
+      <div class="grid2"><label>Âge<input name="age" type="number" inputmode="numeric" min="14" max="90" value="${d.age||''}" required></label><label>Sexe<div class="ivseg"><button type="button" class="ivchip ${d.sex!=='f'?'on':''}" data-f="sex" data-v="h">Homme</button><button type="button" class="ivchip ${d.sex==='f'?'on':''}" data-f="sex" data-v="f">Femme</button></div></label></div>
+      <div class="grid2"><label>Taille (cm)<input name="height" type="number" inputmode="numeric" min="120" max="230" value="${d.height||''}" required></label><label>Poids (kg)<input name="weight" type="number" inputmode="decimal" step="0.1" min="30" max="250" value="${d.weight||''}" required></label></div></form>`,
+      ok:()=>{ const f=$('#ivForm'); if(!f.reportValidity()) return false; const fd=new FormData(f); ['name','age','height','weight'].forEach(k=>d[k]=String(fd.get(k)||'').trim()); d.sex=d.sex||'h'; return true; }},
+    {t:'Qu\'est-ce qui compte le plus pour toi ?',s:'Un seul choix. Tu ajoutes un second juste après.',h:()=>`<div class="ivgrid">${IV_GOALS.map(([v,t,s,ico])=>card('goalMain',v,t,s,ico,d.goalMain===v)).join('')}</div>`,ok:()=>{ if(!d.goalMain){ toast('Choisis un objectif'); return false; } return true; }},
+    {t:'Et en second ?',s:'Facultatif. Le premier objectif gagne les arbitrages.',h:()=>`<div class="ivchips">${IV_GOAL2.filter(([v])=>v!==d.goalMain).map(([v,l])=>chip('goalSecond',v,l,d.goalSecond===v)).join('')}</div>${say(d.goalMain==='perte'?'Perdre du gras sans perdre de muscle : le programme reste un entraînement de force, avec des finishers courts. Je ne commenterai jamais ton apparence.':d.goalMain==='force'?'Objectif force : séries courtes, repos longs, charges qui montent chaque semaine. Le second objectif prend la fin des séances.':d.goalMain==='sante'?'Santé et mobilité : amplitudes contrôlées, pas de charge maximale, progression lente et régulière.':'Je construis le cycle autour du premier objectif et je place le second là où il ne le gêne pas.')}`,ok:()=>true},
+    {t:'Ton niveau, en vrai',s:'Deux questions concrètes, pas d\'auto-évaluation.',h:()=>`<div class="ivq"><b>Depuis combien de temps tu t'entraînes en force, régulièrement ?</b><div class="ivopts">${IV_YEARS.map(([v,l])=>`<button type="button" class="ivopt ${d.years===v?'on':''}" data-f="years" data-v="${v}">${l}</button>`).join('')}</div></div>
+      <div class="ivq"><b>Aujourd'hui, tu sais faire :</b><div class="ivchips">${IV_SKILLS.map(([v,l])=>chip('skills',v,l,has('skills',v),true)).join('')}</div></div>
+      <div id="ivLevelSay">${d.years?say(`Avec ça je te classe <b>${IV_LEVEL_FR[ivLevel(d)]}</b>. ${{debutant:'Trois séances maximum, mouvements simples, jamais près de l\'échec : on apprend d\'abord.',intermediaire:'16 à 22 séries par séance, on ira près de l\'échec seulement en fin de cycle.',confirme:'22 à 28 séries, techniques d\'intensification ciblées en semaine 3.',avance:'Volume et intensité d\'athlète, je ne te ménagerai pas.'}[ivLevel(d)]}`):''}</div>`,ok:()=>{ if(!d.years){ toast('Réponds à la première question'); return false; } if(!(d.skills||[]).length){ toast('Coche ce que tu sais faire, ou « aucun »'); return false; } return true; },react:()=>{ const e=$('#ivLevelSay'); if(e&&d.years) e.innerHTML=say(`Avec ça je te classe <b>${IV_LEVEL_FR[ivLevel(d)]}</b>.`); }},
+    {t:'Où tu t\'entraînes ?',s:'Je ne te prescrirai que ce que tu as sous la main.',h:()=>`<div class="ivgrid three">${IV_PLACES.map(([v,t,ico])=>card('place',v,t,'',ico,d.place===v,'sm')).join('')}</div>
+      ${(d.place==='salle'||d.place==='deux')?`<div class="ivq"><b>Ta salle a :</b><div class="ivchips">${IV_GYM.map(([v,l])=>chip('gymGear',v,l,has('gymGear',v),true)).join('')}</div></div><div class="ivq"><b>Enseigne (facultatif)</b><div class="ivchips">${IV_BRANDS.map(b=>chip('brand',b,b,d.brand===b)).join('')}</div></div>`:''}
+      ${(d.place==='maison'||d.place==='deux')?`<div class="ivq"><b>À la maison tu as :</b><div class="ivchips">${IV_HOME.map(([v,l])=>chip('homeGear',v,l,has('homeGear',v),true)).join('')}</div></div>`:''}`,
+      ok:()=>{ if(!d.place){ toast('Où tu t\'entraînes ?'); return false; } if((d.place!=='maison')&&!(d.gymGear||[]).length){ toast('Coche ce que ta salle a'); return false; } if((d.place!=='salle')&&!(d.homeGear||[]).length){ toast('Coche ton matériel à la maison'); return false; } return true; },rerender:['place']},
+    {t:'Tes jours et ton temps',s:'Des vrais jours, pas des bonnes intentions. Tu changes quand tu veux.',h:()=>`<div class="ivweek">${IV_DAYS.map((l,k)=>`<button type="button" class="ivday ${has('daysList',k)?'on':''}" data-f="daysList" data-v="${k}" data-multi="1"><b>${l}</b><small>${has('daysList',k)?'séance':''}</small></button>`).join('')}</div>
+      <div class="ivq"><b>Temps par séance</b><div class="ivopts">${[30,45,60,75,90].map(n=>`<button type="button" class="ivopt ${String(d.minutes||60)===String(n)?'on':''}" data-f="minutes" data-v="${n}">${n} min</button>`).join('')}</div></div>
+      <div id="ivDaysSay">${(d.daysList||[]).length?say(`${(d.daysList||[]).length} jours, ${d.minutes||60} minutes : ${ {2:'deux séances corps entier, chaque muscle deux fois par semaine.',3:'trois séances corps entier, la base la plus efficace à cette fréquence.',4:'un haut / bas, chaque muscle deux fois par semaine.',5:'jambes, poussée, tirage puis deux séances de volume.',6:'un poussée / tirage / jambes doublé.'}[Math.max(2,Math.min(6,(d.daysList||[]).length))]}`):''}</div>`,
+      ok:()=>{ const n=(d.daysList||[]).length; if(n<2){ toast('Choisis au moins 2 jours'); return false; } if(n>6){ toast('6 jours maximum, le corps a besoin d\'un jour'); return false; } d.minutes=Number(d.minutes||60); return true; },react:()=>{ const e=$('#ivDaysSay'); if(e){ const n=(d.daysList||[]).length; e.innerHTML=n?say(`${n} jours, ${d.minutes||60} minutes.`):''; } document.querySelectorAll('.ivday').forEach(b=>{ b.querySelector('small').textContent=b.classList.contains('on')?'séance':''; }); }},
+    {t:'Voilà ta semaine',s:'Déjà construite avec tes réponses. On affine avec deux écrans de plus.',h:()=>{ const days=(d.daysList||[]).slice().sort((a,b)=>a-b); const sp=ivSplit(d); return `<div class="ivses">${sp.map((x,k)=>`<div class="ivse"><div><b>${esc(IV_DAYN[days[k]]||'')} · ${esc(x.name)}</b><span>${esc(x.sub)}</span></div><em>${d.minutes||60} min</em></div>`).join('')}</div>${say('Cycle de 4 semaines : calibrage, accumulation, intensification, décharge. Les charges viennent de ta première semaine, je les ajuste ensuite à chaque séance.')}`; },ok:()=>true,alt:['Je veux changer les jours',()=>IV.go(5)]},
+    {t:'Une zone à ménager ?',s:'Les exercices qui la sollicitent seront exclus ou remplacés, pas juste « adaptés ».',h:()=>`<div class="ivchips">${IV_ZONES.map(([v,l])=>chip('zones',v,l,has('zones',v),true)).join('')}</div>
+      ${(d.zones||[]).map(z=>`<div class="ivq"><b>${esc(IV_ZONES.find(x=>x[0]===z)[1])}</b><div class="ivopts">${IV_SEV.map(([v,l])=>`<button type="button" class="ivopt ${(d.zoneSev||{})[z]===v?'on':''}" data-f="zoneSev.${z}" data-v="${v}">${l}</button>`).join('')}</div><input class="ivtext" data-f="zoneNote.${z}" placeholder="Précise si tu veux (opéré en 2022, douleur en flexion…)" value="${esc((d.zoneNote||{})[z]||'')}"></div>`).join('')}
+      <div class="ivq"><b>Autres sports</b><div class="ivchips">${IV_SPORTS.map(s=>chip('sports',s,s,has('sports',s),true)).join('')}</div><input class="ivtext" data-f="sportsNote" placeholder="Fréquence, volume (ex. : trail 60 km par semaine, gardes de 24 h)" value="${esc(d.sportsNote||'')}"></div>
+      <p class="small muted">Rituel ne remplace pas un avis médical. En cas de douleur ou de reprise après blessure, valide ton programme avec un professionnel de santé.</p>`,ok:()=>{ for(const z of (d.zones||[])) if(!(d.zoneSev||{})[z]){ toast('Précise la gravité pour chaque zone'); return false; } return true; },rerender:['zones'],alt:['Rien à signaler',()=>{ d.zones=[]; IV.go(8); }]},
+    {t:'Ce que tu ne veux pas',s:'Aussi important que le reste. Je m\'y tiendrai.',h:()=>`<div class="ivchips">${IV_REFUSE.map(([v,l])=>chip('refuse',v,l,has('refuse',v),true)).join('')}</div><div class="ivq"><b>Et ce que tu aimes</b><div class="ivchips">${IV_LIKES.map(([v,l])=>chip('likes',v,l,has('likes',v),true)).join('')}</div></div><div class="ivq"><b>Tes repères actuels (facultatif)</b><input class="ivtext" data-f="experience" placeholder="Ex. : squat 100 kg × 5, 35 tractions, développé 80 kg" value="${esc(d.experience||'')}"></div>`,ok:()=>true},
+    {t:'Ta fiche',s:`C'est exactement ce que ${COACH_NAME} recevra. Corrige si quelque chose cloche.`,h:()=>`<div class="ivrecap">${ivRecapHtml(ivProfile(d))}</div><div class="ivchips small">${[['Objectifs',1],['Niveau',3],['Matériel',4],['Jours',5],['Zones',7],['Préférences',8]].map(([l,k])=>`<button type="button" class="ivchip" data-go="${k}">Modifier · ${l}</button>`).join('')}</div>`,ok:()=>true}
+  ];
+  function set(f,v,multi){ if(f.includes('.')){ const [a,b]=f.split('.'); d[a]=d[a]||{}; d[a][b]=v; return; } if(multi){ const arr=(d[f]||[]).slice(); const vv=/^\d+$/.test(v)&&f==='daysList'?Number(v):v; const k=arr.indexOf(vv); if(k>=0) arr.splice(k,1); else arr.push(vv); if(f==='skills'){ if(vv==='none') arr.splice(0,arr.length,'none'); else { const n=arr.indexOf('none'); if(n>=0) arr.splice(n,1); } } d[f]=arr; } else d[f]=d[f]===v?undefined:v; }
+  function render(){ const sc=screens[i]; const m=document.querySelector('main'); const last=i===screens.length-1;
+    m.innerHTML=`<section class="onb iv"><p class="eyebrow">${i+1} sur ${screens.length}</p><div class="onb-prog"><i style="width:${Math.round(100*(i+1)/screens.length)}%"></i></div><h2>${sc.t}</h2><p class="sub">${sc.s}</p><div id="ivBody">${sc.h()}</div>
+      <div class="row2 onb-nav">${i>0?'<button type="button" class="btn" id="ivBack">Retour</button>':''}<button type="button" class="btn fill" id="ivNext">${last?(COACH_NAME+', construis mon programme'):'Continuer'}</button></div>${sc.alt?`<p class="small center"><button type="button" class="link" id="ivAlt">${esc(sc.alt[0])}</button></p>`:''}</section>`;
+    window.scrollTo({top:0});
+    const body=$('#ivBody');
+    body.addEventListener('click',e=>{ const b=e.target.closest('[data-f]'); if(!b||b.tagName==='INPUT') return; const f=b.dataset.f, v=b.dataset.v, multi=b.dataset.multi==='1';
+      if(f==='sex'){ d.sex=v; b.parentElement.querySelectorAll('.ivchip').forEach(x=>x.classList.toggle('on',x===b)); return; }
+      set(f,v,multi||f==='daysList');
+      if((sc.rerender||[]).includes(f.split('.')[0])){ body.innerHTML=sc.h(); return; }
+      if(b.classList.contains('ivopt')||b.classList.contains('ivcard')||(!multi&&f!=='daysList')){ b.parentElement.querySelectorAll('[data-f="'+f+'"]').forEach(x=>x.classList.toggle('on',x===b&&d[f.split('.')[0]]!==undefined&&(f.includes('.')?true:d[f]===v))); } else b.classList.toggle('on');
+      if(f==='skills') body.querySelectorAll('[data-f="skills"]').forEach(x=>x.classList.toggle('on',(d.skills||[]).includes(x.dataset.v)));
+      if(sc.react) sc.react(); });
+    body.addEventListener('input',e=>{ const t=e.target; if(t.classList.contains('ivtext')) set(t.dataset.f,t.value.trim()); });
+    body.querySelectorAll('[data-go]').forEach(b=>b.onclick=()=>IV.go(Number(b.dataset.go)));
+    const bk=$('#ivBack'); if(bk) bk.onclick=()=>IV.go(i-1);
+    const al=$('#ivAlt'); if(al) al.onclick=sc.alt[1];
+    $('#ivNext').onclick=async()=>{ if(!sc.ok()) return; if(!last){ IV.go(i+1); return; } await finish(); };
+  }
+  async function finish(){ const out=ivProfile(d); out.updatedAt=Date.now(); out.createdAt=(PROFILE&&PROFILE.createdAt)||Date.now(); if(PROFILE&&PROFILE.friends) out.friends=PROFILE.friends; if(PROFILE&&PROFILE.social!==undefined) out.social=PROFILE.social; if(PROFILE&&PROFILE.pullGoal) out.pullGoal=PROFILE.pullGoal;
+    PROFILE=out; try{ await fbDb.collection('users').doc(USER.uid).collection('meta').doc('profile').set(out); }catch(err){ alert('Enregistrement impossible : '+err.message); return; }
+    if(onDone) onDone(); else showOnboarding('program'); }
+  return { start(seed,opts){ d=ivSeed(seed||{}); i=(opts&&opts.step)||0; onDone=(opts&&opts.onDone)||null; render(); }, go(k){ i=Math.max(0,Math.min(screens.length-1,k)); render(); }, draft(){ return d; } };
+})();
+// Profil existant (ancien formulaire ou fiche) → brouillon d'entretien.
+function ivSeed(p){ const s=p.spec?Object.assign({},p.spec):{}; if(Array.isArray(s.zones)&&s.zones.length&&typeof s.zones[0]==='object'){ const zs=s.zones; s.zones=zs.map(z=>z.zone); s.zoneSev={}; s.zoneNote={}; zs.forEach(z=>{ s.zoneSev[z.zone]=z.sev; s.zoneNote[z.zone]=z.note||''; }); } ['name','age','sex','height','weight','experience'].forEach(k=>{ if(p[k]!==undefined&&s[k]===undefined) s[k]=p[k]; });
+  if(!s.goalMain&&(p.goals||[]).length){ const g=p.goals[0]; s.goalMain=IV_GOALS.some(x=>x[0]===g)?g:({tractions:'corps',jambes:'force',bras:'masse',fessiers:'masse',seche:'perte',endurance:'perf',puissance:'perf',cardio:'perte',silhouette:'masse'}[g]||'force'); if(p.goals[1]&&IV_GOAL2.some(x=>x[0]===p.goals[1])) s.goalSecond=p.goals[1]; }
+  if(!s.place&&(p.gear||[]).length){ s.place=p.gear.includes('salle')?'salle':'maison'; if(s.place==='salle') s.gymGear=['machines','poulies','barres','halteres','traction']; else s.homeGear=p.gear.filter(g=>g!=='cardio'); }
+  if(!s.daysList&&p.days){ s.daysList=[[0,2],[0,2,4],[0,2,4,5],[0,1,3,4,5],[0,1,2,3,4,5]][Math.max(2,Math.min(6,Number(p.days)))-2]; }
+  if(!s.minutes&&p.minutes) s.minutes=p.minutes; if(!s.years&&p.level) s.years={debutant:'1',intermediaire:'2',confirme:'3',avance:'3'}[p.level];
+  if(!s.sportsNote&&p.sports) s.sportsNote=p.sports; if(!s.constraintsNote&&p.constraints) s.constraintsNote=p.constraints; return s; }
+// Brouillon → profil enregistré (champs compatibles + fiche structurée).
+function ivProfile(s){ const days=(s.daysList||[]).slice().sort((a,b)=>a-b); const goals=[s.goalMain].concat(s.goalSecond?[s.goalSecond]:[]).filter(Boolean).map(g=>g==='corps'?'tractions':g);
+  const zones=(s.zones||[]).map(z=>({zone:z,sev:(s.zoneSev||{})[z]||'fragile',note:(s.zoneNote||{})[z]||''}));
+  const constraints=zones.map(z=>`${IV_ZONES.find(x=>x[0]===z.zone)[1].toLowerCase()} (${IV_SEV.find(x=>x[0]===z.sev)[1].toLowerCase()}${z.note?' : '+z.note:''})`).concat(s.constraintsNote?[s.constraintsNote]:[]).join(' ; ');
+  const sports=(s.sports||[]).join(', ')+(s.sportsNote?(s.sports&&s.sports.length?' — ':'')+s.sportsNote:'');
+  const equipment=[s.brand&&s.brand!=='Autre'?s.brand:'',(s.place!=='maison')?'salle : '+(s.gymGear||[]).map(v=>(IV_GYM.find(x=>x[0]===v)||[])[1]).filter(Boolean).join(', '):'',(s.place!=='salle')?'maison : '+(s.homeGear||[]).map(v=>(IV_HOME.find(x=>x[0]===v)||[])[1]).filter(Boolean).join(', '):''].filter(Boolean).join(' · ');
+  const refuse=(s.refuse||[]).map(v=>(IV_REFUSE.find(x=>x[0]===v)||[])[1]).filter(Boolean), likes=(s.likes||[]).map(v=>(IV_LIKES.find(x=>x[0]===v)||[])[1]).filter(Boolean);
+  return { name:String(s.name||'').trim(), age:Number(s.age)||null, sex:s.sex||'h', height:Number(s.height)||null, weight:Number(s.weight)||null, level:ivLevel(s), goals, goalsText:[refuse.length?'Refuse : '+refuse.join(', '):'',likes.length?'Aime : '+likes.join(', '):''].filter(Boolean).join('. '), days:days.length, daysList:days, minutes:Number(s.minutes)||60, gear:ivGear(s), equipment, sports, constraints, experience:s.experience||'', refTest:'tractions',
+    spec:{ goalMain:s.goalMain, goalSecond:s.goalSecond||null, years:s.years, skills:s.skills||[], place:s.place, gymGear:s.gymGear||[], homeGear:s.homeGear||[], brand:s.brand||'', daysList:days, minutes:Number(s.minutes)||60, zones, sports:s.sports||[], sportsNote:s.sportsNote||'', refuse:s.refuse||[], likes:s.likes||[], experience:s.experience||'', name:s.name, age:s.age, sex:s.sex, height:s.height, weight:s.weight, v:1 } }; }
+function ivRecapHtml(p){ const s=p.spec||{}; const gm=IV_GOALS.find(x=>x[0]===s.goalMain), g2=IV_GOAL2.find(x=>x[0]===s.goalSecond);
+  return `<p><b>${esc(p.name||'')}</b>, ${p.age||'?'} ans, ${p.height||'?'} cm, ${p.weight||'?'} kg · <b>${IV_LEVEL_FR[p.level]||p.level}</b> (${esc((IV_YEARS.find(x=>x[0]===s.years)||['',''])[1].toLowerCase())}${(s.skills||[]).filter(x=>x!=='none').length?', '+(s.skills||[]).filter(x=>x!=='none').map(v=>(IV_SKILLS.find(x=>x[0]===v)||[])[1].toLowerCase()).join(', '):''})</p>
+    <p>Objectif n°1 <b>${esc(gm?gm[1].toLowerCase():'')}</b>${g2?' · n°2 <b>'+esc(g2[1].toLowerCase())+'</b>':''} · <b>${p.days} jours</b> ${(p.daysList||[]).map(k=>IV_DAYS[k]).join(' ')} · <b>${p.minutes} min</b> maxi</p>
+    <p>${esc(p.equipment||'')}</p>
+    ${(s.zones||[]).length?`<p><b>${esc(p.constraints)}</b></p>`:'<p>Aucune zone à ménager</p>'}
+    ${p.sports?`<p>${esc(p.sports)}</p>`:''}
+    ${(s.refuse||[]).length?`<p>Refuse : ${esc((s.refuse||[]).map(v=>(IV_REFUSE.find(x=>x[0]===v)||[])[1]).join(', ').toLowerCase())}</p>`:''}
+    ${(s.likes||[]).length?`<p>Aime : ${esc((s.likes||[]).map(v=>(IV_LIKES.find(x=>x[0]===v)||[])[1]).join(', ').toLowerCase())}</p>`:''}
+    ${p.experience?`<p>Repères : ${esc(p.experience)}</p>`:''}`; }
+
 function showOnboarding(step){ ONB_STEP=step;
   restoreShell(); document.querySelector('.tabs').hidden=true; $('#weekChip').hidden=true;
   const m=document.querySelector('main');
-  if(step==='profile'||!PROFILE){ onbStep(0); return; }
+  if(step==='profile'||!PROFILE){ IV.start(PROFILE||{name:(USER&&USER.displayName?USER.displayName.split(' ')[0]:'')}); return; }
   m.innerHTML=`<section class="onb"><div class="onb-prog"><i style="width:100%"></i></div><h2>Ton programme</h2>
     <div class="kaisay">${coachAvatar('idle')}<p>J'ai ce qu'il me faut. Je construis ton premier cycle : les séances, chaque exercice avec pourquoi il est là et comment l'exécuter, les séries, les repos, la progression semaine par semaine. Ensuite on le fait évoluer ensemble.</p></div>
     <div class="row2"><button class="btn fill" id="genBtn">${esc(COACH_NAME)}, construis mon programme</button></div>
@@ -583,7 +693,7 @@ function showOnboarding(step){ ONB_STEP=step;
   $('#genBtn').onclick=()=>generateProgram(); const od=$('#onbDiag'); if(od) od.onclick=showDiag;
   if(GEN_STATE&&GEN_STATE.status==='running'&&Date.now()-(GEN_STATE.startedAt||0)<8*60000){ $('#genBtn').hidden=true; $('#genWait').hidden=false; GENERATING=true; }
   else if(GEN_STATE&&GEN_STATE.status==='error'&&!GENERATING){ $('#genMsg').textContent='La dernière tentative a échoué : '+GEN_STATE.message+'. Réessaie, le programme est construit uniquement à partir de ton profil.'; $('#genBtn').textContent='Réessayer'; }
-  $('#backProf').onclick=()=>onbStep(0);
+  $('#backProf').onclick=()=>IV.start(PROFILE||{},{step:9});
   const ib=$('#importBtn'); if(ib) ib.onclick=async()=>{ ib.disabled=true; try{ await saveProgram(DEFAULT_PROGRAM, DEFAULT_CYCLE_HTML); toast('Programme de base installé','ok'); }catch(e){ ib.disabled=false; $('#genMsg').textContent=humanErr(e); logErr('import',e); } };
 }
 const ONB_DRAFT={};

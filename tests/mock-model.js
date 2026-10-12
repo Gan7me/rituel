@@ -52,7 +52,10 @@ function programFor(sys, user) {
   if (!obey) return p;
   const home = (e) => Object.assign({}, e, { name: e.name.replace(/Hack squat|Presse à cuisses|Leg curl assis|Leg extension|Tirage vertical|Face pull|Extension triceps poulie/i, 'Goblet squat haltère'), machine: 'Haltères' });
   const base = p.sessions.map(se => gym ? se : Object.assign({}, se, { exercises: se.exercises.map(home) }));
-  const out = []; for (let i = 0; i < days; i++) { const src = base[i % base.length]; out.push(Object.assign({}, src, { id: 's' + (i + 1), day: ((i * 2) % 6) + 1, name: src.name + (i >= base.length ? ' bis' : '') })); }
+  // exercices refusés nommément par le contrôle (zone à ménager) : retirés, comme le ferait un coach qui lit le retour
+  const banned = []; (user.match(/Zone à ménager sollicitée, [^:]+: ([^.]+)\./g) || []).forEach(m => m.replace(/^[^:]+: /, '').replace(/\.$/, '').split(', ').forEach(n => banned.push(n.trim().toLowerCase())));
+  const base2 = base.map(se => Object.assign({}, se, { exercises: se.exercises.filter(e => !banned.includes(e.name.toLowerCase())) }));
+  const out = []; for (let i = 0; i < days; i++) { const src = base2[i % base2.length]; out.push(Object.assign({}, src, { id: 's' + (i + 1), day: ((i * 2) % 6) + 1, name: src.name + (i >= base.length ? ' bis' : '') })); }
   return Object.assign({}, p, { sessions: out });
 }
 const server = http.createServer((req, res) => {
