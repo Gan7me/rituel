@@ -30,7 +30,7 @@ function fillIds(obj, ids) { // les schémas d'analyse attendent des identifiant
   const walk = (o, depth) => { if (Array.isArray(o)) o.forEach((x, i) => { if (x && typeof x === 'object' && 'exId' in x) x.exId = ids[i % ids.length] || ids[0]; walk(x, depth + 1); }); else if (o && typeof o === 'object') Object.values(o).forEach(v => walk(v, depth + 1)); };
   walk(obj, 0); return obj;
 }
-function programJSON() {
+function programJSON(days, gym, obey) {
   const ex = (n, name, machine, target) => ({ n, name, machine, alt: 'Alternative ' + name, star: n === 1, sets: 4, reps: '6-8', per: '', rir: [3, 2, 1, 4], tempo: '3-1-X-0', restSec: 150, restText: '2 min 30', mode: 'normal', reco: 'Machine à charge guidée, siège incliné.', why: 'Base de force du programme.', target, exec: 'Dos plaqué, descente contrôlée, pousser sans verrouiller.', seek: 'Tension continue sur le muscle cible.', url: 'https://www.google.com/search?tbm=isch&q=' + encodeURIComponent(machine) });
   return {
     cycleName: 'Mésocycle test · Fondations · octobre 2026', rationale: '## Lecture\nProgramme simulé pour le banc de test.', nutrition: 'Cibles simulées : 2 600 kcal, 160 g de protéines.',
@@ -42,6 +42,18 @@ function programJSON() {
       { id: 's3', day: 5, dayName: 'Vendredi', name: 'Pull A', sub: 'dos, biceps', duration: '60 min', place: '', gtg: true, note: '', exercises: [ex(1, 'Tractions', 'Station de traction', 'dos'), ex(2, 'Rowing barre', 'Barre', 'dos'), ex(3, 'Tirage vertical', 'Lat pulldown', 'dos'), ex(4, 'Curl barre', 'Barre EZ', 'biceps'), ex(5, 'Face pull', 'Poulie', 'arrière d\'épaule')] }
     ]
   };
+}
+// Le modèle simulé est volontairement « générique » par défaut (3 séances, machines) : le contrôle de conformité doit le refuser
+// puis obtenir une version conforme à la reprise (obey) ; c'est le scénario testé.
+function programFor(sys, user) {
+  const m = sys.match(/(\d+) séances\/semaine/); const days = m ? Number(m[1]) : 3;
+  const gym = /salle complète/.test(sys); const obey = /refusée par le contrôle/.test(user);
+  const p = programJSON();
+  if (!obey) return p;
+  const home = (e) => Object.assign({}, e, { name: e.name.replace(/Hack squat|Presse à cuisses|Leg curl assis|Leg extension|Tirage vertical|Face pull|Extension triceps poulie/i, 'Goblet squat haltère'), machine: 'Haltères' });
+  const base = p.sessions.map(se => gym ? se : Object.assign({}, se, { exercises: se.exercises.map(home) }));
+  const out = []; for (let i = 0; i < days; i++) { const src = base[i % base.length]; out.push(Object.assign({}, src, { id: 's' + (i + 1), day: ((i * 2) % 6) + 1, name: src.name + (i >= base.length ? ' bis' : '') })); }
+  return Object.assign({}, p, { sessions: out });
 }
 const server = http.createServer((req, res) => {
   let body = ''; req.on('data', c => body += c); req.on('end', () => {
@@ -59,7 +71,7 @@ const server = http.createServer((req, res) => {
         return json(200, { id: 'msg_sim', type: 'message', role: 'assistant', model: b.model, stop_reason: 'tool_use', usage, content: [{ type: 'tool_use', id: 'tu_1', name: b.tools[0].name, input }] });
       }
       const sys = String(b.system || ''); const last = (b.messages || []).slice(-1)[0]; const user = last && typeof last.content === 'string' ? last.content : '';
-      if (/Construis le mésocycle|Réponds UNIQUEMENT avec un objet JSON/i.test(user)) return json(200, { id: 'msg_sim', type: 'message', role: 'assistant', model: b.model, stop_reason: 'end_turn', usage: { input_tokens: 3000, output_tokens: 6000 }, content: [{ type: 'text', text: 'Voici le programme :\n```json\n' + JSON.stringify(programJSON()) + '\n```' }] });
+      if (/Construis le mésocycle|Réponds UNIQUEMENT avec un objet JSON/i.test(user)) return json(200, { id: 'msg_sim', type: 'message', role: 'assistant', model: b.model, stop_reason: 'end_turn', usage: { input_tokens: 3000, output_tokens: 6000 }, content: [{ type: 'text', text: 'Voici le programme :\n```json\n' + JSON.stringify(programFor(sys, user)) + '\n```' }] });
       return json(200, { id: 'msg_sim', type: 'message', role: 'assistant', model: b.model, stop_reason: 'end_turn', usage, content: [{ type: 'text', text: 'Réponse simulée du coach à : « ' + user.slice(0, 60) + ' ». Tu gardes la charge et tu vises le haut de la cible.' }] });
     }
     if (req.url === '/__calls') return json(200, CALLS);

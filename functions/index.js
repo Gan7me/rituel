@@ -307,12 +307,13 @@ exports.adminStats = onCall({ region: 'europe-west1' }, async (req) => {
     const plan = bl.exists && bl.data().plan === 'premium' && (!bl.data().expiresAt || bl.data().expiresAt > Date.now()) ? 'premium' : 'free'; if (plan === 'premium') premium++;
     let email = '', disabled = false, created = null; try { const au = await admin.auth().getUser(u.id); email = au.email || ''; disabled = !!au.disabled; created = au.metadata && au.metadata.creationTime ? new Date(au.metadata.creationTime).getTime() : null; } catch (e) {}
     const bd = bl.exists ? bl.data() : {};
-    perUser.push({ uid: u.id.slice(0, 6), uidFull: u.id, email, disabled, created, lastAt: usage.updatedAt || null, admin: ADMIN_EMAILS.includes(email.toLowerCase()), name: pr.exists ? (pr.data().name || '') : '', program: hasProg, sessions7: n7, plan: ADMIN_EMAILS.includes(email.toLowerCase()) ? 'premium' : plan, source: bd.source || '', store: bd.store || '', expiresAt: bd.expiresAt || null, cost: usage.month === month ? Math.round((usage.costUsd || 0) * 100) / 100 : 0, lastMode: usage.lastMode || '' });
+    perUser.push({ uid: u.id.slice(0, 6), uidFull: u.id, email, disabled, created, lastAt: usage.updatedAt || null, admin: ADMIN_EMAILS.includes(email.toLowerCase()), name: pr.exists ? (pr.data().name || '') : '', program: hasProg, generic: hasProg && !(pg.data() || {}).generatedAt, checks: hasProg ? ((pg.data() || {}).checks || null) : null, sessions7: n7, plan: ADMIN_EMAILS.includes(email.toLowerCase()) ? 'premium' : plan, source: bd.source || '', store: bd.store || '', expiresAt: bd.expiresAt || null, cost: usage.month === month ? Math.round((usage.costUsd || 0) * 100) / 100 : 0, lastMode: usage.lastMode || '' });
   }
   const errs = await db.collection('errors').where('t', '>=', sinceMs).orderBy('t', 'desc').limit(100).get();
   const errors = errs.docs.map(d => d.data()).map(e => ({ t: e.t, uid: String(e.uid || '').slice(0, 6), src: e.src, msg: String(e.msg || '').slice(0, 160), ver: e.ver }));
   const health = (await db.collection('system').doc('health').get()).data() || null;
-  return { users: users.length, withProgram, premium, sessions7, calls, costMonth: Math.round(costMonth * 100) / 100, errors, health, perUser: perUser.sort((a, b) => b.sessions7 - a.sessions7).slice(0, 50) };
+  const bench = (await db.collection('system').doc('bench').get()).data() || null;
+  return { bench, users: users.length, withProgram, premium, sessions7, calls, costMonth: Math.round(costMonth * 100) / 100, errors, health, perUser: perUser.sort((a, b) => b.sessions7 - a.sessions7).slice(0, 50) };
 });
 
 // Forfait posé à la main par l'administrateur (Premium offert pour N mois, ou retiré). Un abonnement payant repasse par le webhook.
@@ -326,6 +327,44 @@ exports.adminSetPlan = onCall({ region: 'europe-west1' }, async (req) => {
 });
 
 // Actions d'administration sur un compte : remise à zéro des compteurs du mois, notification, blocage, suppression.
+// Banc d'essai de personnalisation, à la demande (coûte de l'API) : des profils synthétiques variés, génération réelle, contrôle de conformité,
+// et vérification que deux profils différents ne reçoivent pas le même programme. Rien n'est enregistré sur un compte.
+const BENCH_PROFILES = [
+  { name: 'Claire', sex: 'f', age: 34, height: 165, weight: 62, level: 'debutant', goals: ['perte', 'silhouette'], days: 3, minutes: 45, gear: ['halteres', 'elastiques'], constraints: '' },
+  { name: 'Marc', sex: 'm', age: 55, height: 178, weight: 88, level: 'intermediaire', goals: ['sante', 'force'], days: 3, minutes: 60, gear: ['salle'], constraints: 'dos fragile, hernie discale L5 en 2022' },
+  { name: 'Inès', sex: 'f', age: 27, height: 170, weight: 58, level: 'confirme', goals: ['fessiers', 'masse'], days: 4, minutes: 60, gear: ['salle'], constraints: '' },
+  { name: 'Yanis', sex: 'm', age: 19, height: 182, weight: 70, level: 'debutant', goals: ['masse', 'bras'], days: 4, minutes: 75, gear: ['salle'], constraints: '' },
+  { name: 'Sophie', sex: 'f', age: 46, height: 160, weight: 70, level: 'debutant', goals: ['perte', 'cardio'], days: 2, minutes: 40, gear: ['corps'], constraints: 'genou droit opéré, pas d\'impact' },
+  { name: 'Karim', sex: 'm', age: 38, height: 175, weight: 80, level: 'avance', goals: ['force', 'puissance'], days: 5, minutes: 90, gear: ['salle', 'barre'], constraints: '', sports: 'rugby, deux entraînements par semaine' },
+  { name: 'Léa', sex: 'f', age: 31, height: 168, weight: 64, level: 'intermediaire', goals: ['tractions', 'endurance'], days: 4, minutes: 50, gear: ['traction', 'halteres', 'kettlebell'], constraints: 'épaule gauche sensible' },
+  { name: 'Paul', sex: 'm', age: 62, height: 172, weight: 76, level: 'debutant', goals: ['sante'], days: 2, minutes: 45, gear: ['halteres'], constraints: 'arthrose des genoux, hypertension' },
+  { name: 'Nadia', sex: 'f', age: 41, height: 174, weight: 68, level: 'confirme', goals: ['perf', 'jambes'], days: 5, minutes: 70, gear: ['salle'], constraints: '', sports: 'trail, 60 km par semaine' },
+  { name: 'Tom', sex: 'm', age: 24, height: 190, weight: 95, level: 'intermediaire', goals: ['seche', 'bras'], days: 6, minutes: 60, gear: ['salle'], constraints: 'coude droit (épicondylite)' },
+  { name: 'Amel', sex: 'f', age: 52, height: 158, weight: 75, level: 'debutant', goals: ['perte', 'sante'], days: 3, minutes: 30, gear: ['elastiques', 'corps'], constraints: 'reprise après 10 ans sans sport' },
+  { name: 'Hugo', sex: 'm', age: 35, height: 180, weight: 72, level: 'confirme', goals: ['tractions', 'endurance', 'puissance'], days: 6, minutes: 60, gear: ['salle', 'traction'], constraints: '', sports: 'pompier, gardes de 24 h' }
+];
+exports.adminEval = onCall({ region: 'europe-west1', secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 540, memory: '512MiB' }, async (req) => {
+  if (!req.auth || !ADMIN_EMAILS.includes(String(req.auth.token && req.auth.token.email || '').toLowerCase())) throw new HttpsError('permission-denied', 'Réservé à l\'administrateur.');
+  const apiKey = String(ANTHROPIC_API_KEY.value() || '').replace(/[^\x21-\x7E]/g, '').replace(/^["']+|["']+$/g, '');
+  const model = await resolveModel(apiKey, MODEL.value());
+  const only = Array.isArray(req.data && req.data.names) ? req.data.names : null;
+  const profiles = BENCH_PROFILES.filter(p => !only || only.includes(p.name));
+  const results = await Promise.all(profiles.map(async p => {
+    const t0 = Date.now();
+    try {
+      const prog = await buildProgram(p, apiKey, model);
+      const sessions = prog.sessions.map(s => `${s.name} (${s.exercises.length})`);
+      const personal = /^\s*(#+\s*)?Pour\s+/i.test(prog.rationale || '') || (prog.rationale || '').includes(p.name);
+      return { name: p.name, ok: !prog.checks.errors.length, errors: prog.checks.errors, warnings: prog.checks.warnings, attempts: prog.checks.attempts, sessions, personal, signature: checkProgram(prog, p).signature, ms: Date.now() - t0, weeks: prog.weeks.length, cycleName: prog.cycleName };
+    } catch (e) { return { name: p.name, ok: false, errors: [String(e && e.message || e)], warnings: [], sessions: [], ms: Date.now() - t0 }; }
+  }));
+  // distinctivité : deux profils ne doivent pas partager plus de la moitié de leurs exercices
+  const sets = results.map(r => new Set(String(r.signature || '').split(/\|\|?/).filter(Boolean)));
+  for (let i = 0; i < results.length; i++) { results[i].similar = []; for (let j = 0; j < results.length; j++) { if (i === j || !sets[i].size || !sets[j].size) continue; const inter = [...sets[i]].filter(x => sets[j].has(x)).length; const ratio = inter / Math.min(sets[i].size, sets[j].size); if (ratio > 0.5) results[i].similar.push(`${results[j].name} (${Math.round(ratio * 100)} %)`); } delete results[i].signature; }
+  const summary = { total: results.length, ok: results.filter(r => r.ok && !r.similar.length).length, at: Date.now(), model };
+  await db.collection('system').doc('bench').set({ summary, results });
+  return { summary, results };
+});
 exports.adminAction = onCall({ region: 'europe-west1' }, async (req) => {
   if (!req.auth || !ADMIN_EMAILS.includes(String(req.auth.token && req.auth.token.email || '').toLowerCase())) throw new HttpsError('permission-denied', 'Réservé à l\'administrateur.');
   const { uid, action, text } = req.data || {}; if (!uid || !action) throw new HttpsError('invalid-argument', 'uid et action requis');
@@ -383,24 +422,56 @@ exports.coach = onCall({ region: 'europe-west1', secrets: [ANTHROPIC_API_KEY], t
     throw e;
   }
 });
+// Contrôle de conformité d'un programme généré, déterministe et gratuit, appliqué à chaque génération pour tout le monde.
+// Bloquant (régénération puis refus) : nombre de séances ≠ jours demandés, machine ou poulie sans salle, séance vide.
+// Avertissement (conservé dans prog.checks) : contrainte déclarée possiblement sollicitée, séance très au-dessus du temps prévu.
+const MACHINE_RE = /\b(machine|poulie|c[âa]ble|cable|presse|press machine|leg press|hack|smith|pec ?deck|lat ?pull|tirage|leverage|iso[- ]?lat|convergent|technogym|panatta|gym ?80|hammer strength|eleiko|matrix|selection|sygnum|pure kraft)\b/i;
+const CONSTRAINT_MAP = [[/genou/i, /squat|fente|lunge|leg ?ext|presse|hack|pendulum|saut|jump|pistol/i, 'genou'], [/[ée]paule/i, /d[ée]velopp[ée].*(militaire|[ée]paule|overhead)|shoulder press|[ée]l[ée]vation|dips?\b|traction|pull[- ]?up|arrach|snatch|upright/i, 'épaule'], [/\bdos\b|lombaire|hernie|sciatique/i, /soulev[ée] de terre|deadlift|good ?morning|rowing.*(barre|pench)|bent.?over|squat.*barre|back squat|hyperext/i, 'dos'], [/coude|[ée]picondyl/i, /curl|pushdown|extension.*triceps|skull|dips?\b/i, 'coude'], [/poignet/i, /pompes?|push[- ]?up|front squat|curl.*poignet|wrist/i, 'poignet'], [/hanche/i, /hip thrust|squat.*profond|fente|lunge|abduct|adduct/i, 'hanche'], [/cheville/i, /mollet|calf|saut|jump|fente|lunge/i, 'cheville']];
+function checkProgram(prog, profile) {
+  const p = profile || {}; const gear = p.gear || []; const errors = [], warnings = [];
+  if (!prog.sessions.length) errors.push('Aucune séance.');
+  if (p.days && prog.sessions.length !== Number(p.days)) errors.push(`${prog.sessions.length} séance(s) pour ${p.days} jour(s) demandé(s).`);
+  if (gear.length && !gear.includes('salle')) {
+    const bad = prog.sessions.flatMap(s => s.exercises).filter(e => MACHINE_RE.test(e.name + ' ' + e.machine)).map(e => e.name);
+    if (bad.length) errors.push('Machine ou poulie sans salle : ' + [...new Set(bad)].slice(0, 6).join(', ') + '.');
+  }
+  prog.sessions.forEach(s => { if (!s.exercises.length) errors.push(`${s.name} : aucun exercice.`); });
+  const c = String(p.constraints || '');
+  if (c) CONSTRAINT_MAP.forEach(([cre, ere, label]) => { if (cre.test(c)) { const hit = prog.sessions.flatMap(s => s.exercises).filter(e => ere.test(e.name)).map(e => e.name); if (hit.length) warnings.push(`Contrainte « ${label} » : vérifier ${[...new Set(hit)].slice(0, 4).join(', ')}.`); } });
+  if (p.minutes) prog.sessions.forEach(s => { const sets = s.exercises.reduce((a, e) => a + e.sets, 0); const est = Math.round(sets * ((s.exercises.reduce((a, e) => a + e.restSec, 0) / Math.max(1, s.exercises.length)) + 45) / 60) + 8; if (est > Number(p.minutes) * 1.35) warnings.push(`${s.name} : ≈${est} min estimées pour ${p.minutes} prévues.`); });
+  const sig = prog.sessions.map(s => s.exercises.map(e => e.name.toLowerCase().replace(/[^a-zà-ÿ]/g, '')).join('|')).join('||');
+  return { errors, warnings, signature: sig };
+}
+// Génération pure : profil → programme vérifié. Une seule reprise si le contrôle bloque, avec les défauts renvoyés au coach.
+async function buildProgram(profile, apiKey, model) {
+  const sys = systemFor(profile, null);
+  const safety = { debutant: 'Débutant : 3 séances max, 4 à 6 exercices par séance, 12 à 16 séries, RIR jamais sous 2, pas de techniques d\'intensification, machines guidées et mouvements simples, échauffement détaillé, aucune charge suggérée en kg.', intermediaire: 'Intermédiaire : 16 à 22 séries par séance, RIR 3 → 1, une seule technique d\'intensification en S3.', confirme: 'Confirmé : 22 à 28 séries, RIR jusqu\'à 0 sur les isolations en S3, intensification ciblée.', avance: 'Avancé : volume et intensité d\'athlète, techniques d\'intensification justifiées.' }[(profile || {}).level] || '';
+  const pr = profile || {}; const gear = pr.gear || [];
+  const constraints = pr.constraints ? `Respecte strictement les contraintes déclarées (blessures, douleurs, métier) : exclus tout exercice qui les sollicite et propose une alternative. ` : '';
+  const noGym = gear.length && !gear.includes('salle') ? 'Pas de salle : aucune machine guidée, aucune poulie, aucun nom de marque ; uniquement ' + gear.join(', ') + '. ' : '';
+  const personal = `Ce programme doit être visiblement construit pour ${pr.name || 'cette personne'} et pour personne d'autre : le "rationale" commence par « Pour ${pr.name || 'toi'} » et relie explicitement chaque choix majeur à ses objectifs (${(pr.goals || []).join(', ') || 'non précisés'}), son niveau (${pr.level || '?'}), son matériel, ses ${pr.days || '?'} jours et ${pr.minutes || '?'} minutes, ses contraintes et ses autres pratiques. Exactement ${pr.days || '?'} séances. Les noms de séances reflètent ses objectifs. Un programme interchangeable avec celui d'un autre profil est un échec. `;
+  const user = `Construis le mésocycle de cet athlète (départ le ${nextMonday()}). Sois concret et exigeant au niveau déclaré. ${personal}${safety} ${noGym}${constraints}${PROGRAM_SCHEMA}`;
+  let prog, check, attempts = 0, feedback = '';
+  while (attempts < 2) {
+    attempts++;
+    const text = await claude(apiKey, model, sys, [{ role: 'user', content: user + feedback }], 16000);
+    let parsed;
+    try { parsed = JSON.parse(text.slice(text.indexOf('{'), text.lastIndexOf('}') + 1)); }
+    catch (e) { throw new HttpsError('internal', 'Le coach a renvoyé un programme illisible, relance la génération.'); }
+    prog = applyGuardrails(normalizeProgram(parsed, nextMonday()), profile);
+    check = checkProgram(prog, profile);
+    if (!check.errors.length) break;
+    feedback = `\n\nTa proposition précédente a été refusée par le contrôle de conformité : ${check.errors.join(' ')} Corrige ces points précisément et renvoie le programme complet.`;
+  }
+  if (check.errors.length) throw new HttpsError('internal', 'Programme non conforme au profil (' + check.errors.join(' ') + ') Relance la génération.');
+  prog.checks = { errors: check.errors, warnings: check.warnings, attempts, at: Date.now() };
+  return prog;
+}
 async function generateProgramFor(uid, meta, apiKey, model) {
   const genRef = db.collection('users').doc(uid).collection('meta').doc('genstate');
-    const sys = systemFor(meta.profile, null);
-    const safety = { debutant: 'Débutant : 3 séances max, 4 à 6 exercices par séance, 12 à 16 séries, RIR jamais sous 2, pas de techniques d\'intensification, machines guidées et mouvements simples, échauffement détaillé, aucune charge suggérée en kg.', intermediaire: 'Intermédiaire : 16 à 22 séries par séance, RIR 3 → 1, une seule technique d\'intensification en S3.', confirme: 'Confirmé : 22 à 28 séries, RIR jusqu\'à 0 sur les isolations en S3, intensification ciblée.', avance: 'Avancé : volume et intensité d\'athlète, techniques d\'intensification justifiées.' }[(meta.profile || {}).level] || '';
-    const constraints = (meta.profile || {}).constraints ? `Respecte strictement les contraintes déclarées (blessures, douleurs, métier) : exclus tout exercice qui les sollicite et propose une alternative. ` : '';
-    const pr = meta.profile || {}; const gear = pr.gear || [];
-    const noGym = gear.length && !gear.includes('salle') ? 'Pas de salle : aucune machine guidée, aucune poulie, aucun nom de marque ; uniquement ' + gear.join(', ') + '. ' : '';
-    const personal = `Ce programme doit être visiblement construit pour ${pr.name || 'cette personne'} et pour personne d'autre : le "rationale" commence par « Pour ${pr.name || 'toi'} » et relie explicitement chaque choix majeur à ses objectifs (${(pr.goals || []).join(', ') || 'non précisés'}), son niveau (${pr.level || '?'}), son matériel, ses ${pr.days || '?'} jours et ${pr.minutes || '?'} minutes, ses contraintes et ses autres pratiques. Les noms de séances reflètent ses objectifs. Un programme interchangeable avec celui d'un autre profil est un échec. `;
-    const user = `Construis le mésocycle de cet athlète (départ le ${nextMonday()}). Sois concret et exigeant au niveau déclaré. ${personal}${safety} ${noGym}${constraints}${PROGRAM_SCHEMA}`;
     let prog;
-    try {
-      const text = await claude(apiKey, model, sys, [{ role: 'user', content: user }], 16000);
-      let parsed;
-      try { parsed = JSON.parse(text.slice(text.indexOf('{'), text.lastIndexOf('}') + 1)); }
-      catch (e) { throw new HttpsError('internal', 'Le coach a renvoyé un programme illisible, relance la génération.'); }
-      prog = applyGuardrails(normalizeProgram(parsed, nextMonday()), meta.profile);
-      if (!prog.sessions.length) throw new HttpsError('internal', 'Programme vide, relance la génération.');
-    } catch (e) { await refundQuota(uid, 'program'); throw e; } // un échec ne consomme pas une génération
+    try { prog = await buildProgram(meta.profile, apiKey, model); }
+    catch (e) { await refundQuota(uid, 'program'); throw e; } // un échec ne consomme pas une génération
     prog.generatedAt = Date.now(); prog.model = model; prog.profileSnapshot = meta.profile;
     await recordUsage(uid, 'program', model);
     prog.demos = await mapDemos(apiKey, model, prog.sessions.flatMap(se => se.exercises)); prog.demosAt = Date.now(); if (Object.keys(prog.demos).length) await recordUsage(uid, 'demo', model);

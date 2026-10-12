@@ -113,6 +113,9 @@ const call = (uid, data) => fns.coach({ auth: { uid }, data });
   assert(r2 && r2.ok, 'programme généré pour le second utilisateur');
   const p2 = store[`users/${uid2}/meta/program`];
   assert(p2.sessions.every(se => se.exercises.length <= 6 && se.exercises.every(e => e.rir.every(r => r >= 2))), 'garde-fous débutant appliqués (≤ 6 exercices, RIR ≥ 2)');
+  assert(p2.sessions.length === 2, 'conformité : exactement les 2 séances demandées (programme générique refusé puis corrigé)');
+  assert(p2.sessions.every(se => se.exercises.every(e => !/machine|poulie|presse|tirage/i.test(e.name + ' ' + e.machine))), 'conformité : aucune machine sans salle');
+  assert(p2.checks && p2.checks.attempts === 2 && p2.checks.errors.length === 0, 'contrôle de conformité : une reprise, zéro erreur restante');
   assert(!Object.keys(store).some(k => k.startsWith(`users/${uid2}/logs/`)), 'aucune donnée de l\'utilisateur 1 chez l\'utilisateur 2');
 
   console.log('Forfaits et administration');
