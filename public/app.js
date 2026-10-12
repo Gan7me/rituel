@@ -18,7 +18,7 @@ function humanErr(e){ const c=(e&&e.code)||''; const m=(e&&e.message)||String(e|
   if(/network|Failed to fetch|internet/i.test(m)||!navigator.onLine) return 'Pas de réseau. Le coach a besoin d\'une connexion ; tes séries sont enregistrées et partiront toutes seules.';
   if(/invalid-argument/.test(c)) return 'Le serveur n\'a pas compris la demande (version de l\'app en retard ?). Recharge l\'application depuis Réglages.';
   return m; }
-const APP_VERSION='3.33.0';
+const APP_VERSION='3.33.1';
 const ADMIN_RE=/^(ganeme\.asloune@nexisafe\.com|gads@live\.fr)$/i;
 let PROGRAM={sessions:[]};
 let WEEKS = [
@@ -812,9 +812,15 @@ function listenMeta(){
 }
 async function regenerateProgram(force){
   if(force!==true&&!confirm('Générer un nouveau mésocycle ? Le programme actuel est remplacé, ton journal est conservé.')) return;
-  const el=$('#tab-programme'); el.insertAdjacentHTML('afterbegin','<div class="banner info" id="regenMsg">Le coach rédige le nouveau cycle, une à deux minutes…</div>');
-  try{ const fn=fbFn.httpsCallable('coach',{timeout:540000}); await fn({mode:'program'}); }
-  catch(e){ const m=$('#regenMsg'); if(m) m.textContent='Échec : '+(e.message||e); }
+  if(GENERATING) return; GENERATING=true;
+  const el=$('#tab-programme'); const old=$('#regenMsg'); if(old) old.remove(); if(el) el.insertAdjacentHTML('afterbegin','<div class="banner info" id="regenMsg">'+esc(COACH_NAME)+' rédige le nouveau cycle, une à deux minutes. Tu peux changer d\'onglet, le programme s\'affichera tout seul.</div>');
+  startJob('construit ton nouveau cycle',['Lit ta fiche','Choisit les exercices pour ton matériel','Règle séries, repos et progression','Vérifie la conformité'],90000);
+  const fail=msg=>{ GENERATING=false; endJob(false,msg); const m=$('#regenMsg'); if(m){ m.className='banner'; m.innerHTML='<b>Génération refusée.</b> '+esc(msg)+' <button class="link" id="regenDiag">Voir le diagnostic</button>'; const d=$('#regenDiag'); if(d) d.onclick=showDiag; } logErr('regen',new Error(msg)); };
+  const done=()=>{ GENERATING=false; endJob(true,'Nouveau cycle prêt'); const m=$('#regenMsg'); if(m) m.remove(); PROG_OPEN=undefined; render(); toast('Nouveau cycle prêt','ok'); };
+  try{ const fn=fbFn.httpsCallable('coach',{timeout:540000}); const r=await fn({mode:'program'}); if(r&&r.data&&r.data.running){ /* déjà en cours côté serveur : on attend Firestore */ } else { done(); return; } }
+  catch(e){ const m=(e&&e.message)||String(e); const cut=/deadline|timeout|network|Failed to fetch|unavailable/i.test(m+' '+(e&&e.code||'')); if(!cut){ fail(humanErr(e)); return; } }
+  // appel coupé ou génération déjà en cours : le résultat arrive par Firestore (meta/program et meta/genstate)
+  const t0=Date.now(); const poll=setInterval(()=>{ if(PROGRAM.generatedAt&&PROGRAM.generatedAt>t0-60000&&PROGRAM.generatedAt>(GEN_STATE&&GEN_STATE.startedAt||0)-1){ clearInterval(poll); done(); return; } if(GEN_STATE&&GEN_STATE.status==='error'&&GEN_STATE.at>t0){ clearInterval(poll); fail(GEN_STATE.message||'erreur'); return; } if(Date.now()-t0>8*60000){ clearInterval(poll); fail('Le coach met trop de temps, réessaie dans une minute.'); } },4000);
 }
 
 /* ---------- wake lock ---------- */
@@ -1350,7 +1356,7 @@ function updateElapsed(log){
 // Personnalisation visible : ce que le coach a pris en compte pour construire ce cycle. Programme générique (sans génération) signalé clairement.
 const GOAL_FR={force:'force',masse:'masse',seche:'sèche',endurance:'endurance',puissance:'puissance',tractions:'tractions',jambes:'jambes',bras:'bras et pecs',sante:'santé',perf:'performance',perte:'perte de poids',fessiers:'fessiers',silhouette:'silhouette',cardio:'souffle'};
 const GEAR_FR={salle:'salle',halteres:'haltères',barre:'barre',kettlebell:'kettlebell',elastiques:'élastiques',traction:'barre de traction',trx:'TRX',corps:'poids du corps',cardio:'cardio'};
-function isGenericProgram(){ return !!(PROGRAM&&PROGRAM.sessions&&PROGRAM.sessions.length&&!PROGRAM.generatedAt); }
+function isGenericProgram(){ if(USER&&ADMIN_RE.test(USER.email||'')) return false; return !!(PROGRAM&&PROGRAM.sessions&&PROGRAM.sessions.length&&!PROGRAM.generatedAt); }
 function builtForHtml(){
   if(isGenericProgram()) return `<div class="banner warn" id="genericBan"><b>Programme générique.</b> Ce cycle n'a pas été construit pour toi : ${esc(COACH_NAME)} peut en écrire un à partir de ton profil (objectifs, niveau, matériel, jours). <button class="btn sm" id="genericBtn">Construire mon programme</button></div>`;
   const ps=PROGRAM.profileSnapshot||PROFILE; if(!ps) return '';
