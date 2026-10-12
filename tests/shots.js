@@ -17,7 +17,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   p.on('pageerror', e => console.log('ERR', e.message));
   await p.evaluateOnNewDocument(stub);
   await p.evaluateOnNewDocument(() => { try { Object.defineProperty(navigator, 'serviceWorker', { value: { register: () => new Promise(() => {}), getRegistration: async () => null, addEventListener() {}, controller: null }, configurable: true }); } catch (e) {} });
-  const prog = JSON.parse(fs.readFileSync(path.join(ROOT, 'program.json'), 'utf8'));
+  const prog = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'program.json'), 'utf8'));
   await p.goto(base, { waitUntil: 'networkidle0' });
   await p.evaluate((pg) => window.__setMeta([{ id: 'profile', data: { name: 'Ganème', age: 43, height: 178, weight: 69, level: 'confirme', goals: ['force', 'tractions', 'jambes'], days: 6, minutes: 75, gear: ['salle'], equipment: 'ON AIR Lyon', pullGoal: 70 } }, { id: 'program', data: pg }, { id: 'usage', data: { month: new Date().toISOString().slice(0, 7), analyse: 7, chat: 12, program: 1, costUsd: 0.41, plan: 'premium', limits: { program: 6, analyse: 60, chat: 300, substitute: 12, demo: 10 } } }]), prog);
   await sleep(300);

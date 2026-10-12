@@ -6,7 +6,6 @@ const { onCall, onRequest, HttpsError } = require('firebase-functions/v2/https')
 const { onSchedule } = require('firebase-functions/v2/scheduler');
 const { defineSecret, defineString } = require('firebase-functions/params');
 const admin = require('firebase-admin');
-const program = require('./program.json');
 
 admin.initializeApp();
 const db = admin.firestore();
@@ -162,10 +161,11 @@ async function claudeJSON(apiKey, model, system, messages, schema, maxTokens = 2
 // Démos visuelles : association de chaque exercice à une fiche photo (free-exercise-db, domaine public). Un seul appel par programme.
 const DEMO_IDS = require('./demo-ids.json'); const DEMO_SET = new Set(DEMO_IDS);
 const DEMO_SCHEMA = { type: 'object', required: ['map'], properties: { map: { type: 'array', items: { type: 'object', required: ['exId', 'demoId'], properties: { exId: { type: 'string' }, demoId: { type: 'string', description: 'Identifiant exact pris dans la liste fournie, ou "" si aucune fiche ne montre un mouvement proche.' } } } } } };
+const ILLUS_IDS = require('./illus.json'); // fiches dessinées (personnage unique) : à privilégier quand le geste et le matériel sont identiques
 async function mapDemos(apiKey, model, exercises) {
   const list = exercises.filter(e => e && e.id && e.name).map(e => `${e.id} | ${e.name} | ${e.machine || ''} | ${e.target || ''}`);
   if (!list.length) return {};
-  const user = `Pour chaque exercice ci-dessous, choisis dans la liste de fiches l'identifiant qui montre exactement le même mouvement : même geste ET même groupe musculaire cible, de préférence le même matériel (machine, barre, haltère, câble). Une fiche d'un autre groupe musculaire ou d'un geste différent est une erreur grave : dans le doute, renvoie "" plutôt qu'une approximation. Ne réponds qu'avec les identifiants de la liste.\n\nExercices (id | nom | matériel | cible) :\n${list.join('\n')}\n\nFiches disponibles :\n${DEMO_IDS.join(', ')}`;
+  const user = `Pour chaque exercice ci-dessous, choisis dans la liste de fiches l'identifiant qui montre exactement le même mouvement : même geste ET même groupe musculaire cible, de préférence le même matériel (machine, barre, haltère, câble). Une fiche d'un autre groupe musculaire ou d'un geste différent est une erreur grave : dans le doute, renvoie "" plutôt qu'une approximation. Un pendulum squat n'est pas un hack squat, un belt squat n'est pas une presse, une machine convergente n'est pas une poulie : si la fiche exacte n'existe pas, renvoie "". Ne réponds qu'avec les identifiants de la liste.\n\nExercices (id | nom | matériel | cible) :\n${list.join('\n')}\n\nFiches illustrées, à privilégier quand elles correspondent exactement :\n${ILLUS_IDS.join(', ')}\n\nAutres fiches (photos) :\n${DEMO_IDS.filter(i => !ILLUS_IDS.includes(i)).join(', ')}`;
   try {
     const parsed = await claudeJSON(apiKey, model, 'Tu associes des exercices de musculation à des fiches de démonstration. Réponds uniquement via l\'outil.', [{ role: 'user', content: user }], DEMO_SCHEMA, 3000);
     const out = {}; (parsed.map || []).forEach(m => { if (m && m.exId && DEMO_SET.has(String(m.demoId || ''))) out[String(m.exId)] = String(m.demoId); });

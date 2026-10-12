@@ -58,7 +58,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   await p.evaluateOnNewDocument(() => { try { Object.defineProperty(navigator, 'serviceWorker', { value: { register: () => new Promise(() => {}), getRegistration: async () => null, addEventListener() {}, controller: null }, configurable: true }); } catch (e) {} });
   // Photos de démonstration : image locale (data URL) pour ne pas dépendre du réseau.
   await p.evaluateOnNewDocument(() => { window.__DEMO_BASE = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==#'; });
-  const prog = JSON.parse(fs.readFileSync(path.join(ROOT, 'program.json'), 'utf8'));
+  const prog = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'program.json'), 'utf8'));
   const base = `http://localhost:${PORT}/index.html`;
 
   console.log('Accueil');

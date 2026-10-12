@@ -1,6 +1,6 @@
 /* Service worker — app shell en cache, fonctionnement hors ligne complet.
    Incrémente VERSION à chaque déploiement pour forcer la mise à jour. */
-const VERSION = 'rituel-v3.30.0';
+const VERSION = 'rituel-v3.31.0';
 const SHELL = [
   './',
   './index.html',
@@ -8,8 +8,6 @@ const SHELL = [
   './muscles.js',
   './demo/index.json',
   './app.js',
-  './program.json',
-  './cycle.html',
   './manifest.webmanifest',
   './confidentialite.html',
   './icons/icon-192.png',
