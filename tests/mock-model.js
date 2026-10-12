@@ -50,7 +50,7 @@ function programFor(sys, user) {
   const gym = /salle complète/.test(sys); const obey = /refusée par le contrôle/.test(user);
   const p = programJSON();
   if (!obey) return p;
-  const home = (e) => Object.assign({}, e, { name: e.name.replace(/Hack squat|Presse à cuisses|Leg curl assis|Leg extension|Tirage vertical|Face pull|Extension triceps poulie/i, 'Goblet squat haltère'), machine: 'Haltères' });
+  const home = (e) => Object.assign({}, e, { name: e.name.replace(/Hack squat|Presse à cuisses|Leg curl assis|Leg extension|Tirage vertical|Face pull|Extension triceps poulie/i, 'Rowing haltère'), machine: 'Haltères' });
   const base = p.sessions.map(se => gym ? se : Object.assign({}, se, { exercises: se.exercises.map(home) }));
   // exercices refusés nommément par le contrôle (zone à ménager) : retirés, comme le ferait un coach qui lit le retour
   const banned = []; (user.match(/Zone à ménager sollicitée, [^:]+: ([^.]+)\./g) || []).forEach(m => m.replace(/^[^:]+: /, '').replace(/\.$/, '').split(', ').forEach(n => banned.push(n.trim().toLowerCase())));

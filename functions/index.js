@@ -315,6 +315,7 @@ exports.adminStats = onCall({ region: 'europe-west1' }, async (req) => {
   const since = isoDaysAgo(7); const sinceMs = Date.now() - 7 * 86400000; const month = parisISO().slice(0, 7);
   const users = await db.collection('users').listDocuments();
   let withProgram = 0, sessions7 = 0, costMonth = 0, calls = 0, premium = 0; const perUser = [];
+  const M = { accounts: 0, activated: 0, c7: 0, r7: 0, c30: 0, r30: 0 };
   for (const u of users) {
     const [pg, us, pr, bl, lg] = await Promise.all([u.collection('meta').doc('program').get(), u.collection('meta').doc('usage').get(), u.collection('meta').doc('profile').get(), u.collection('meta').doc('billing').get(), u.collection('logs').where('date', '>=', since).get()]);
     const hasProg = pg.exists && !!pg.data().sessions; if (hasProg) withProgram++;
@@ -323,13 +324,16 @@ exports.adminStats = onCall({ region: 'europe-west1' }, async (req) => {
     const plan = bl.exists && bl.data().plan === 'premium' && (!bl.data().expiresAt || bl.data().expiresAt > Date.now()) ? 'premium' : 'free'; if (plan === 'premium') premium++;
     let email = '', disabled = false, created = null; try { const au = await admin.auth().getUser(u.id); email = au.email || ''; disabled = !!au.disabled; created = au.metadata && au.metadata.creationTime ? new Date(au.metadata.creationTime).getTime() : null; } catch (e) {}
     const bd = bl.exists ? bl.data() : {};
+    // Mesure : activation (au moins une séance terminée), rétention J7 / J30 (activité après 7 / 30 jours, comptes assez anciens, hors admin)
+    if (created && !ADMIN_EMAILS.includes(email.toLowerCase())) { const age = Date.now() - created; const lastAct = Math.max(usage.updatedAt || 0, ...lg.docs.map(d => new Date(d.data().date + 'T12:00:00Z').getTime())); const anyLog = (await u.collection('logs').limit(1).get()).size > 0;
+      M.accounts++; if (anyLog) M.activated++; if (age > 7 * 86400000) { M.c7++; if (lastAct >= created + 7 * 86400000) M.r7++; } if (age > 30 * 86400000) { M.c30++; if (lastAct >= created + 30 * 86400000) M.r30++; } }
     perUser.push({ uid: u.id.slice(0, 6), uidFull: u.id, email, disabled, created, lastAt: usage.updatedAt || null, admin: ADMIN_EMAILS.includes(email.toLowerCase()), name: pr.exists ? (pr.data().name || '') : '', program: hasProg, generic: hasProg && !(pg.data() || {}).generatedAt, checks: hasProg ? ((pg.data() || {}).checks || null) : null, sessions7: n7, plan: ADMIN_EMAILS.includes(email.toLowerCase()) ? 'premium' : plan, source: bd.source || '', store: bd.store || '', expiresAt: bd.expiresAt || null, cost: usage.month === month ? Math.round((usage.costUsd || 0) * 100) / 100 : 0, lastMode: usage.lastMode || '' });
   }
   const errs = await db.collection('errors').where('t', '>=', sinceMs).orderBy('t', 'desc').limit(100).get();
   const errors = errs.docs.map(d => d.data()).map(e => ({ t: e.t, uid: String(e.uid || '').slice(0, 6), src: e.src, msg: String(e.msg || '').slice(0, 160), ver: e.ver }));
   const health = (await db.collection('system').doc('health').get()).data() || null;
   const bench = (await db.collection('system').doc('bench').get()).data() || null;
-  return { bench, users: users.length, withProgram, premium, sessions7, calls, costMonth: Math.round(costMonth * 100) / 100, errors, health, perUser: perUser.sort((a, b) => b.sessions7 - a.sessions7).slice(0, 50) };
+  return { metrics: M, bench, users: users.length, withProgram, premium, sessions7, calls, costMonth: Math.round(costMonth * 100) / 100, errors, health, perUser: perUser.sort((a, b) => b.sessions7 - a.sessions7).slice(0, 50) };
 });
 
 // Forfait posé à la main par l'administrateur (Premium offert pour N mois, ou retiré). Un abonnement payant repasse par le webhook.
@@ -467,6 +471,106 @@ function checkProgram(prog, profile) {
   return { errors, warnings, signature: sig };
 }
 // Génération pure : profil → programme vérifié. Une seule reprise si le contrôle bloque, avec les défauts renvoyés au coach.
+
+/* ---------- Moteur de structure (règles déterministes) ----------
+   À partir de la fiche, décide ce qui ne doit pas dépendre d'un modèle de langage : nombre et jours des séances, répartition,
+   schémas de mouvement par séance, séries, répétitions, RIR par semaine, repos, exclusions par zone à ménager, filtre matériel.
+   Le coach choisit ensuite l'exercice exact pour chaque emplacement et rédige les textes. */
+const PATTERNS = {
+  squat: { label: 'squat (flexion de genou, charge sur les deux jambes)', muscle: 'quadriceps', gym: 'squat barre, hack squat, pendulum, presse, goblet', home: 'goblet squat, squat haltères, squat sauté léger', body: 'squat au poids du corps, pistol assisté', knee: true, hip: true },
+  hinge: { label: 'charnière de hanche (soulevé de terre, roumain, good morning, hip thrust)', muscle: 'ischio-jambiers et fessiers', gym: 'soulevé de terre, roumain, trap bar, hip thrust machine', home: 'roumain haltères, hip thrust au sol, swing', body: 'pont fessier, good morning poids du corps', back: true },
+  lunge: { label: 'unilatéral jambes (fente, step-up, split squat)', muscle: 'quadriceps et fessiers', gym: 'fente machine, split squat bulgare, step-up', home: 'fentes haltères, split squat', body: 'fentes, step-up', knee: true, hip: true, ankle: true },
+  kneeflex: { label: 'flexion de genou isolée (leg curl)', muscle: 'ischio-jambiers', gym: 'leg curl assis ou couché', home: 'leg curl élastique, nordic assisté', body: 'nordic assisté, pont une jambe' },
+  kneeext: { label: 'extension de genou isolée', muscle: 'quadriceps', gym: 'leg extension', home: 'sissy squat assisté, wall sit', body: 'wall sit, sissy squat', knee: true },
+  calf: { label: 'mollets', muscle: 'mollets', gym: 'mollets debout ou assis machine', home: 'mollets sur marche avec haltère', body: 'mollets sur marche', ankle: true },
+  hpush: { label: 'poussée horizontale (développé couché, incliné, pompes, presse pecs)', muscle: 'pectoraux et triceps', gym: 'développé couché ou incliné, presse convergente, dips pecs', home: 'développé haltères au sol ou banc, pompes', body: 'pompes, pompes déclinées, dips entre chaises', shoulder: false, wrist: true },
+  vpush: { label: 'poussée verticale (développé épaules)', muscle: 'deltoïdes et triceps', gym: 'développé épaules machine ou haltères', home: 'développé haltères assis, pike push-up', body: 'pike push-up, handstand assisté', shoulder: true },
+  hpull: { label: 'tirage horizontal (rowing)', muscle: 'dos (milieu) et biceps', gym: 'rowing machine, rowing poulie basse, rowing haltère', home: 'rowing haltère, rowing élastique', body: 'rowing inversé sous table', back: false },
+  vpull: { label: 'tirage vertical (tractions, tirage poulie)', muscle: 'grand dorsal et biceps', gym: 'tractions, tirage vertical, tractions assistées', home: 'tractions, tirage élastique', body: 'tractions, tractions négatives', shoulder: true },
+  latdelt: { label: 'élévations latérales', muscle: 'deltoïde moyen', gym: 'élévations latérales haltères, poulie ou machine', home: 'élévations latérales haltères ou élastique', body: 'élévations latérales bouteilles ou élastique', shoulder: true },
+  reardelt: { label: 'arrière d\'épaule et coiffe (face pull, oiseau, rotation externe)', muscle: 'deltoïde postérieur et coiffe', gym: 'face pull, reverse fly machine, rotation externe poulie', home: 'oiseau haltères, face pull élastique', body: 'oiseau élastique, Y-T-W au sol' },
+  biceps: { label: 'curl biceps', muscle: 'biceps', gym: 'curl machine, pupitre, incliné haltères, poulie', home: 'curl haltères, curl élastique', body: 'curl serviette, tractions supination', elbow: true },
+  triceps: { label: 'extension triceps', muscle: 'triceps', gym: 'pushdown corde, extension overhead, dip machine', home: 'extension haltère nuque, kickback', body: 'pompes serrées, dips banc', elbow: true },
+  core: { label: 'gainage et abdominaux', muscle: 'sangle abdominale', gym: 'crunch poulie, relevés de jambes suspendu, planche', home: 'planche, relevés de jambes, dead bug', body: 'planche, hollow hold, relevés de jambes' },
+  carry: { label: 'port de charge (farmer walk)', muscle: 'corps entier, grip', gym: 'farmer walk haltères ou poignées', home: 'farmer walk haltères, kettlebells', body: 'marche avec sac lesté' },
+  cond: { label: 'finisher métabolique court (5 à 8 minutes)', muscle: 'condition physique', gym: 'rameur, vélo, kettlebell swing, circuit', home: 'swing kettlebell, circuit haltères, corde', body: 'circuit poids du corps, montées de genoux' }
+};
+// Exclusions par zone à ménager : opéré ou douloureux → le schéma est retiré et remplacé ; fragile → charge et amplitude réduites (consigne).
+const ZONE_RULES = { genou: ['squat', 'lunge', 'kneeext'], epaule: ['vpush', 'vpull', 'latdelt'], dos: ['hinge'], coude: ['biceps', 'triceps'], poignet: ['hpush'], hanche: ['lunge'], cheville: ['calf', 'lunge'], cou: ['vpush'] };
+const ZONE_SUBS = { squat: 'hinge', lunge: 'kneeflex', kneeext: 'kneeflex', vpush: 'hpush', vpull: 'hpull', latdelt: 'reardelt', hinge: 'squat', biceps: 'hpull', triceps: 'hpush', hpush: 'hpull', calf: 'core' };
+// Modèles de séance par nombre de jours : liste de schémas, le premier est l'exercice principal (★).
+const SPLITS = {
+  2: [['Corps entier A', ['squat', 'hpush', 'hpull', 'hinge', 'core']], ['Corps entier B', ['hinge', 'vpull', 'vpush', 'lunge', 'core']]],
+  3: [['Corps entier A', ['squat', 'hpush', 'hpull', 'biceps', 'core']], ['Corps entier B', ['hinge', 'vpush', 'vpull', 'triceps', 'calf']], ['Corps entier C', ['lunge', 'hpush', 'hpull', 'latdelt', 'core']]],
+  4: [['Bas du corps A', ['squat', 'hinge', 'kneeflex', 'calf', 'core']], ['Haut du corps A', ['hpush', 'vpull', 'vpush', 'hpull', 'biceps', 'triceps']], ['Bas du corps B', ['hinge', 'lunge', 'kneeext', 'calf', 'core']], ['Haut du corps B', ['vpull', 'hpush', 'hpull', 'latdelt', 'reardelt', 'triceps', 'biceps']]],
+  5: [['Jambes', ['squat', 'hinge', 'kneeflex', 'kneeext', 'calf']], ['Poussée', ['hpush', 'vpush', 'hpush', 'latdelt', 'triceps']], ['Tirage', ['vpull', 'hpull', 'hpull', 'reardelt', 'biceps']], ['Jambes B', ['hinge', 'lunge', 'squat', 'calf', 'core']], ['Haut du corps', ['hpush', 'vpull', 'latdelt', 'biceps', 'triceps', 'core']]],
+  6: [['Poussée A', ['hpush', 'vpush', 'hpush', 'latdelt', 'triceps']], ['Tirage A', ['vpull', 'hpull', 'hpull', 'reardelt', 'biceps']], ['Jambes A', ['squat', 'hinge', 'kneeflex', 'calf', 'core']], ['Poussée B', ['vpush', 'hpush', 'hpush', 'latdelt', 'triceps']], ['Tirage B', ['hpull', 'vpull', 'hpull', 'reardelt', 'biceps']], ['Jambes B', ['hinge', 'lunge', 'kneeext', 'calf', 'core']]]
+};
+// Séries × répétitions, RIR par semaine et repos selon objectif et rôle de l'emplacement.
+function dose(goal, role, level) {
+  const beginner = level === 'debutant';
+  const T = {
+    force: { main: [5, '3-5', 180, '3-1-X-0'], second: [4, '5-8', 150, '2-1-X-0'], acc: [3, '8-12', 90, '2-0-1-0'] },
+    masse: { main: [4, '6-8', 150, '3-1-X-0'], second: [4, '8-12', 120, '3-0-1-0'], acc: [3, '10-15', 75, '2-0-1-1'] },
+    perte: { main: [4, '6-10', 120, '2-1-X-0'], second: [3, '10-12', 90, '2-0-1-0'], acc: [3, '12-15', 60, '2-0-1-0'] },
+    sante: { main: [3, '8-10', 120, '3-1-1-0'], second: [3, '10-12', 90, '3-0-2-0'], acc: [2, '12-15', 60, '2-0-2-0'] },
+    perf: { main: [5, '3-5', 180, '2-0-X-0'], second: [4, '6-8', 120, '2-0-X-0'], acc: [3, '8-12', 75, '2-0-1-0'] },
+    corps: { main: [5, '4-8', 150, '2-1-X-0'], second: [4, '6-10', 120, '2-0-1-0'], acc: [3, '10-15', 75, '2-0-1-0'] }
+  }[goal] || null;
+  const d = (T || { main: [4, '6-8', 150, '3-1-X-0'], second: [3, '8-12', 120, '2-0-1-0'], acc: [3, '10-15', 75, '2-0-1-0'] })[role];
+  let [sets, reps, rest, tempo] = d;
+  if (beginner) { sets = Math.max(2, sets - 1); if (role === 'main') reps = goal === 'force' ? '5-8' : '8-12'; }
+  const rir = beginner ? [3, 3, 2, 4] : role === 'acc' ? [3, 2, 1, 4] : [3, 2, 1, 4];
+  return { sets, reps, restSec: rest, tempo, rir, rule: role === 'main' ? 'Exercice principal : charge qui monte quand le haut de fourchette est atteint sur toutes les séries au RIR prévu.' : role === 'second' ? 'Second mouvement : volume, +1 rep avant +2,5 %.' : 'Isolation : on cherche la fatigue locale, RIR plus bas en fin de cycle.' };
+}
+function planStructure(profile) {
+  const p = profile || {}; const s = p.spec || {}; const gear = p.gear || []; const gym = gear.includes('salle'); const bodyOnly = !gym && (gear.length === 0 || gear.every(g => g === 'corps' || g === 'cardio'));
+  const goal = s.goalMain || ({ force: 'force', masse: 'masse', perte: 'perte', seche: 'perte', sante: 'sante', perf: 'perf', tractions: 'corps', puissance: 'perf', endurance: 'perf', cardio: 'perte', fessiers: 'masse', silhouette: 'masse', bras: 'masse', jambes: 'force' }[(p.goals || [])[0]] || 'masse');
+  const days = (Array.isArray(s.daysList) && s.daysList.length) ? s.daysList.slice().sort((a, b) => a - b) : [[0, 2], [0, 2, 4], [0, 2, 4, 5], [0, 1, 3, 4, 5], [0, 1, 2, 3, 4, 5]][Math.max(2, Math.min(6, Number(p.days) || 3)) - 2];
+  const n = days.length; const minutes = Number(p.minutes) || 60; const level = p.level || 'intermediaire';
+  const caps = LEVEL_CAPS[level] || LEVEL_CAPS.intermediaire;
+  const banned = new Set(); const soft = new Set();
+  (s.zones || []).forEach(z => (ZONE_RULES[z.zone] || []).forEach(pt => { if (z.sev === 'opere' || z.sev === 'douleur') banned.add(pt); else soft.add(pt); }));
+  if (bodyOnly) ['kneeext', 'carry'].forEach(x => banned.add(x));
+  const refuse = s.refuse || []; const likes = s.likes || [];
+  const maxEx = Math.max(4, Math.min(caps.exPerSession, Math.round(minutes / 10)));
+  const sessions = SPLITS[Math.max(2, Math.min(6, n))].map(([name, pats], i) => {
+    let list = pats.map(pt => banned.has(pt) ? (ZONE_SUBS[pt] && !banned.has(ZONE_SUBS[pt]) ? ZONE_SUBS[pt] : null) : pt).filter(Boolean);
+    list = list.filter((pt, k) => list.indexOf(pt) === k || pt === 'hpush' || pt === 'hpull');
+    if (goal === 'perte' && !refuse.includes('cardio') && !list.includes('cond')) list.push('cond');
+    if (likes.includes('circuits') && !list.includes('cond')) list.push('cond');
+    if (likes.includes('tractions') && (name.includes('Tirage') || name.includes('Haut') || name.includes('Corps')) && !list.includes('vpull')) list.splice(1, 0, 'vpull');
+    if (goal === 'corps' && !list.includes('vpull') && i % 2 === 0) list.splice(0, 0, 'vpull');
+    if (list.length > maxEx) { const keepCond = list.includes('cond'); list = list.filter(x => x !== 'cond').slice(0, keepCond ? maxEx - 1 : maxEx); if (keepCond) list.push('cond'); }
+    const slots = list.map((pt, k) => { const role = k === 0 ? 'main' : k === 1 ? 'second' : 'acc'; const d = dose(goal, role, level); return Object.assign({ pattern: pt, role, star: k < 2, soft: soft.has(pt) }, d); });
+    // borne de volume par niveau
+    let total = slots.reduce((a, x) => a + x.sets, 0); while (total > caps.setsPerSession) { const big = slots.reduce((m, x) => x.sets > m.sets ? x : m, slots[0]); if (big.sets <= 2) break; big.sets--; total--; }
+    const dayIdx = days[i]; return { id: 's' + (i + 1), day: (dayIdx + 1) % 7, dayName: DAY_FR[dayIdx], name: goal === 'perte' ? name.replace('force', 'densité') : name, slots };
+  });
+  return { goal, level, days, minutes, gym, bodyOnly, banned: [...banned], soft: [...soft], sessions, caps };
+}
+// Rendu du squelette pour le coach : ce qu'il doit remplir, ce qu'il ne doit pas changer.
+function skeletonText(plan, profile) {
+  const gearKind = plan.gym ? 'gym' : plan.bodyOnly ? 'body' : 'home';
+  return `SQUELETTE IMPOSÉ (construit par les règles à partir de la fiche, à respecter à la lettre) :\n` + plan.sessions.map(se => `${se.id} · ${se.dayName} · « ${se.name} » :\n` + se.slots.map((sl, k) => `  ${k + 1}. ${PATTERNS[sl.pattern].label} — cible ${PATTERNS[sl.pattern].muscle} — ${sl.sets} × ${sl.reps}, RIR ${sl.rir.join('/')}, repos ${sl.restSec} s, tempo ${sl.tempo}${sl.star ? ', prioritaire' : ''}${sl.soft ? ', ZONE FRAGILE : charge modérée, amplitude contrôlée' : ''} — choix possibles : ${PATTERNS[sl.pattern][gearKind]}`).join('\n')).join('\n') +
+    `\n\nTu choisis pour chaque emplacement UN exercice exact réalisable avec le matériel déclaré (nom précis, machine ou matériel, alternative si la machine est prise), en respectant l'ordre, le nombre de séries, la fourchette de répétitions, le RIR, le repos et le tempo donnés. Tu ne retires ni n'ajoutes d'emplacement, tu ne changes ni les jours ni les noms de séances. Tu rédiges "reco", "why", "target", "exec", "seek" pour chaque exercice, le "rationale" (qui commence par « Pour ${(profile || {}).name || 'toi'} » et explique les arbitrages faits pour cette personne), la "nutrition" et l'échauffement.${plan.banned.length ? ` Schémas exclus par les zones à ménager : ${plan.banned.map(b => PATTERNS[b] ? PATTERNS[b].label : b).join(' ; ')}. Aucun exercice de ce type, même léger.` : ''}`;
+}
+// Fusion : la structure vient du squelette, les textes et choix d'exercices viennent du coach. Si le coach a dévié, le squelette gagne.
+function mergeWithSkeleton(prog, plan) {
+  const out = Object.assign({}, prog); const notes = [];
+  out.sessions = plan.sessions.map((se, i) => {
+    const src = (prog.sessions || [])[i] || { exercises: [] };
+    const exercises = se.slots.map((sl, k) => {
+      const e = (src.exercises || [])[k] || {}; const name = String(e.name || '').trim() || (PATTERNS[sl.pattern][plan.gym ? 'gym' : plan.bodyOnly ? 'body' : 'home'].split(',')[0]);
+      if (!e.name) notes.push(`${se.name} ${k + 1} : exercice manquant, nom par défaut`);
+      return { id: se.id + '-' + (k + 1), n: k + 1, name, machine: String(e.machine || ''), alt: String(e.alt || ''), star: sl.star, sets: sl.sets, reps: sl.reps, per: String(e.per || ''), rir: sl.rir.slice(), tempo: sl.tempo, restSec: sl.restSec, restText: sl.restSec >= 60 ? Math.round(sl.restSec / 60 * 10) / 10 + ' min' : sl.restSec + ' s', mode: 'normal', setsText: `${sl.sets} × ${sl.reps}`, chargeNote: `RIR ${sl.rir[0]} → ${sl.rir[1]} → ${sl.rir[2]}`, pattern: sl.pattern, role: sl.role, rule: sl.rule, reco: String(e.reco || ''), why: String(e.why || ''), target: String(e.target || PATTERNS[sl.pattern].muscle), exec: String(e.exec || ''), seek: String(e.seek || ''), url: /^https:\/\/www\.google\.com\/search/.test(String(e.url || '')) ? e.url : 'https://www.google.com/search?tbm=isch&q=' + encodeURIComponent(String(e.machine || name)) };
+    });
+    return { id: se.id, day: se.day, dayName: se.dayName, name: se.name, sub: String(src.sub || exercises.slice(0, 2).map(x => x.target).join(', ')), duration: plan.minutes + ' min', place: '', gtg: false, note: String(src.note || ''), exercises };
+  });
+  out.engine = { v: 1, goal: plan.goal, banned: plan.banned, soft: plan.soft, notes };
+  return out;
+}
+
 async function buildProgram(profile, apiKey, model) {
   const sys = systemFor(profile, null);
   const safety = { debutant: 'Débutant : 3 séances max, 4 à 6 exercices par séance, 12 à 16 séries, RIR jamais sous 2, pas de techniques d\'intensification, machines guidées et mouvements simples, échauffement détaillé, aucune charge suggérée en kg.', intermediaire: 'Intermédiaire : 16 à 22 séries par séance, RIR 3 → 1, une seule technique d\'intensification en S3.', confirme: 'Confirmé : 22 à 28 séries, RIR jusqu\'à 0 sur les isolations en S3, intensification ciblée.', avance: 'Avancé : volume et intensité d\'athlète, techniques d\'intensification justifiées.' }[(profile || {}).level] || '';
@@ -474,7 +578,8 @@ async function buildProgram(profile, apiKey, model) {
   const constraints = pr.constraints ? `Respecte strictement les contraintes déclarées (blessures, douleurs, métier) : exclus tout exercice qui les sollicite et propose une alternative. ` : '';
   const noGym = gear.length && !gear.includes('salle') ? 'Pas de salle : aucune machine guidée, aucune poulie, aucun nom de marque ; uniquement ' + gear.join(', ') + '. ' : '';
   const personal = `Ce programme doit être visiblement construit pour ${pr.name || 'cette personne'} et pour personne d'autre : le "rationale" commence par « Pour ${pr.name || 'toi'} » et relie explicitement chaque choix majeur à ses objectifs (${(pr.goals || []).join(', ') || 'non précisés'}), son niveau (${pr.level || '?'}), son matériel, ses ${pr.days || '?'} jours et ${pr.minutes || '?'} minutes, ses contraintes et ses autres pratiques. Exactement ${pr.days || '?'} séances. Les noms de séances reflètent ses objectifs. Un programme interchangeable avec celui d'un autre profil est un échec. `;
-  const user = `Construis le mésocycle de cet athlète (départ le ${nextMonday()}). Sois concret et exigeant au niveau déclaré. ${personal}${safety} ${noGym}${constraints}${PROGRAM_SCHEMA}`;
+  const plan = planStructure(profile);
+  const user = `Construis le mésocycle de cet athlète (départ le ${nextMonday()}). Sois concret et exigeant au niveau déclaré. ${personal}${safety} ${noGym}${constraints}\n\n${skeletonText(plan, profile)}\n\n${PROGRAM_SCHEMA}`;
   let prog, check, attempts = 0, feedback = '';
   while (attempts < 2) {
     attempts++;
@@ -482,7 +587,7 @@ async function buildProgram(profile, apiKey, model) {
     let parsed;
     try { parsed = JSON.parse(text.slice(text.indexOf('{'), text.lastIndexOf('}') + 1)); }
     catch (e) { throw new HttpsError('internal', 'Le coach a renvoyé un programme illisible, relance la génération.'); }
-    prog = applyGuardrails(normalizeProgram(parsed, nextMonday()), profile);
+    prog = applyGuardrails(mergeWithSkeleton(normalizeProgram(parsed, nextMonday()), plan), profile);
     check = checkProgram(prog, profile);
     if (!check.errors.length) break;
     feedback = `\n\nTa proposition précédente a été refusée par le contrôle de conformité : ${check.errors.join(' ')} Corrige ces points précisément et renvoie le programme complet.`;
@@ -698,6 +803,8 @@ exports.dailyNudge = onSchedule({ schedule: '0 18 * * *', timeZone: 'Europe/Pari
     try {
       const base = db.collection('users').doc(uid);
       const last = await base.collection('logs').where('date', '>=', cutoff).get();
+      // Transparence : rappel trois jours avant un renouvellement d'abonnement (une fois par échéance).
+      try { const bd = (await base.collection('meta').doc('billing').get()).data() || {}; if (bd.plan === 'premium' && bd.store && bd.expiresAt && !bd.cancelledAt && bd.expiresAt - Date.now() < 3 * 86400000 && bd.expiresAt > Date.now() && bd.remindedFor !== bd.expiresAt) { await sendPush(uid, 'Rituel Premium', `Ton abonnement se renouvelle le ${new Date(bd.expiresAt).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })}. Tu peux le gérer ou le résilier depuis Profil → Forfait.`); await base.collection('meta').doc('billing').set({ remindedFor: bd.expiresAt }, { merge: true }); } } catch (e) {}
       // Série en jeu : jour planifié, séance non faite à 18 h, série d'au moins 2 jours → relance ciblée (une par jour).
       const today = parisISO(); const pg = await base.collection('meta').doc('program').get();
       const days = new Set(((pg.exists && pg.data().sessions) || []).map(x => x.day));
