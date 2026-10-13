@@ -103,6 +103,9 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   await p.evaluate(() => window.__setMeta([{ id: 'profile', data: { name: 'Léo' } }, { id: 'usage', data: { program: 1 } }])); await sleep(100);
   assert(await p.evaluate(() => !document.querySelector('#genWait').hidden && document.querySelector('#genBtn').hidden), 'écran d\'attente conservé quand le compteur d\'usage s\'écrit');
 
+  console.log('Programme générique');
+  await p.evaluate((pg) => { const g = JSON.parse(JSON.stringify(pg)); delete g.generatedAt; window.__setMeta([{ id: 'profile', data: { name: 'Test', level: 'confirme', weight: 69 } }, { id: 'program', data: g }]); }, prog); await sleep(300);
+  assert(await p.evaluate(() => !PROGRAM_LOADED && !!document.querySelector('#genBtn')), 'copie d\'un programme de base : jamais affichée à un autre compte, écran de génération');
   console.log('Séance');
   await p.evaluate((pg) => window.__setMeta([{ id: 'profile', data: { name: 'Test', level: 'confirme', weight: 69 } }, { id: 'program', data: pg }]), prog);
   await sleep(300);

@@ -1434,5 +1434,20 @@
 "pullB-5": "Preacher_Curl",
 "pullB-6": "Preacher_Curl"
 },
-"demosAt": 1
+"demosAt": 1,
+"generatedAt": 1791000000000,
+"profileSnapshot": {
+"name": "Test",
+"level": "confirme",
+"goals": [
+"force",
+"tractions",
+"jambes"
+],
+"days": 6,
+"minutes": 75,
+"gear": [
+"salle"
+]
+}
 }

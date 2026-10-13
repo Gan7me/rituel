@@ -387,7 +387,11 @@ exports.adminEval = onCall({ region: 'europe-west1', secrets: [ANTHROPIC_API_KEY
 });
 exports.adminAction = onCall({ region: 'europe-west1' }, async (req) => {
   if (!req.auth || !ADMIN_EMAILS.includes(String(req.auth.token && req.auth.token.email || '').toLowerCase())) throw new HttpsError('permission-denied', 'Réservé à l\'administrateur.');
-  const { uid, action, text } = req.data || {}; if (!uid || !action) throw new HttpsError('invalid-argument', 'uid et action requis');
+  const { uid, action, text } = req.data || {};
+  if (action === 'purgeGeneric') { // tous les comptes : un programme sans date de génération est une copie du programme de base, il est retiré ; l'app propose alors la génération
+    let n = 0; for (const u of await db.collection('users').listDocuments()) { try { const au = await admin.auth().getUser(u.id); if (ADMIN_EMAILS.includes(String(au.email || '').toLowerCase())) continue; } catch (e) {} const pg = await u.collection('meta').doc('program').get(); if (pg.exists && pg.data().sessions && !pg.data().generatedAt) { await u.collection('meta').doc('program').delete(); n++; } }
+    return { ok: true, purged: n }; }
+  if (!uid || !action) throw new HttpsError('invalid-argument', 'uid et action requis');
   const base = db.collection('users').doc(String(uid));
   if (action === 'resetQuota') { await base.collection('meta').doc('usage').set({ month: parisISO().slice(0, 7), program: 0, analyse: 0, chat: 0, substitute: 0, demo: 0, updatedAt: Date.now() }, { merge: true }); await base.collection('meta').doc('genstate').delete().catch(() => {}); return { ok: true }; }
   if (action === 'push') { await sendPush(String(uid), 'Rituel', String(text || '').slice(0, 200), { tab: 'home' }); return { ok: true }; }
@@ -616,7 +620,7 @@ async function coachImpl(req) {
   // Génération déjà en cours (l'appel précédent a été coupé côté téléphone) : on ne relance pas, on ne reconsomme pas, le programme arrivera par Firestore.
   const genRef = db.collection('users').doc(uid).collection('meta').doc('genstate');
   if (mode === 'program') { const g = await genRef.get(); const gd = g.exists ? g.data() : {}; if (gd.status === 'running' && Date.now() - (gd.startedAt || 0) < 8 * 60000) return { ok: true, running: true }; }
-  await checkQuota(uid, mode, plan);
+  if (mode !== 'demo') await checkQuota(uid, mode, plan); // l'association des visuels ne consomme rien : elle doit marcher pour tout le monde
   // Nettoyage : un secret collé depuis Windows peut contenir BOM, octets nuls, retours à la ligne ou guillemets.
   const apiKey = String(ANTHROPIC_API_KEY.value() || '').replace(/[^\x21-\x7E]/g, '').replace(/^["']+|["']+$/g, '');
   if (!/^sk-ant-/.test(apiKey)) throw new HttpsError('failed-precondition', 'Clé API Anthropic absente ou mal formée côté serveur (doit commencer par sk-ant-).');
