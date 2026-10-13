@@ -18,7 +18,7 @@ function humanErr(e){ const c=(e&&e.code)||''; const m=(e&&e.message)||String(e|
   if(/network|Failed to fetch|internet/i.test(m)||!navigator.onLine) return 'Pas de réseau. Le coach a besoin d\'une connexion ; tes séries sont enregistrées et partiront toutes seules.';
   if(/invalid-argument/.test(c)) return 'Le serveur n\'a pas compris la demande (version de l\'app en retard ?). Recharge l\'application depuis Réglages.';
   return m; }
-const APP_VERSION='3.35.1';
+const APP_VERSION='3.36.0';
 const ADMIN_RE=/^(ganeme\.asloune@nexisafe\.com|gads@live\.fr)$/i;
 let PROGRAM={sessions:[]};
 let WEEKS = [
@@ -1149,7 +1149,7 @@ function demoImg(id,i){ if(ILLUS.has(id)&&!window.__DEMO_BASE) return 'illus/'+e
 // Précharge les deux photos de chaque exercice du programme (et des séances sans salle) pour qu'elles soient là sans réseau.
 function prefetchDemos(){ if(!PROGRAM.sessions.length||window.__DEMO_BASE) return; const ids=new Set(); PROGRAM.sessions.forEach(se=>se.exercises.forEach(ex=>{ const id=demoId(ex); if(id) ids.add(id); })); Object.values(S.overrides||{}).forEach(o=>((o.substitute||{}).exercises||[]).forEach(ex=>{ const id=demoId(ex); if(id) ids.add(id); }));
   const todo=[...ids].filter(id=>!DEMO.prefetched.has(id)); if(!todo.length) return; const run=async()=>{ for(const id of todo){ DEMO.prefetched.add(id); for(const k of [0,1]){ try{ await fetch(demoImg(id,k),{cache:'force-cache'}); }catch(e){} } } }; if('requestIdleCallback' in window) requestIdleCallback(run,{timeout:4000}); else setTimeout(run,1500); }
-function loadDemoIndex(){ if(DEMO.index) return Promise.resolve(DEMO.index); if(!DEMO.loading) DEMO.loading=fetch('demo/index.json').then(r=>r.json()).then(a=>{ DEMO.index={}; a.forEach(x=>DEMO.index[x.i]=x); return DEMO.index; }).catch(()=>{ DEMO.loading=null; return {}; }); return DEMO.loading; }
+function loadDemoIndex(){ if(DEMO.index) return Promise.resolve(DEMO.index); if(!DEMO.loading) DEMO.loading=fetch('demo/index.json').then(r=>r.json()).then(a=>{ DEMO.index={}; a.forEach(x=>DEMO.index[x.i]=x); return fetch('illus/extra.json').then(r=>r.json()).then(b=>{ b.forEach(x=>DEMO.index[x.i]=x); return DEMO.index; }).catch(()=>DEMO.index); }).catch(()=>{ DEMO.loading=null; return {}; }); return DEMO.loading; }
 // Programme généré avant les fiches : on demande l'association au coach une seule fois, elle est enregistrée dans le programme.
 const DEMO_CATALOG_AT=1791900000000; // date du catalogue illustré : une association plus ancienne est refaite une fois (sans quota)
 async function ensureDemos(){ if(DEMO.asked||!USER||!navigator.onLine||!PROGRAM_LOADED||!PROGRAM.sessions.length) return; if(PROGRAM.demosAt&&PROGRAM.demosAt>=DEMO_CATALOG_AT) return; if(PROGRAM.demosAt&&PROGRAM.demos&&Object.keys(PROGRAM.demos).length>=PROGRAM.sessions.flatMap(s=>s.exercises).length*0.8&&PROGRAM.demosAt>=DEMO_CATALOG_AT) return; if(S.demoTriedAt&&Date.now()-S.demoTriedAt<24*3600e3&&S.demoTriedFor===(PROGRAM.generatedAt||0)) return; S.demoTriedAt=Date.now(); S.demoTriedFor=PROGRAM.generatedAt||0; save(); DEMO.asked=true; startJob('associe les illustrations des mouvements',['Parcourt ton programme','Choisit la fiche la plus proche pour chaque exercice'],15000); try{ await callCoach({mode:'demo'}); endJob(true,'Photos associées'); }catch(e){ logErr('demo',e); endJob(false,'Photos : association impossible'); } }
