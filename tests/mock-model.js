@@ -75,9 +75,9 @@ const server = http.createServer((req, res) => {
       }
       const sys = String(b.system || ''); const last = (b.messages || []).slice(-1)[0]; const user = last && typeof last.content === 'string' ? last.content : '';
       // Scénarios de panne : athlète « Panne » → le modèle est en erreur ; « Têtu » → il ignore le contrôle et renvoie toujours des machines.
-      if (/Construis le mésocycle/i.test(user) && /Pour Panne\b/.test(user)) return json(529, { type: 'error', error: { type: 'overloaded_error', message: 'Overloaded' } });
-      if (/Construis le mésocycle/i.test(user) && /Pour Têtu\b/.test(user)) return json(200, { id: 'msg_sim', type: 'message', role: 'assistant', model: b.model, stop_reason: 'end_turn', usage, content: [{ type: 'text', text: JSON.stringify(programJSON()) }] });
-      if (/Construis le mésocycle|Réponds UNIQUEMENT avec un objet JSON/i.test(user)) return json(200, { id: 'msg_sim', type: 'message', role: 'assistant', model: b.model, stop_reason: 'end_turn', usage: { input_tokens: 3000, output_tokens: 6000 }, content: [{ type: 'text', text: 'Voici le programme :\n```json\n' + JSON.stringify(programFor(sys, user)) + '\n```' }] });
+      if (/Construis le(s textes du)? mésocycle/i.test(user) && /Pour Panne\b/.test(user)) return json(529, { type: 'error', error: { type: 'overloaded_error', message: 'Overloaded' } });
+      if (/Construis le(s textes du)? mésocycle/i.test(user) && /Pour Têtu\b/.test(user)) return json(200, { id: 'msg_sim', type: 'message', role: 'assistant', model: b.model, stop_reason: 'end_turn', usage, content: [{ type: 'text', text: JSON.stringify(programJSON()) }] });
+      if (/Construis le(s textes du)? mésocycle|Rédige les textes du programme|Réponds UNIQUEMENT avec un objet JSON/i.test(user)) return json(200, { id: 'msg_sim', type: 'message', role: 'assistant', model: b.model, stop_reason: 'end_turn', usage: { input_tokens: 3000, output_tokens: 6000 }, content: [{ type: 'text', text: 'Voici le programme :\n```json\n' + JSON.stringify(programFor(sys, user)) + '\n```' }] });
       return json(200, { id: 'msg_sim', type: 'message', role: 'assistant', model: b.model, stop_reason: 'end_turn', usage, content: [{ type: 'text', text: 'Réponse simulée du coach à : « ' + user.slice(0, 60) + ' ». Tu gardes la charge et tu vises le haut de la cible.' }] });
     }
     if (req.url === '/__calls') return json(200, CALLS);

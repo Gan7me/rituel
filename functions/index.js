@@ -177,7 +177,8 @@ async function claudeJSON(apiKey, model, system, messages, schema, maxTokens = 2
 // Démos visuelles : association de chaque exercice à une fiche photo (free-exercise-db, domaine public). Un seul appel par programme.
 const DEMO_IDS = require('./demo-ids.json'); const DEMO_SET = new Set(DEMO_IDS);
 const DEMO_SCHEMA = { type: 'object', required: ['map'], properties: { map: { type: 'array', items: { type: 'object', required: ['exId', 'demoId'], properties: { exId: { type: 'string' }, demoId: { type: 'string', description: 'Identifiant exact pris dans la liste fournie, ou "" si aucune fiche ne montre un mouvement proche.' } } } } } };
-const ILLUS_IDS = require('./illus.json'); const ILLUS_FR = require('./illus-labels.json'); // fiches dessinées avec leur libellé français (type de machine, marque indifférente) // fiches dessinées (personnage unique) : à privilégier quand le geste et le matériel sont identiques
+const ILLUS_IDS = require('./illus.json'); const ILLUS_FR = require('./illus-labels.json');
+const LIB = require('./library.js'); // fiches dessinées avec leur libellé français (type de machine, marque indifférente) // fiches dessinées (personnage unique) : à privilégier quand le geste et le matériel sont identiques
 async function mapDemos(apiKey, model, exercises) {
   const list = exercises.filter(e => e && e.id && e.name).map(e => `${e.id} | ${e.name} | ${e.machine || ''} | ${e.target || ''}`);
   if (!list.length) return {};
@@ -224,19 +225,7 @@ async function claude(apiKey, model, system, messages, maxTokens = 1500, timeout
   return (j.content || []).filter(c => c.type === 'text').map(c => c.text).join('');
 }
 
-const PROGRAM_SCHEMA = `Réponds UNIQUEMENT avec un objet JSON valide (pas de texte autour, pas de balises). Schéma :
-{"cycleName":"Mésocycle 1 · <thème> · <mois année>",
- "rationale":"texte en markdown léger (paragraphes, ## titres, listes -) : lecture du cycle, arbitrages, structure hebdomadaire, progression semaine par semaine, gestion des contraintes, prévention. 150 à 250 mots, dense, sans remplissage.",
- "nutrition":"cibles concrètes en 60 à 120 mots (calories, protéines, glucides, lipides, timing), adaptées au profil et à l'objectif. Si le profil ne permet pas d'estimer, dis-le.",
- "warmup":{"common":"...","<groupe>":"...","ramp":"..."},
- "durationWeeks":4, "cycleReason":"une phrase : pourquoi cette durée (3 = reprise ou débutant à recalibrer vite, 4 = standard, 5-6 = athlète confirmé en accumulation longue)",
- "weeks":[{"n":1,"label":"S1 …","from":"AAAA-MM-JJ","to":"AAAA-MM-JJ","rirNote":"..."}, … autant que durationWeeks (3 à 6), la dernière toujours en décharge ; "rir" de chaque exercice a autant de valeurs que de semaines],
- "sessions":[{"id":"s1","day":1,"dayName":"Lundi","name":"<nom court, ex. Jambes A>","sub":"<dominante>","duration":"60 min","place":"","gtg":false,"note":"",
-   "exercises":[{"n":1,"name":"...","machine":"<nom exact marque + modèle si connu, sinon description>","alt":"<alternative si la machine est absente>","star":true,
-     "sets":4,"reps":"6-8","per":"","rir":[3,2,1,4],"tempo":"3-1-X-0","restSec":180,"restText":"3 min","mode":"normal",
-     "reco":"comment reconnaître la machine (1 phrase)","why":"rôle dans le programme (1-2 phrases)","target":"muscle ou portion ciblée","exec":"exécution : position, trajectoire, points clés, erreurs (2-3 phrases)","seek":"sensation ou résultat attendu (1 phrase)",
-     "url":"https://www.google.com/search?tbm=isch&q=<nom+machine+encodé>"}]}]}
-Règles : ids de séance s1…sN ; ids d'exercice = "<sessionId>-<n>" implicites (ne pas les écrire). "day" = 1 lundi … 6 samedi, 0 dimanche ; autant de séances que de jours demandés dans le profil, réparties intelligemment. "rir" = 4 valeurs, une par semaine (S4 décharge). "star" = exercices prioritaires qui gagnent une série en S2 et S3. "mode" : "normal", "max" (série au max de reps) ou "emom". Tempo en 4 chiffres (excentrique-pause-concentrique-pause, X = explosif). Choisis des exercices réalisables avec le matériel déclaré, en utilisant vraiment les machines si la salle en a. 5 à 8 exercices par séance selon la durée. Pas de texte hors JSON.`;
+// (schéma de programme libre supprimé : le programme est construit par le moteur et la bibliothèque, le coach ne rédige que les textes)
 
 function normalizeProgram(p, startISO) {
   const out = { cycleName: String(p.cycleName || 'Mésocycle'), rationale: String(p.rationale || ''), nutrition: String(p.nutrition || ''), warmup: p.warmup && typeof p.warmup === 'object' ? p.warmup : null, weeks: [], sessions: [] };
@@ -459,7 +448,7 @@ const MACHINE_RE = /\b(machine|poulie|c[âa]ble|cable|presse|press machine|leg p
 const CONSTRAINT_MAP = [[/genou/i, /squat|fente|lunge|leg ?ext|presse|hack|pendulum|saut|jump|pistol/i, 'genou'], [/[ée]paule/i, /d[ée]velopp[ée].*(militaire|[ée]paule|overhead)|shoulder press|[ée]l[ée]vation|dips?\b|traction|pull[- ]?up|arrach|snatch|upright/i, 'épaule'], [/\bdos\b|lombaire|hernie|sciatique/i, /soulev[ée] de terre|deadlift|good ?morning|rowing.*(barre|pench)|bent.?over|squat.*barre|back squat|hyperext/i, 'dos'], [/coude|[ée]picondyl/i, /curl|pushdown|extension.*triceps|skull|dips?\b/i, 'coude'], [/poignet/i, /pompes?|push[- ]?up|front squat|curl.*poignet|wrist/i, 'poignet'], [/hanche/i, /hip thrust|squat.*profond|fente|lunge|abduct|adduct/i, 'hanche'], [/cheville/i, /mollet|calf|saut|jump|fente|lunge/i, 'cheville']];
 // « tirage élastique » ou « presse haltères au sol » ne sont pas des machines : le mot seul ne suffit pas.
 const NOT_MACHINE_RE = /[ée]lastique|bande|haltère|haltere|kettlebell|poids du corps|serviette|au sol|sur banc|sac/i;
-function isMachineEx(e) { const t = (e.name || '') + ' ' + (e.machine || ''); return MACHINE_RE.test(t) && !NOT_MACHINE_RE.test(t); }
+function isMachineEx(e) { if (e.exId && LIB.BY_ID[e.exId]) return (LIB.BY_ID[e.exId].tags || []).includes('machine'); const t = (e.name || '') + ' ' + (e.machine || ''); return MACHINE_RE.test(t) && !NOT_MACHINE_RE.test(t); }
 function checkProgram(prog, profile) {
   const p = profile || {}; const gear = p.gear || []; const errors = [], warnings = [];
   if (!prog.sessions.length) errors.push('Aucune séance.');
@@ -475,9 +464,9 @@ function checkProgram(prog, profile) {
     const want = sp.daysList.map(k => (k + 1) % 7).sort().join(','); const got = prog.sessions.map(s => s.day).sort().join(',');
     if (want !== got) { const order = sp.daysList.slice().sort((a, b) => a - b); prog.sessions.sort((a, b) => ((a.day + 6) % 7) - ((b.day + 6) % 7)).forEach((s, i) => { s.day = (order[i] + 1) % 7; s.dayName = DAY_FR[order[i]]; }); warnings.push('Jours replacés sur ceux de la fiche.'); }
   }
-  (sp.zones || []).forEach(z => { const m = CONSTRAINT_MAP.find(([cre]) => cre.test(ZONE_FR[z.zone] || z.zone)); if (!m) return; const hit = prog.sessions.flatMap(s => s.exercises).filter(e => m[1].test(e.name)).map(e => e.name); if (!hit.length) return; const msg = `${ZONE_FR[z.zone] || z.zone} (${z.sev}) : ${[...new Set(hit)].slice(0, 4).join(', ')}.`; if (z.sev === 'opere' || z.sev === 'douleur') errors.push('Zone à ménager sollicitée, ' + msg); else warnings.push('Zone fragile, vérifier ' + msg); });
+  (sp.zones || []).forEach(z => { const m = CONSTRAINT_MAP.find(([cre]) => cre.test(ZONE_FR[z.zone] || z.zone)); if (!m) return; const hit = prog.sessions.flatMap(s => s.exercises).filter(e => e.exId && LIB.BY_ID[e.exId] ? (LIB.BY_ID[e.exId].zones || []).includes(z.zone) : m[1].test(e.name)).map(e => e.name); if (!hit.length) return; const msg = `${ZONE_FR[z.zone] || z.zone} (${z.sev}) : ${[...new Set(hit)].slice(0, 4).join(', ')}.`; if (z.sev === 'opere' || z.sev === 'douleur') errors.push('Zone à ménager sollicitée, ' + msg); else warnings.push('Zone fragile, vérifier ' + msg); });
   if ((sp.refuse || []).includes('nomachine')) { const bad = prog.sessions.flatMap(s => s.exercises).filter(isMachineEx).map(e => e.name); if (bad.length) errors.push('Refus des machines non respecté : ' + [...new Set(bad)].slice(0, 5).join(', ') + '.'); }
-  if ((sp.refuse || []).includes('nobar')) { const bad = prog.sessions.flatMap(s => s.exercises).filter(e => /\bbarre\b|barbell|olympique/i.test(e.name + ' ' + e.machine) && !/traction|pull|dip/i.test(e.name)).map(e => e.name); if (bad.length) errors.push('Refus de la barre non respecté : ' + [...new Set(bad)].slice(0, 5).join(', ') + '.'); }
+  if ((sp.refuse || []).includes('nobar')) { const bad = prog.sessions.flatMap(s => s.exercises).filter(e => e.exId && LIB.BY_ID[e.exId] ? (LIB.BY_ID[e.exId].tags || []).includes('barre') : (/\bbarre\b|barbell|olympique/i.test(e.name + ' ' + e.machine) && !/traction|pull|dip/i.test(e.name))).map(e => e.name); if (bad.length) errors.push('Refus de la barre non respecté : ' + [...new Set(bad)].slice(0, 5).join(', ') + '.'); }
   const c = String(p.constraints || '');
   if (c && !(sp.zones || []).length) CONSTRAINT_MAP.forEach(([cre, ere, label]) => { if (cre.test(c)) { const hit = prog.sessions.flatMap(s => s.exercises).filter(e => ere.test(e.name)).map(e => e.name); if (hit.length) warnings.push(`Contrainte « ${label} » : vérifier ${[...new Set(hit)].slice(0, 4).join(', ')}.`); } });
   if (p.minutes) prog.sessions.forEach(s => { const sets = s.exercises.reduce((a, e) => a + e.sets, 0); const est = Math.round(sets * ((s.exercises.reduce((a, e) => a + e.restSec, 0) / Math.max(1, s.exercises.length)) + 45) / 60) + 8; if (est > Number(p.minutes) * 1.35) warnings.push(`${s.name} : ≈${est} min estimées pour ${p.minutes} prévues.`); });
@@ -556,6 +545,8 @@ function planStructure(profile) {
     if (likes.includes('tractions') && (name.includes('Tirage') || name.includes('Haut') || name.includes('Corps')) && !list.includes('vpull')) list.splice(1, 0, 'vpull');
     if (goal === 'corps' && !list.includes('vpull') && i % 2 === 0) list.splice(0, 0, 'vpull');
     if (list.length > maxEx) { const keepCond = list.includes('cond'); list = list.filter(x => x !== 'cond').slice(0, keepCond ? maxEx - 1 : maxEx); if (keepCond) list.push('cond'); }
+    // jamais moins de 4 emplacements : on complète avec des schémas sûrs non exclus
+    for (const extra of ['core', 'kneeflex', 'hinge', 'hpull', 'calf', 'carry', 'reardelt']) { if (list.length >= 4) break; if (!list.includes(extra) && !banned.has(extra)) list.push(extra); }
     const slots = list.map((pt, k) => { const role = k === 0 ? 'main' : k === 1 ? 'second' : 'acc'; const d = dose(goal, role, level); return Object.assign({ pattern: pt, role, star: k < 2, soft: soft.has(pt) }, d); });
     // borne de volume par niveau
     let total = slots.reduce((a, x) => a + x.sets, 0); while (total > caps.setsPerSession) { const big = slots.reduce((m, x) => x.sets > m.sets ? x : m, slots[0]); if (big.sets <= 2) break; big.sets--; total--; }
@@ -563,105 +554,115 @@ function planStructure(profile) {
   });
   return { goal, level, days, minutes, gym, bodyOnly, banned: [...banned], soft: [...soft], sessions, caps };
 }
-// Rendu du squelette pour le coach : ce qu'il doit remplir, ce qu'il ne doit pas changer.
+// Rendu du programme déjà construit pour le coach : il rédige, il ne choisit pas. Les exercices viennent de la bibliothèque.
 function skeletonText(plan, profile) {
-  const gearKind = plan.gym ? 'gym' : plan.bodyOnly ? 'body' : 'home';
-  return `SQUELETTE IMPOSÉ (construit par les règles à partir de la fiche, à respecter à la lettre) :\n` + plan.sessions.map(se => `${se.id} · ${se.dayName} · « ${se.name} » :\n` + se.slots.map((sl, k) => `  ${k + 1}. ${PATTERNS[sl.pattern].label} — cible ${PATTERNS[sl.pattern].muscle} — ${sl.sets} × ${sl.reps}, RIR ${sl.rir.join('/')}, repos ${sl.restSec} s, tempo ${sl.tempo}${sl.star ? ', prioritaire' : ''}${sl.soft ? ', ZONE FRAGILE : charge modérée, amplitude contrôlée' : ''} — choix possibles : ${PATTERNS[sl.pattern][gearKind]}`).join('\n')).join('\n') +
-    `\n\nTu choisis pour chaque emplacement UN exercice exact réalisable avec le matériel déclaré (nom précis, machine ou matériel, alternative si la machine est prise), en respectant l'ordre, le nombre de séries, la fourchette de répétitions, le RIR, le repos et le tempo donnés. Tu ne retires ni n'ajoutes d'emplacement, tu ne changes ni les jours ni les noms de séances. Tu rédiges "reco", "why", "target", "exec", "seek" pour chaque exercice, le "rationale" (qui commence par « Pour ${(profile || {}).name || 'toi'} » et explique les arbitrages faits pour cette personne), la "nutrition" et l'échauffement.${plan.banned.length ? ` Schémas exclus par les zones à ménager : ${plan.banned.map(b => PATTERNS[b] ? PATTERNS[b].label : b).join(' ; ')}. Aucun exercice de ce type, même léger.` : ''}`;
+  const pr = profile || {};
+  return `PROGRAMME DÉJÀ CONSTRUIT (structure et exercices fixés par les règles et la bibliothèque, à partir de la fiche ; tu ne les changes pas) :\n` + plan.sessions.map(se => `${se.id} · ${se.dayName} · « ${se.name} » :\n` + se.slots.map((sl, k) => `  ${se.id}-${k + 1}. ${sl.ex.name}${sl.ex.machine ? ' (' + sl.ex.machine + ')' : ''} — ${sl.ex.target || PATTERNS[sl.usedPattern || sl.pattern].muscle} — ${sl.sets} × ${sl.reps}, RIR ${sl.rir.join('/')}, repos ${sl.restSec} s, tempo ${sl.tempo}${sl.star ? ', prioritaire' : ''}${sl.soft ? ', zone fragile : charge modérée' : ''}`).join('\n')).join('\n') +
+    `\n\nTon travail : écrire pour ${pr.name || 'cet athlète'} le "rationale" (commence par « Pour ${pr.name || 'toi'} », explique les arbitrages faits pour cette personne et la progression semaine par semaine), la "nutrition" (cibles chiffrées pour son gabarit et son objectif), l'échauffement "warmup", et pour chaque exercice une "note" personnelle d'une phrase (pourquoi lui pour cette personne, ou un point d'attention lié à sa fiche) dans "notes" : {"<id exercice>": "..."}. Pas d'autre champ.${plan.banned.length ? ` Schémas exclus par les zones à ménager : ${plan.banned.map(b => PATTERNS[b] ? PATTERNS[b].label : b).join(' ; ')}.` : ''}`;
 }
-// Fusion : la structure vient du squelette, les textes et choix d'exercices viennent du coach. Si le coach a dévié, le squelette gagne.
-function mergeWithSkeleton(prog, plan) {
-  const out = Object.assign({}, prog); const notes = [];
-  out.sessions = plan.sessions.map((se, i) => {
-    const src = (prog.sessions || [])[i] || { exercises: [] };
+// Programme complet depuis le plan et la bibliothèque : structure, exercices, textes de coach de la fiche, illustration exacte.
+function programFromPlan(plan, profile, startISO) {
+  const prog = normalizeProgram({ cycleName: 'Mésocycle 1 · ' + ({ force: 'Force', masse: 'Masse', perte: 'Densité', sante: 'Santé et mobilité', perf: 'Performance', corps: 'Poids du corps' }[plan.goal] || 'Base') + ' · ' + new Date(startISO + 'T12:00:00').toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' }), durationWeeks: plan.level === 'debutant' ? 3 : 4 }, startISO);
+  const demos = {};
+  prog.sessions = plan.sessions.map(se => {
     const exercises = se.slots.map((sl, k) => {
-      const e = (src.exercises || [])[k] || {}; const name = String(e.name || '').trim() || (PATTERNS[sl.pattern][plan.gym ? 'gym' : plan.bodyOnly ? 'body' : 'home'].split(',')[0]);
-      if (!e.name) notes.push(`${se.name} ${k + 1} : exercice manquant, nom par défaut`);
-      return { id: se.id + '-' + (k + 1), n: k + 1, name, machine: String(e.machine || ''), alt: String(e.alt || ''), star: sl.star, sets: sl.sets, reps: sl.reps, per: String(e.per || ''), rir: sl.rir.slice(), tempo: sl.tempo, restSec: sl.restSec, restText: sl.restSec >= 60 ? Math.round(sl.restSec / 60 * 10) / 10 + ' min' : sl.restSec + ' s', mode: 'normal', setsText: `${sl.sets} × ${sl.reps}`, chargeNote: `RIR ${sl.rir[0]} → ${sl.rir[1]} → ${sl.rir[2]}`, pattern: sl.pattern, role: sl.role, rule: sl.rule, reco: String(e.reco || ''), why: String(e.why || ''), target: String(e.target || PATTERNS[sl.pattern].muscle), exec: String(e.exec || ''), seek: String(e.seek || ''), url: /^https:\/\/www\.google\.com\/search/.test(String(e.url || '')) ? e.url : 'https://www.google.com/search?tbm=isch&q=' + encodeURIComponent(String(e.machine || name)) };
+      const e = sl.ex; const id = se.id + '-' + (k + 1); if (e.illus && ILLUS_IDS.includes(e.illus)) demos[id] = e.illus;
+      // exercices chronométrés (gainage, port de charge, finisher) : la consigne remplace la fourchette de répétitions
+      const isCond = e.pattern === 'cond'; const sets = isCond ? 1 : sl.sets; const reps = e.timed ? e.timed : sl.reps; const restSec = isCond ? 60 : sl.restSec;
+      return { id, n: k + 1, exId: e.id, name: e.name, machine: e.machine || '', alt: sl.alt ? sl.alt.name : '', altId: sl.alt ? sl.alt.id : '', star: sl.star && !e.timed, sets, reps, timed: !!e.timed, per: e.uni && !/par côté/.test(e.timed || '') ? 'par côté' : '', rir: sl.rir.slice(), tempo: e.timed ? '' : sl.tempo, restSec, restText: restSec >= 60 ? Math.round(restSec / 60 * 10) / 10 + ' min' : restSec + ' s', mode: 'normal', setsText: isCond ? reps : `${sets} × ${reps}`, chargeNote: e.timed ? 'Tenue ou cadence, pas de charge maximale' : `RIR ${sl.rir[0]} → ${sl.rir[1]} → ${sl.rir[2]}`, pattern: sl.usedPattern || sl.pattern, role: sl.role, rule: sl.rule, reco: e.reco || '', why: e.why || '', target: e.target || '', exec: e.exec || '', seek: e.seek || '', note: '', url: 'https://www.google.com/search?tbm=isch&q=' + encodeURIComponent(e.machine || e.name) };
     });
-    return { id: se.id, day: se.day, dayName: se.dayName, name: se.name, sub: String(src.sub || exercises.slice(0, 2).map(x => x.target).join(', ')), duration: plan.minutes + ' min', place: '', gtg: false, note: String(src.note || ''), exercises };
+    return { id: se.id, day: se.day, dayName: se.dayName, name: se.name, sub: exercises.slice(0, 2).map(x => x.target.split(',')[0]).join(', '), duration: plan.minutes + ' min', place: '', gtg: false, note: '', exercises };
   });
-  out.engine = { v: 1, goal: plan.goal, banned: plan.banned, soft: plan.soft, notes };
+  prog.demos = demos; prog.demosAt = Date.now();
+  prog.engine = { v: 2, goal: plan.goal, banned: plan.banned, soft: plan.soft, notes: plan.selectionNotes || [], gear: plan.gearList || [] };
+  prog.rationale = `Pour ${(profile || {}).name || 'toi'} : ${plan.days.length} séances de ${plan.minutes} minutes, objectif ${({ force: 'force', masse: 'prise de muscle', perte: 'perte de gras en gardant le muscle', sante: 'santé et mobilité', perf: 'performance', corps: 'poids du corps' }[plan.goal] || plan.goal)}, niveau ${plan.level}. La structure, les séries, les répétitions, le RIR et les repos sont réglés par les règles à partir de ta fiche ; chaque exercice est choisi dans la bibliothèque pour ton matériel et tes zones à ménager.`;
+  prog.nutrition = ''; prog.warmup = null;
+  return applyGuardrails(prog, profile);
+}
+// Fusion des textes du coach (rationale, nutrition, warmup, notes par exercice) dans le programme construit. Rien d'autre ne bouge.
+function mergeCoachTexts(prog, parsed) {
+  const out = prog; const pd = parsed || {};
+  if (typeof pd.rationale === 'string' && pd.rationale.trim().length > 80) out.rationale = pd.rationale.trim();
+  if (typeof pd.nutrition === 'string' && pd.nutrition.trim()) out.nutrition = pd.nutrition.trim();
+  if (pd.warmup && typeof pd.warmup === 'object') out.warmup = pd.warmup;
+  if (typeof pd.cycleName === 'string' && pd.cycleName.trim()) out.cycleName = pd.cycleName.trim().slice(0, 80);
+  const notes = pd.notes && typeof pd.notes === 'object' ? pd.notes : {};
+  out.sessions.forEach(se => se.exercises.forEach(e => { if (typeof notes[e.id] === 'string' && notes[e.id].trim()) e.note = notes[e.id].trim().slice(0, 300); }));
   return out;
 }
+const COACH_TEXT_SCHEMA = `Réponds UNIQUEMENT avec un objet JSON valide (pas de texte autour) : {"cycleName":"Mésocycle 1 · <thème> · <mois année>","rationale":"markdown léger, 150 à 250 mots","nutrition":"60 à 120 mots, cibles chiffrées","warmup":{"common":"...","ramp":"..."},"notes":{"s1-1":"une phrase","s1-2":"..."}}`;
 
-// Réparation déterministe : chaque exercice qui viole une règle bloquante est remplacé par un choix sûr du même schéma
-// (puis du schéma de substitution, puis un mouvement neutre). L'utilisateur reçoit toujours un programme conforme.
+// Réparation déterministe (filet) : un exercice qui viole une règle bloquante est remplacé par une fiche sûre du même schéma.
 function exViolations(e, profile) {
   const p = profile || {}; const gear = p.gear || []; const sp = p.spec || {}; const out = [];
   if (gear.length && !gear.includes('salle') && isMachineEx(e)) out.push('machine sans salle');
   if ((sp.refuse || []).includes('nomachine') && isMachineEx(e)) out.push('refus machines');
   if ((sp.refuse || []).includes('nobar') && /\bbarre\b|barbell|olympique/i.test((e.name || '') + ' ' + (e.machine || '')) && !/traction|pull|dip/i.test(e.name || '')) out.push('refus barre');
-  (sp.zones || []).forEach(z => { if (z.sev !== 'opere' && z.sev !== 'douleur') return; const m = CONSTRAINT_MAP.find(([cre]) => cre.test(ZONE_FR[z.zone] || z.zone)); if (m && m[1].test(e.name || '')) out.push('zone ' + (ZONE_FR[z.zone] || z.zone)); });
+  (sp.zones || []).forEach(z => { if (z.sev !== 'opere' && z.sev !== 'douleur') return; const lib = e.exId && LIB.BY_ID[e.exId]; if (lib) { if ((lib.zones || []).includes(z.zone)) out.push('zone ' + (ZONE_FR[z.zone] || z.zone)); return; } const m = CONSTRAINT_MAP.find(([cre]) => cre.test(ZONE_FR[z.zone] || z.zone)); if (m && m[1].test(e.name || '')) out.push('zone ' + (ZONE_FR[z.zone] || z.zone)); });
   return out;
 }
-const SAFE_EX = { gym: ['gainage planche', 'pont fessier', 'rowing élastique', 'oiseau haltères'], home: ['gainage planche', 'pont fessier', 'rowing élastique', 'oiseau haltères'], body: ['gainage planche', 'pont fessier', 'dead bug', 'Y-T-W au sol'] };
 function repairProgram(prog, profile, plan) {
-  const kind = plan.gym ? 'gym' : plan.bodyOnly ? 'body' : 'home'; const notes = [];
-  const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
+  const notes = []; const gear = LIB.availableGear(profile);
   prog.sessions.forEach(se => se.exercises.forEach(e => {
-    if (!exViolations(e, profile).length) return;
-    const pt = e.pattern; const chain = [pt, ZONE_SUBS[pt], ZONE_SUBS[ZONE_SUBS[pt]]].filter(Boolean);
-    const cands = chain.flatMap(x => (PATTERNS[x] ? PATTERNS[x][kind] : '').split(',').map(s => cap(s.trim())).filter(Boolean)).concat(SAFE_EX[kind].map(cap));
-    const pick = cands.find(n => !exViolations({ name: n, machine: '' }, profile).length);
-    if (!pick) return;
-    notes.push(`${se.name} : « ${e.name} » remplacé par « ${pick} » (${exViolations(e, profile).join(', ')})`);
-    e.name = pick; e.machine = ''; e.alt = ''; e.reco = ''; e.why = e.why || `Remplacement conforme à ta fiche pour garder le schéma « ${PATTERNS[pt] ? PATTERNS[pt].label : pt} ».`; e.exec = e.exec || ''; e.seek = e.seek || ''; e.url = 'https://www.google.com/search?tbm=isch&q=' + encodeURIComponent(pick);
+    const v = exViolations(e, profile); if (!v.length) return;
+    const used = new Set(se.exercises.map(x => x.exId));
+    const ok = x => !used.has(x.id) && LIB.allowed(x, profile, (profile || {}).level, gear) && !exViolations({ exId: x.id, name: x.name, machine: x.machine }, profile).length;
+    const cands = LIB.EXERCISES.filter(x => x.pattern === e.pattern && ok(x)).concat(LIB.EXERCISES.filter(x => x.pattern === 'core' && ok(x)));
+    const pick = cands[0]; if (!pick) return;
+    notes.push(`${se.name} : « ${e.name} » remplacé par « ${pick.name} » (${v.join(', ')})`);
+    Object.assign(e, { exId: pick.id, name: pick.name, machine: pick.machine || '', alt: '', altId: '', reco: pick.reco || '', why: pick.why || '', target: pick.target || '', exec: pick.exec || '', seek: pick.seek || '', pattern: pick.pattern, url: 'https://www.google.com/search?tbm=isch&q=' + encodeURIComponent(pick.machine || pick.name) });
+    if (prog.demos) { if (pick.illus && ILLUS_IDS.includes(pick.illus)) prog.demos[e.id] = pick.illus; else delete prog.demos[e.id]; }
   }));
   if (notes.length) { prog.engine = prog.engine || {}; prog.engine.repairs = notes; }
   return prog;
 }
-// Programme « moteur seul » : structure et choix par défaut sans le coach. Sert de filet quand le modèle est indisponible ou illisible.
-function engineOnlyProgram(profile, plan) {
-  const p = profile || {}; const prog = applyGuardrails(mergeWithSkeleton(normalizeProgram({ cycleName: 'Mésocycle 1 · ' + ({ force: 'Force', masse: 'Masse', perte: 'Densité', sante: 'Santé', perf: 'Performance', corps: 'Poids du corps' }[plan.goal] || 'Base') }, nextMonday()), plan), profile);
-  prog.rationale = `Pour ${p.name || 'toi'} : ce cycle est construit par les règles du programme à partir de ta fiche (${plan.days.length} séances, ${plan.minutes} min, objectif ${plan.goal}). Le coach n'a pas pu rédiger ses commentaires à cet instant : la structure, les séries, les répétitions, le RIR et les repos sont déjà les bons. Relance la génération plus tard pour obtenir ses explications exercice par exercice.`;
-  prog.nutrition = ''; prog.degraded = 'coach';
-  prog.sessions.forEach(se => se.exercises.forEach(e => { if (!e.why) e.why = PATTERNS[e.pattern] ? `Emplacement « ${PATTERNS[e.pattern].label} », cible ${PATTERNS[e.pattern].muscle}.` : ''; }));
+async function buildProgram(profile, apiKey, model, seed) {
+  // 1. Le moteur construit le programme complet, instantanément, sans dépendance : structure, exercices de la bibliothèque, textes de fiche, illustrations.
+  const plan = LIB.selectExercises(planStructure(profile), profile, seed);
+  const start = nextMonday();
+  let prog = programFromPlan(plan, profile, start);
+  let check = checkProgram(prog, profile);
+  if (check.errors.length) { repairProgram(prog, profile, plan); check = checkProgram(prog, profile); }
+  prog.checks = { errors: check.errors, warnings: check.warnings, attempts: 0, at: Date.now(), repaired: !!(prog.engine && prog.engine.repairs && prog.engine.repairs.length) };
+  if (check.errors.length) prog.engine.unresolved = check.errors;
+  // 2. Le coach rédige (rationale, nutrition, échauffement, notes). Borné dans le temps ; s'il échoue, le programme est livré sans ses textes et complété plus tard.
+  const sys = systemFor(profile, null);
+  const pr = profile || {};
+  const user = `Construis les textes du mésocycle de cet athlète (départ le ${start}). Sois concret et exigeant au niveau déclaré. Le programme doit être visiblement écrit pour ${pr.name || 'cette personne'} : relie chaque choix à ses objectifs (${(pr.goals || []).join(', ') || 'non précisés'}), son niveau (${pr.level || '?'}), son matériel, ses contraintes et ses autres pratiques.\n\n${skeletonText(plan, profile)}\n\n${COACH_TEXT_SCHEMA}`;
+  let lastErr = '';
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      const text = await claude(apiKey, model, sys, [{ role: 'user', content: user }], 3500, attempt === 1 ? 120000 : 90000);
+      const parsed = JSON.parse(text.slice(text.indexOf('{'), text.lastIndexOf('}') + 1));
+      mergeCoachTexts(prog, parsed); prog.degraded = null; prog.checks.attempts = attempt; return prog;
+    } catch (e) { lastErr = String(e && e.message || e); if (/401|refusée/.test(lastErr)) throw e; }
+  }
+  prog.degraded = 'coach'; prog.engine.notes.push('textes du coach indisponibles : ' + lastErr.slice(0, 160)); prog.checks.attempts = 2;
   return prog;
 }
-async function buildProgram(profile, apiKey, model) {
-  const sys = systemFor(profile, null);
-  const safety = { debutant: 'Débutant : 3 séances max, 4 à 6 exercices par séance, 12 à 16 séries, RIR jamais sous 2, pas de techniques d\'intensification, machines guidées et mouvements simples, échauffement détaillé, aucune charge suggérée en kg.', intermediaire: 'Intermédiaire : 16 à 22 séries par séance, RIR 3 → 1, une seule technique d\'intensification en S3.', confirme: 'Confirmé : 22 à 28 séries, RIR jusqu\'à 0 sur les isolations en S3, intensification ciblée.', avance: 'Avancé : volume et intensité d\'athlète, techniques d\'intensification justifiées.' }[(profile || {}).level] || '';
-  const pr = profile || {}; const gear = pr.gear || [];
-  const constraints = pr.constraints ? `Respecte strictement les contraintes déclarées (blessures, douleurs, métier) : exclus tout exercice qui les sollicite et propose une alternative. ` : '';
-  const noGym = gear.length && !gear.includes('salle') ? 'Pas de salle : aucune machine guidée, aucune poulie, aucun nom de marque ; uniquement ' + gear.join(', ') + '. ' : '';
-  const personal = `Ce programme doit être visiblement construit pour ${pr.name || 'cette personne'} et pour personne d'autre : le "rationale" commence par « Pour ${pr.name || 'toi'} » et relie explicitement chaque choix majeur à ses objectifs (${(pr.goals || []).join(', ') || 'non précisés'}), son niveau (${pr.level || '?'}), son matériel, ses ${pr.days || '?'} jours et ${pr.minutes || '?'} minutes, ses contraintes et ses autres pratiques. Exactement ${pr.days || '?'} séances. Les noms de séances reflètent ses objectifs. Un programme interchangeable avec celui d'un autre profil est un échec. `;
-  const plan = planStructure(profile);
-  const user = `Construis le mésocycle de cet athlète (départ le ${nextMonday()}). Sois concret et exigeant au niveau déclaré. ${personal}${safety} ${noGym}${constraints}\n\n${skeletonText(plan, profile)}\n\n${PROGRAM_SCHEMA}`;
-  // Règle : l'utilisateur reçoit TOUJOURS un programme conforme. Le coach a deux essais bornés dans le temps ;
-  // ce qui reste non conforme est réparé par les règles ; si le coach ne répond pas, le moteur seul livre la structure.
-  let prog = null, check = null, attempts = 0, feedback = '', lastErr = '';
-  const t0 = Date.now();
-  while (attempts < 2 && Date.now() - t0 < 300000) {
-    attempts++;
-    let text;
-    try { text = await claude(apiKey, model, sys, [{ role: 'user', content: user + feedback }], 9000, attempts === 1 ? 200000 : 120000); }
-    catch (e) { lastErr = String(e && e.message || e); if (/401|refusée/.test(lastErr)) throw e; continue; }
-    let parsed;
-    try { parsed = JSON.parse(text.slice(text.indexOf('{'), text.lastIndexOf('}') + 1)); }
-    catch (e) { lastErr = 'réponse illisible'; continue; }
-    prog = applyGuardrails(mergeWithSkeleton(normalizeProgram(parsed, nextMonday()), plan), profile);
-    check = checkProgram(prog, profile);
-    if (!check.errors.length) break;
-    feedback = `\n\nTa proposition précédente a été refusée par le contrôle de conformité : ${check.errors.join(' ')} Corrige ces points précisément et renvoie le programme complet.`;
-  }
-  if (!prog) { prog = engineOnlyProgram(profile, plan); prog.engine.notes.push('coach indisponible : ' + lastErr); check = checkProgram(prog, profile); }
-  if (check.errors.length) { repairProgram(prog, profile, plan); check = checkProgram(prog, profile); }
-  if (check.errors.length) { prog.engine = prog.engine || {}; prog.engine.unresolved = check.errors; }
-  prog.checks = { errors: check.errors, warnings: check.warnings, attempts, at: Date.now(), repaired: !!(prog.engine && prog.engine.repairs && prog.engine.repairs.length) };
+// Complément différé : un programme livré sans les textes du coach les reçoit dès qu'il répond (appel suivant ou tâche planifiée).
+async function completeCoachTexts(uid, prog, profile, apiKey, model) {
+  const plan = LIB.selectExercises(planStructure(profile), profile, uid);
+  const sys = systemFor(profile, null); const pr = profile || {};
+  const user = `Rédige les textes du programme de cet athlète. ${skeletonText(plan, profile)}\n\n${COACH_TEXT_SCHEMA}`;
+  const text = await claude(apiKey, model, sys, [{ role: 'user', content: user }], 3500, 120000);
+  const parsed = JSON.parse(text.slice(text.indexOf('{'), text.lastIndexOf('}') + 1));
+  mergeCoachTexts(prog, parsed); prog.degraded = null; prog.engine = prog.engine || {}; prog.engine.completedAt = Date.now();
+  await db.collection('users').doc(uid).collection('meta').doc('program').set({ rationale: prog.rationale, nutrition: prog.nutrition, warmup: prog.warmup, cycleName: prog.cycleName, sessions: prog.sessions, degraded: null, engine: prog.engine }, { merge: true });
+  await recordUsage(uid, 'program', model);
   return prog;
 }
 async function generateProgramFor(uid, meta, apiKey, model) {
   const genRef = db.collection('users').doc(uid).collection('meta').doc('genstate');
     let prog;
-    try { prog = await buildProgram(meta.profile, apiKey, model); }
+    try { prog = await buildProgram(meta.profile, apiKey, model, uid); }
     catch (e) { await refundQuota(uid, 'program'); throw e; } // un échec ne consomme pas une génération
     prog.generatedAt = Date.now(); prog.model = model; prog.profileSnapshot = meta.profile;
     await recordUsage(uid, 'program', model);
     // Le programme est livré d'abord ; les visuels sont associés ensuite et ne peuvent pas bloquer la livraison.
     await db.collection('users').doc(uid).collection('meta').doc('program').set(prog);
     await genRef.set({ status: 'done', at: Date.now() });
-    try { const demos = await mapDemos(apiKey, model, prog.sessions.flatMap(se => se.exercises)); if (Object.keys(demos).length) { await db.collection('users').doc(uid).collection('meta').doc('program').set({ demos, demosAt: Date.now() }, { merge: true }); await recordUsage(uid, 'demo', model); } } catch (e) {}
+    // Les illustrations viennent de la bibliothèque (exactes par construction) ; un exercice sans fiche illustrée garde le repli « geste proche » côté client.
     return { ok: true, sessions: prog.sessions.length };
 }
 async function coachImpl(req) {
@@ -856,6 +857,22 @@ exports.weeklyReview = onSchedule({ schedule: '0 19 * * 0', timeZone: 'Europe/Pa
     } catch (e) { console.error('weeklyReview', uid, e.message || e); }
   }
 });
+// File de rattrapage : toutes les 20 minutes, les programmes livrés sans les textes du coach sont complétés. Reprise automatique, bornée.
+exports.coachBacklog = onSchedule({ schedule: '*/20 * * * *', timeZone: 'Europe/Paris', region: 'europe-west1', secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 540, memory: '512MiB' }, async () => {
+  const apiKey = String(ANTHROPIC_API_KEY.value() || '').replace(/[^\x21-\x7E]/g, '').replace(/^["']+|["']+$/g, '');
+  if (!/^sk-ant-/.test(apiKey)) return;
+  const model = await resolveModel(apiKey, MODEL.value()); const t0 = Date.now(); let done = 0, failed = 0;
+  for (const u of await db.collection('users').listDocuments()) {
+    if (Date.now() - t0 > 420000) break;
+    const pg = await u.collection('meta').doc('program').get(); if (!pg.exists) continue;
+    const prog = pg.data(); if (prog.degraded !== 'coach' || !prog.generatedAt) continue;
+    const attempts = (prog.engine && prog.engine.backlogAttempts) || 0; if (attempts >= 6) continue;
+    const pf = await u.collection('meta').doc('profile').get(); if (!pf.exists) continue;
+    try { await completeCoachTexts(u.id, prog, pf.data(), apiKey, model); done++; }
+    catch (e) { failed++; await u.collection('meta').doc('program').set({ engine: Object.assign({}, prog.engine || {}, { backlogAttempts: attempts + 1, backlogError: String(e && e.message || e).slice(0, 160) }) }, { merge: true }); }
+  }
+  if (done || failed) await db.collection('system').doc('backlog').set({ at: Date.now(), done, failed }, { merge: true });
+});
 exports.dailyNudge = onSchedule({ schedule: '0 18 * * *', timeZone: 'Europe/Paris', region: 'europe-west1' }, async () => {
   const cutoff = isoDaysAgo(3);
   for (const uid of await activeUsers()) {
@@ -883,3 +900,6 @@ exports.dailyNudge = onSchedule({ schedule: '0 18 * * *', timeZone: 'Europe/Pari
     } catch (e) { console.error('dailyNudge', uid, e.message || e); }
   }
 });
+
+// Banc d'essai local uniquement (jamais exposé en production) : accès au moteur pur pour tester des milliers de profils sans appel réseau.
+if (process.env.RITUEL_TEST === '1') exports._engine = { planStructure, programFromPlan, checkProgram, repairProgram, LIB, LEVEL_CAPS };
