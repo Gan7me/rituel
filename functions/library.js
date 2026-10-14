@@ -28,8 +28,28 @@ function hash(str) { let h = 2166136261; for (let i = 0; i < str.length; i++) { 
 
 // Score d'un exercice pour un emplacement donné.
 function score(e, ctx) {
-  const { role, goal, level, likes, soft, usedWeek, usedSession, seed, gym } = ctx;
+  const { role, goal, level, likes, soft, usedWeek, usedSession, seed, gym, second, skills, age, flags } = ctx;
   let s = 0;
+  // Acquis déclarés : sans « 10 tractions », les tractions strictes ne sont pas un principal ; sans squat barre ou soulevé de terre propre, pas de barre lourde en principal.
+  if (!skills.includes('pull10') && ['pullup', 'chinup', 'weighted_pullup'].includes(e.id)) s -= role === 'main' ? 40 : 12;
+  if (skills.includes('pull10') && ['band_pullup', 'assisted_pullup_m', 'negative_pullup'].includes(e.id)) s -= 25;
+  if (!skills.includes('squat') && ['back_squat', 'front_squat'].includes(e.id)) s -= role === 'main' ? 30 : 10;
+  if (!skills.includes('dl') && ['deadlift', 'rdl', 'good_morning'].includes(e.id)) s -= role === 'main' ? 30 : 10;
+  if (skills.includes('squat') && e.id === 'back_squat' && goal === 'force') s += 6;
+  if (skills.includes('dl') && (e.id === 'deadlift' || e.id === 'trap_bar_dl') && goal === 'force') s += 6;
+  // Objectif secondaire
+  if (second === 'tractions' && (e.tags || []).includes('tractions')) s += 10;
+  if (second === 'bras' && (e.pattern === 'biceps' || e.pattern === 'triceps') && e.tier === 3 && !(e.tags || []).includes('leger')) s += 6;
+  if (second === 'fessiers' && (e.p || []).some(m => /fessier/.test(m))) s += 8;
+  if (second === 'jambes' && (e.pattern === 'squat' || e.pattern === 'lunge') && e.tier <= 2) s += 6;
+  if (second === 'puissance' && (e.tags || []).includes('explosif')) s += 8;
+  if ((second === 'seche' || second === 'cardio') && e.pattern === 'cond' && (e.req || []).includes('cardio')) s += 4;
+  // Âge et autres pratiques
+  if (age >= 50 && ((e.tags || []).includes('explosif') || /saut|jump|sauté/i.test(e.name))) s -= 15;
+  if (age >= 50 && (e.tags || []).includes('machine') && role !== 'main') s += 3;
+  if (flags.runner && e.pattern === 'calf') s -= 8; // mollets déjà chargés par la course
+  if (flags.climber && (e.pattern === 'biceps' || /avant-bras|grip/.test((e.p || []).join(' ')))) s -= 10;
+  if (flags.contact && (e.pattern === 'reardelt' || e.pattern === 'carry')) s += 4; // cou, coiffe et grip protègent au contact
   const tierFit = role === 'main' ? { 1: 30, 2: 12, 3: 0 } : role === 'second' ? { 1: 18, 2: 24, 3: 6 } : { 1: 2, 2: 14, 3: 24 };
   s += tierFit[e.tier] || 0;
   const tags = e.tags || [];
@@ -95,7 +115,7 @@ function selectExercises(plan, profile, seedStr) {
       for (const pat of chain) {
         const cands = EXERCISES.filter(e => e.pattern === pat && okFor(e) && !usedSession.has(e.id));
         if (!cands.length) continue;
-        const ctx = { role: sl.role, goal: plan.goal, level: plan.level, likes, soft, usedWeek, usedSession, seed, gym };
+        const ctx = { role: sl.role, goal: plan.goal, level: plan.level, likes, soft, usedWeek, usedSession, seed, gym, second: plan.second || null, skills: plan.skills || sp.skills || [], age: plan.age || Number(p.age) || 0, flags: plan.flags || {} };
         cands.sort((a, b) => score(b, ctx) - score(a, ctx));
         picked = cands[0]; alt = cands.find(c => c.id !== picked.id && !usedSession.has(c.id)) || null; usedPattern = pat; break;
       }

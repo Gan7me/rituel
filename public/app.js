@@ -18,7 +18,7 @@ function humanErr(e){ const c=(e&&e.code)||''; const m=(e&&e.message)||String(e|
   if(/network|Failed to fetch|internet/i.test(m)||!navigator.onLine) return 'Pas de réseau. Le coach a besoin d\'une connexion ; tes séries sont enregistrées et partiront toutes seules.';
   if(/invalid-argument/.test(c)) return 'Le serveur n\'a pas compris la demande (version de l\'app en retard ?). Recharge l\'application depuis Réglages.';
   return m; }
-const APP_VERSION='3.38.0';
+const APP_VERSION='3.39.0';
 const ADMIN_RE=/^(ganeme\.asloune@nexisafe\.com|gads@live\.fr)$/i;
 let PROGRAM={sessions:[]};
 let WEEKS = [
@@ -1399,6 +1399,28 @@ function builtForHtml(){
   const goals=(ps.goals||[]).map(g=>GOAL_FR[g]||g).join(', '); const gear=(ps.gear||[]).map(g=>GEAR_FR[g]||g).join(', ');
   return deg+`<div class="builtfor"><span class="eyebrow">Construit pour ${esc(ps.name||'toi')}</span><p class="small">${esc([ps.level,goals,ps.days?ps.days+' séances/sem':'',ps.minutes?ps.minutes+' min':'',gear,ps.constraints?'contraintes : '+ps.constraints:''].filter(Boolean).join(' · '))}</p>${rep}</div>`;
 }
+// Promesse : valeur de départ (semaine 1) et valeur actuelle, mesurées dans l'app ; cible et jalons viennent du programme.
+function promiseMetric(metric){
+  const start=PROGRAM.weeks&&PROGRAM.weeks[0]?PROGRAM.weeks[0].from:null; const endW1=start?addDays(start,6):null;
+  const logs=Object.values(S.logs||{}).filter(l=>!start||l.date>=start);
+  if(metric==='e1rm'||metric==='e1rm_legs'){ const star=new Set(PROGRAM.sessions.flatMap(se=>se.exercises.filter(e=>e.star&&(metric==='e1rm'||['squat','hinge','lunge'].includes(e.pattern))).map(e=>e.id))); const first={}, best={}; logs.sort((a,b)=>a.date<b.date?-1:1).forEach(l=>Object.entries(l.sets||{}).forEach(([id,arr])=>{ if(!star.has(id)) return; (arr||[]).forEach(st=>{ if(!st||!st.done||!st.w||!st.r) return; const v=e1rm(st.w,st.r); if(endW1&&l.date<=endW1&&(!first[id]||v>first[id])) first[id]=v; if(!best[id]||v>best[id]) best[id]=v; }); })); const ids=Object.keys(first); if(!ids.length) return {base:null,now:null,unit:'%'}; const b=ids.reduce((t,id)=>t+first[id],0), n=ids.reduce((t,id)=>t+(best[id]||first[id]),0); return {base:0,now:Math.round(100*(n-b)/b*10)/10,unit:'%',note:ids.length+' exercice(s) prioritaire(s)'}; }
+  if(metric==='pull'){ const t=Object.values(S.tests||{}).sort((a,b)=>a.date<b.date?-1:1).filter(x=>!start||x.date>=addDays(start,-14)); if(!t.length) return {base:null,now:null,unit:'reps'}; return {base:t[0].reps,now:Math.max(...t.map(x=>x.reps||0)),unit:'reps'}; }
+  if(metric==='bw'){ const b=Object.values(S.bw||{}).sort((a,b)=>a.date<b.date?-1:1).filter(x=>!start||x.date>=addDays(start,-7)); if(!b.length) return {base:null,now:null,unit:'kg'}; return {base:b[0].kg||b[0].w||b[0].v,now:(b[b.length-1].kg||b[b.length-1].w||b[b.length-1].v),unit:'kg'}; }
+  if(metric==='adherence'){ const planned=Object.values(S.logs||{}).filter(l=>start&&l.date>=start).length; const done=Object.values(S.logs||{}).filter(l=>start&&l.date>=start&&l.done).length; return {base:null,now:planned?Math.round(100*done/planned):null,unit:'%'}; }
+  return {base:null,now:null,unit:''};
+}
+function promiseHtml(){
+  const P=PROGRAM.promise; if(!P) return '';
+  const m=promiseMetric(P.metric); const cyc=Math.min(3,Math.max(1,Math.ceil(curWeek()/Math.max(1,(PROGRAM.weeks||[]).length||4))));
+  const val=m.now==null?'<em>à mesurer en S1</em>':(m.unit==='%'?(m.now>0?'+':'')+m.now+' %':m.now+' '+m.unit+(m.base!=null&&m.base!==m.now?' <span class="muted">(départ '+m.base+')</span>':''));
+  const steps=(P.steps||[]).map((v,i)=>`<span class="pm-step ${i+1<cyc?'done':i+1===cyc?'now':''}"><b>C${i+1}</b>${v>0&&P.unit!=='kg'?'+':''}${v}${P.unit==='%'?' %':' '+P.unit}</span>`).join('');
+  return `<div class="promise"><div class="eyebrow">Ta promesse</div><p class="pm-text">${esc(P.promise)}</p><div class="pm-row"><span><small>${esc(P.label)}</small><b>${val}</b></span><span><small>Cible 12 semaines</small><b>${esc(P.target)}</b></span></div><div class="pm-steps">${steps}</div><p class="small muted">Mesure : ${esc(P.measure)}. ${esc(P.baselineRule||'')}</p>${P.secondary?`<p class="small"><b>En second :</b> ${esc(P.secondary.label)}, ${esc(P.secondary.target)} (${esc(P.secondary.measure)}).</p>`:''}</div>`;
+}
+function recoveryHtml(){
+  const R=PROGRAM.recovery; if(!R||!R.days||!R.days.length) return '';
+  const today=new Date().getDay(); const d=R.days.find(x=>x.day===today)||R.days[0];
+  return `<div class="recov"><div class="eyebrow">Jours sans séance · récupération</div><p class="small muted">${d.day===today?"Aujourd'hui":esc(d.dayName)}${d.after?' · après '+esc(d.after):''}${d.before?' · avant '+esc(d.before):''}</p><ul class="small">${d.items.map(x=>`<li>${esc(x)}</li>`).join('')}</ul><details><summary class="small">Toute la semaine et les règles</summary>${R.days.filter(x=>x!==d).map(x=>`<p class="small"><b>${esc(x.dayName)}</b> : ${esc(x.items.slice(0,2).join(' '))}</p>`).join('')}<ul class="small">${(R.rules||[]).map(x=>`<li>${esc(x)}</li>`).join('')}</ul></details></div>`;
+}
 function renderProgramme(){
   if(!$('#tab-programme')) return;
   const auto=weekFor(todayISO()), wk=curWeek(), today=new Date().getDay();
@@ -1409,7 +1431,7 @@ function renderProgramme(){
     <div class="wkchips">${WEEKS.map((w,i)=>`<button data-wk="${i+1}" aria-pressed="${i+1===wk}"><b>S${i+1}</b><span>${i+1===auto?'en cours':esc(String(w.label||'').replace(/^S\d+\s*/,'').split(' ')[0])}</span></button>`).join('')}</div>
     <p class="small muted">${esc(String(W.label||'').replace(/^S\d+\s*/,''))}${mono?' · '+esc(mono):''}${W.from?' · '+fmtD(W.from)+'–'+fmtD(W.to):''}</p>
     ${builtForHtml()}
-    <div class="row2"><button class="btn sm" id="cycBtn">Lire le cycle</button><button class="btn sm" id="regenBtn">Nouveau cycle avec Kai</button></div></div>`;
+    <div class="row2"><button class="btn sm" id="cycBtn">Lire le cycle</button><button class="btn sm" id="regenBtn">Nouveau cycle avec Kai</button></div></div>${promiseHtml()}${recoveryHtml()}`;
   PROGRAM.sessions.forEach(s=>{
     const open=s.id===PROG_OPEN; const n=s.exercises.length; const sets=s.exercises.reduce((t,ex)=>t+(rx(ex,wk).sets||0),0);
     const prio=s.exercises.filter(e=>e.star).map(e=>e.name).slice(0,2);

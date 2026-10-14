@@ -535,8 +535,15 @@ function planStructure(profile) {
   const banned = new Set(); const soft = new Set();
   (s.zones || []).forEach(z => (ZONE_RULES[z.zone] || []).forEach(pt => { if (z.sev === 'opere' || z.sev === 'douleur') banned.add(pt); else soft.add(pt); }));
   if (bodyOnly) ['kneeext', 'carry'].forEach(x => banned.add(x));
-  const refuse = s.refuse || []; const likes = s.likes || [];
+  const refuse = s.refuse || []; const likes = s.likes || []; const second = s.goalSecond || (p.goals || [])[1] || null;
+  const sports = (s.sports || []).map(x => String(x).toLowerCase()); const age = Number(p.age || s.age) || 0; const skills = s.skills || [];
   const maxEx = Math.max(4, Math.min(caps.exPerSession, Math.round(minutes / 10)));
+  // Objectif secondaire : un schéma supplémentaire ou prioritaire là où il ne gêne pas le principal.
+  const SECOND = { tractions: { add: 'vpull', where: /Tirage|Haut|Corps/ }, jambes: { add: 'lunge', where: /Jambes|Bas|Corps/ }, bras: { add: 'biceps', add2: 'triceps', where: /Poussée|Tirage|Haut|Corps/ }, fessiers: { add: 'hinge', where: /Jambes|Bas|Corps/ }, seche: { add: 'cond', where: /./ }, cardio: { add: 'cond', where: /./ }, endurance: { add: 'cond', where: /./ }, puissance: { add: 'carry', where: /Jambes|Bas|Corps/ }, silhouette: { add: 'latdelt', where: /Poussée|Haut|Corps/ } }[second] || null;
+  // Autres pratiques : on protège ce que le sport fatigue déjà.
+  const runner = sports.some(x => /course|trail|running|marathon/.test(x)); const climber = sports.some(x => /escalade|climb/.test(x)); const swimmer = sports.some(x => /natation|swim/.test(x)); const contact = sports.some(x => /rugby|sport co|football|arts martiaux|mma|judo/.test(x)); const cyclist = sports.some(x => /vélo|velo|cyclisme/.test(x));
+  if (climber) soft.add('vpull'); // les avant-bras et les coudes sont déjà chargés par la grimpe
+  if (swimmer) soft.add('vpush'); // épaules très sollicitées en natation
   const sessions = SPLITS[Math.max(2, Math.min(6, n))].map(([name, pats], i) => {
     let list = pats.map(pt => banned.has(pt) ? (ZONE_SUBS[pt] && !banned.has(ZONE_SUBS[pt]) ? ZONE_SUBS[pt] : null) : pt).filter(Boolean);
     list = list.filter((pt, k) => list.indexOf(pt) === k || pt === 'hpush' || pt === 'hpull');
@@ -544,15 +551,21 @@ function planStructure(profile) {
     if (likes.includes('circuits') && !list.includes('cond')) list.push('cond');
     if (likes.includes('tractions') && (name.includes('Tirage') || name.includes('Haut') || name.includes('Corps')) && !list.includes('vpull')) list.splice(1, 0, 'vpull');
     if (goal === 'corps' && !list.includes('vpull') && i % 2 === 0) list.splice(0, 0, 'vpull');
+    if (SECOND && SECOND.where.test(name)) {
+      if (SECOND.add === 'cond') { if (!refuse.includes('cardio') && !list.includes('cond')) list.push('cond'); }
+      else if (!banned.has(SECOND.add)) { if (list.includes(SECOND.add)) { const k = list.indexOf(SECOND.add); if (k > 1) { list.splice(k, 1); list.splice(1, 0, SECOND.add); } } else list.splice(Math.min(2, list.length), 0, SECOND.add); }
+      if (SECOND.add2 && !banned.has(SECOND.add2) && !list.includes(SECOND.add2)) list.push(SECOND.add2);
+    }
+    if ((runner || cyclist) && goal !== 'force' && goal !== 'masse') { const k = list.indexOf('lunge'); if (k > 0 && list.length > 4) list.splice(k, 1); } // jambes déjà très sollicitées : on retire l'unilatéral de volume
     if (list.length > maxEx) { const keepCond = list.includes('cond'); list = list.filter(x => x !== 'cond').slice(0, keepCond ? maxEx - 1 : maxEx); if (keepCond) list.push('cond'); }
     // jamais moins de 4 emplacements : on complète avec des schémas sûrs non exclus
     for (const extra of ['core', 'kneeflex', 'hinge', 'hpull', 'calf', 'carry', 'reardelt']) { if (list.length >= 4) break; if (!list.includes(extra) && !banned.has(extra)) list.push(extra); }
-    const slots = list.map((pt, k) => { const role = k === 0 ? 'main' : k === 1 ? 'second' : 'acc'; const d = dose(goal, role, level); return Object.assign({ pattern: pt, role, star: k < 2, soft: soft.has(pt) }, d); });
+    const slots = list.map((pt, k) => { const role = k === 0 ? 'main' : k === 1 ? 'second' : 'acc'; const d = dose(goal, role, level); if (age >= 50) { d.rir = d.rir.map(r => Math.max(r, 2)); d.restSec = Math.round(d.restSec * 1.15); } if (second === 'endurance' && role !== 'main') { d.reps = role === 'second' ? '12-15' : '15-20'; d.restSec = Math.min(d.restSec, 60); } return Object.assign({ pattern: pt, role, star: k < 2, soft: soft.has(pt) }, d); });
     // borne de volume par niveau
     let total = slots.reduce((a, x) => a + x.sets, 0); while (total > caps.setsPerSession) { const big = slots.reduce((m, x) => x.sets > m.sets ? x : m, slots[0]); if (big.sets <= 2) break; big.sets--; total--; }
     const dayIdx = days[i]; return { id: 's' + (i + 1), day: (dayIdx + 1) % 7, dayName: DAY_FR[dayIdx], name: goal === 'perte' ? name.replace('force', 'densité') : name, slots };
   });
-  return { goal, level, days, minutes, gym, bodyOnly, banned: [...banned], soft: [...soft], sessions, caps };
+  return { goal, second, level, days, minutes, gym, bodyOnly, banned: [...banned], soft: [...soft], sessions, caps, age, skills, sports, flags: { runner, climber, swimmer, contact, cyclist } };
 }
 // Rendu du programme déjà construit pour le coach : il rédige, il ne choisit pas. Les exercices viennent de la bibliothèque.
 function skeletonText(plan, profile) {
@@ -574,10 +587,64 @@ function programFromPlan(plan, profile, startISO) {
     return { id: se.id, day: se.day, dayName: se.dayName, name: se.name, sub: exercises.slice(0, 2).map(x => x.target.split(',')[0]).join(', '), duration: plan.minutes + ' min', place: '', gtg: false, note: '', exercises };
   });
   prog.demos = demos; prog.demosAt = Date.now();
+  prog.promise = buildPromise(plan, profile); prog.recovery = buildRecovery(plan, profile); prog.nutritionBase = buildNutrition(plan, profile);
   prog.engine = { v: 2, goal: plan.goal, banned: plan.banned, soft: plan.soft, notes: plan.selectionNotes || [], gear: plan.gearList || [] };
   prog.rationale = `Pour ${(profile || {}).name || 'toi'} : ${plan.days.length} séances de ${plan.minutes} minutes, objectif ${({ force: 'force', masse: 'prise de muscle', perte: 'perte de gras en gardant le muscle', sante: 'santé et mobilité', perf: 'performance', corps: 'poids du corps' }[plan.goal] || plan.goal)}, niveau ${plan.level}. La structure, les séries, les répétitions, le RIR et les repos sont réglés par les règles à partir de ta fiche ; chaque exercice est choisi dans la bibliothèque pour ton matériel et tes zones à ménager.`;
-  prog.nutrition = ''; prog.warmup = null;
+  prog.nutrition = prog.nutritionBase.text; prog.warmup = null;
   return applyGuardrails(prog, profile);
+}
+/* Promesse : l'objectif devient une mesure, une cible et une échéance (3 cycles, 12 semaines), avec des jalons par cycle.
+   La valeur de départ est mesurée dans l'app (tests, charges, poids) : le programme dit quoi mesurer et quand. */
+function buildPromise(plan, profile) {
+  const p = profile || {}; const sp = p.spec || {}; const g = plan.goal; const second = plan.second;
+  const P = {
+    force: { metric: 'e1rm', label: 'Charges sur tes exercices principaux', target: '+10 %', unit: '%', steps: [3, 6, 10], measure: 'les charges notées sur les exercices prioritaires (estimation de ton maximum)', promise: 'Dans 12 semaines tu soulèves 10 % de plus sur tes mouvements principaux, à technique propre.' },
+    masse: { metric: 'bw', label: 'Poids de corps et charges', target: '+2 kg', unit: 'kg', steps: [0.7, 1.4, 2], measure: 'ton poids chaque semaine à jeun, et les charges sur les exercices prioritaires', promise: 'Dans 12 semaines, +2 kg sur la balance avec des charges en hausse sur tous les mouvements prioritaires : du muscle, pas du gras.' },
+    perte: { metric: 'bw', label: 'Poids de corps, force conservée', target: '−4 %', unit: '%', steps: [-1.5, -3, -4], measure: 'ton poids chaque semaine à jeun ; les charges ne doivent pas baisser', promise: 'Dans 12 semaines, −4 % sur la balance sans perdre un kilo sur la barre.' },
+    sante: { metric: 'adherence', label: 'Séances faites sans douleur', target: '90 %', unit: '%', steps: [80, 85, 90], measure: 'les séances terminées et tes notes de douleur après chaque séance', promise: 'Dans 12 semaines, tu t\'entraînes sans douleur, avec plus d\'amplitude et plus de charge qu\'aujourd\'hui.' },
+    perf: { metric: 'e1rm', label: 'Force et puissance', target: '+10 %', unit: '%', steps: [3, 6, 10], measure: 'les charges sur les prioritaires et ton test de tractions', promise: 'Dans 12 semaines, +10 % de charge sur les prioritaires et plus de répétitions au test.' },
+    corps: { metric: 'pull', label: 'Tractions strictes d\'affilée', target: '+30 %', unit: '%', steps: [10, 20, 30], measure: 'ton test de tractions maximum, une fois par cycle, reposé', promise: 'Dans 12 semaines, 30 % de tractions en plus d\'affilée, strictes.' }
+  }[g] || null;
+  if (!P) return null;
+  const out = Object.assign({ goal: g, weeks: 12, cycles: 3, checkpoints: ['fin de cycle 1', 'fin de cycle 2', 'fin de cycle 3'] }, P);
+  if (second === 'tractions' && g !== 'corps') out.secondary = { metric: 'pull', label: 'Tractions d\'affilée', target: '+25 %', measure: 'test de tractions à chaque fin de cycle' };
+  if (second === 'jambes') out.secondary = { metric: 'e1rm_legs', label: 'Charges jambes', target: '+12 %', measure: 'charges sur le squat, la presse ou le soulevé de terre' };
+  if (second === 'bras') out.secondary = { metric: 'arm', label: 'Bras', target: '+1 cm de tour de bras', measure: 'tour de bras contracté, même endroit, chaque fin de cycle' };
+  if (second === 'seche') out.secondary = { metric: 'bw', label: 'Sécher', target: '−2 %', measure: 'poids hebdomadaire à jeun' };
+  if (second === 'endurance' || second === 'cardio') out.secondary = { metric: 'cond', label: 'Souffle', target: 'finisher complété à chaque séance', measure: 'temps ou tours du finisher noté dans la séance' };
+  out.baselineRule = 'Semaine 1 = calibrage : tout noter, ce sont tes valeurs de départ. Le coach compare à chaque fin de cycle et ajuste le cycle suivant.';
+  return out;
+}
+/* Récupération : chaque jour sans séance reçoit un protocole selon ce qui a été entraîné la veille et ce qui vient. */
+function buildRecovery(plan, profile) {
+  const p = profile || {}; const age = plan.age || 0; const sleep = age >= 45 ? '7 h 30 à 8 h 30' : '7 h 30 à 9 h';
+  const byDay = {}; plan.sessions.forEach(se => { byDay[se.day] = se; });
+  const muscles = se => { const pats = se.slots.map(sl => sl.usedPattern || sl.pattern); const legs = pats.some(x => ['squat', 'hinge', 'lunge', 'kneeflex', 'kneeext', 'calf'].includes(x)); const upper = pats.some(x => ['hpush', 'vpush', 'hpull', 'vpull', 'latdelt', 'reardelt', 'biceps', 'triceps'].includes(x)); return legs && upper ? 'corps entier' : legs ? 'jambes' : 'haut du corps'; };
+  const days = [];
+  for (let d = 0; d < 7; d++) {
+    if (byDay[d]) continue;
+    const prev = byDay[(d + 6) % 7] || byDay[(d + 5) % 7] || null; const next = byDay[(d + 1) % 7] || null;
+    const pm = prev ? muscles(prev) : null; const nm = next ? muscles(next) : null;
+    const items = [];
+    if (pm === 'jambes' || pm === 'corps entier') items.push('20 à 30 min de marche rapide ou de vélo très facile : tu dois pouvoir parler sans effort. Ça draine les jambes sans les fatiguer.', 'Rouleau de massage 8 min : quadriceps, fessiers, mollets, 60 s par zone, lentement.', 'Mobilité hanches 5 min : fente basse tenue 45 s par côté, 90/90 au sol.');
+    else if (pm === 'haut du corps') items.push('15 à 20 min de cardio très facile au choix, ou une marche.', 'Rouleau ou balle 6 min : grand dorsal, pectoraux, haut du dos.', 'Mobilité épaules 5 min : passages de bâton, rotations externes à vide, suspension passive 2 × 30 s si tu as une barre.');
+    else items.push('Jour libre : une marche de 30 min et 10 min de mobilité globale suffisent.');
+    if (nm === 'jambes' || nm === 'corps entier') items.push('Demain c\'est jambes : repas du soir riche en glucides lents, coucher tôt.');
+    if (nm === 'haut du corps') items.push('Demain haut du corps : rien de spécial, garde les épaules au chaud.');
+    items.push(`Sommeil : ${sleep}, heure de coucher stable. C\'est là que le muscle se construit.`);
+    days.push({ day: d, dayName: DAY_FR[(d + 6) % 7], after: pm, before: nm, items });
+  }
+  return { sleep, rules: ['Deux séances sans sommeil correct : on réduit la séance suivante de 20 % (le coach le fait avec toi).', 'Douleur articulaire qui dure plus de 48 h : tu le dis dans la séance, l\'exercice est remplacé.', 'Massage ou sauna : après les grosses séances, jamais juste avant.'], days };
+}
+/* Nutrition déterministe (Mifflin-St Jeor × activité, ajustée à l\'objectif) : toujours présente, le coach la personnalise par-dessus. */
+function buildNutrition(plan, profile) {
+  const p = profile || {}; const sp = p.spec || {}; const w = Number(p.weight || sp.weight) || 0, h = Number(p.height || sp.height) || 0, a = Number(p.age || sp.age) || 35; const f = (p.sex || sp.sex) === 'f';
+  if (!w || !h) return { text: 'Renseigne ton poids et ta taille dans ton profil pour obtenir tes cibles.', kcal: null };
+  const bmr = 10 * w + 6.25 * h - 5 * a + (f ? -161 : 5); const act = 1.35 + 0.05 * plan.days.length; let kcal = Math.round(bmr * act / 10) * 10;
+  const g = plan.goal; const adj = { masse: 250, force: 150, perte: -400, sante: 0, perf: 100, corps: 0 }[g] || 0; if (plan.second === 'seche') kcal -= 200;
+  kcal += adj; const prot = Math.round(w * (g === 'perte' ? 2.2 : 1.9)); const fat = Math.round(w * 0.9); const carb = Math.max(100, Math.round((kcal - prot * 4 - fat * 9) / 4));
+  const text = `Cible : ${kcal} kcal par jour (${adj > 0 ? 'léger surplus' : adj < 0 ? 'déficit modéré' : 'maintien'}), ${prot} g de protéines (environ ${Math.round(prot / 4)} g par repas sur 4 repas), ${carb} g de glucides placés autour des séances, ${fat} g de lipides. Pèse-toi une fois par semaine à jeun : si le poids ne bouge pas dans le sens voulu sur deux semaines, ajuste de 150 kcal.`;
+  return { text, kcal, prot, carb, fat };
 }
 // Fusion des textes du coach (rationale, nutrition, warmup, notes par exercice) dans le programme construit. Rien d'autre ne bouge.
 function mergeCoachTexts(prog, parsed) {

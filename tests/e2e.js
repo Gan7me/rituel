@@ -223,6 +223,8 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   assert((await p.$$('.pses.is-open .prow')).length >= 3, 'séance du jour dépliée');
   await p.evaluate(() => document.querySelector('.pses:not(.is-open) [data-toggle]').click()); await sleep(100);
   assert((await p.$$('.pses.is-open')).length === 1, 'une seule séance dépliée à la fois');
+  assert(await p.evaluate(() => { const el = document.querySelector('#tab-programme .promise'); return !!el && el.textContent.includes('Ta promesse') && el.textContent.includes('+2 kg'); }), 'programme : la promesse (mesure, cible, jalons) est affichée');
+  assert(await p.evaluate(() => { const el = document.querySelector('#tab-programme .recov'); return !!el && /Marche 30 min|Cardio facile/.test(el.textContent); }), 'programme : protocole de récupération du jour sans séance');
   await p.evaluate(() => document.querySelector('[data-wk="3"]').click()); await sleep(150);
   assert(await p.evaluate(() => document.querySelector('[data-wk="3"]').getAttribute('aria-pressed') === 'true' && !!document.querySelector('#wkAuto') && curWeek() === 3), 'semaine 3 activée depuis Programme');
   await p.click('.tabs button[data-tab="seance"]'); await sleep(200);
