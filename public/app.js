@@ -18,7 +18,7 @@ function humanErr(e){ const c=(e&&e.code)||''; const m=(e&&e.message)||String(e|
   if(/network|Failed to fetch|internet/i.test(m)||!navigator.onLine) return 'Pas de réseau. Le coach a besoin d\'une connexion ; tes séries sont enregistrées et partiront toutes seules.';
   if(/invalid-argument/.test(c)) return 'Le serveur n\'a pas compris la demande (version de l\'app en retard ?). Recharge l\'application depuis Réglages.';
   return m; }
-const APP_VERSION='3.39.0';
+const APP_VERSION='3.40.0';
 const ADMIN_RE=/^(ganeme\.asloune@nexisafe\.com|gads@live\.fr)$/i;
 let PROGRAM={sessions:[]};
 let WEEKS = [
@@ -50,8 +50,9 @@ window.addEventListener('message',onNativeMessage); document.addEventListener('m
 
 /* ---------- state ---------- */
 const KEY='rituel.v1';
-let S = {logs:{}, bw:{}, tests:{}, chats:{}, overrides:{}, weekOverride:null, session:null, wake:true, openEx:null, health:false, healthAt:0};
+let S = {logs:{}, bw:{}, tests:{}, chats:{}, checkins:{}, overrides:{}, weekOverride:null, session:null, wake:true, openEx:null, health:false, healthAt:0};
 try{ const raw=localStorage.getItem(KEY); if(raw) S=Object.assign(S,JSON.parse(raw)); }catch(e){}
+for(const k of ['logs','bw','tests','chats','checkins','overrides']){ if(!S[k]||typeof S[k]!=='object') S[k]={}; }
 // Pas de zoom pince ni double-tap : la mise en page de l'app n'est jamais agrandie par accident.
 ['gesturestart','gesturechange','gestureend'].forEach(ev=>document.addEventListener(ev,e=>e.preventDefault(),{passive:false}));
 let LAST_TOUCH=0; document.addEventListener('touchend',e=>{ const now=Date.now(); if(now-LAST_TOUCH<300&&!e.target.closest('button,a,input,textarea,select,label,[role=button],.dot,.go')) e.preventDefault(); LAST_TOUCH=now; },{passive:false});
@@ -82,7 +83,9 @@ function rx(ex, wk, log){ // prescription for a week (cycle de 3 à 6 semaines, 
   let sets=ex.sets; if(ex.star&&wk>1&&!last) sets+=1; if(last) sets=ex.s4sets||Math.max(1,Math.round(ex.sets*0.6));
   let rir=null; if(ex.rir){ rir=last?ex.rir[ex.rir.length-1]:ex.rir[Math.min(wk-1,Math.max(0,ex.rir.length-2))]; }
   if(day&&day.fatigue){ sets=Math.max(1,sets-1); if(rir!=null) rir=Math.min(4,rir+1); }
-  return {sets, reps:ex.reps, rir, rest:ex.restSec, restText:ex.restText, adapted:!!(day&&day.fatigue)};
+  // point hebdomadaire : une semaine allégée réduit les séries et remonte le RIR sur toutes les séances de la semaine
+  const wm=weekMod(wk); if(wm&&!last){ if(wm.sets&&wm.sets!==1) sets=Math.max(1,Math.round(sets*wm.sets)); if(wm.rir&&rir!=null) rir=Math.min(4,Math.max(0,rir+wm.rir)); }
+  return {sets, reps:ex.reps, rir, rest:ex.restSec, restText:ex.restText, adapted:!!(day&&day.fatigue)||!!(wm&&wm.sets&&wm.sets!==1), weekMod:wm||null};
 }
 function logKey(date,sid){ return date+'_'+sid; }
 function getLog(date,sid){ const k=logKey(date,sid); if(!S.logs[k]) S.logs[k]={date,session:sid,week:weekFor(date),sets:{},gtg:[false,false,false],notes:'',done:false,updatedAt:0}; return S.logs[k]; }
@@ -149,14 +152,14 @@ async function onAuth(){
     applyingRemote=false; if(changed){ save(); render(); }
     setSync(snap.metadata.hasPendingWrites?'pend':'on', snap.metadata.hasPendingWrites?'à sync':'sync ok');
   }, err=>{ console.warn(name,err); logErr('listen '+name,err); setSync('pend','sync erreur'); }));
-  listen('logs','logs'); listen('bw','bw'); listen('tests','tests'); listen('chats','chats');
+  listen('logs','logs'); listen('bw','bw'); listen('tests','tests'); listen('chats','chats'); listen('checkins','checkins');
   unsubs.push(col('coach').orderBy('createdAt','desc').limit(30).onSnapshot(snap=>{ COACH.items=snap.docs.map(d=>({id:d.id,...d.data()})); renderCoach(); if(PROGRAM_LOADED) renderHome(); }));
   unsubs.push(col('overrides').onSnapshot(snap=>{ S.overrides={}; snap.docs.forEach(d=>S.overrides[d.id]=d.data()); save(); if(PROGRAM_LOADED) renderSeance(); }));
   renderReglages();
 }
 async function pushLocalToRemote(){
   const batchWrites=[];
-  for(const [name,key] of [['logs','logs'],['bw','bw'],['tests','tests'],['chats','chats']]){
+  for(const [name,key] of [['logs','logs'],['bw','bw'],['tests','tests'],['chats','chats'],['checkins','checkins']]){
     for(const id in S[key]){ const local=S[key][id]; if(!local||!local.updatedAt) continue;
       batchWrites.push(async()=>{ const ref=col(name).doc(id); const snap=await ref.get({source:'server'}).catch(()=>ref.get()); const remote=snap.exists?snap.data():null;
         if(!remote||(local.updatedAt||0)>(remote.updatedAt||0)) await ref.set(JSON.parse(JSON.stringify(local))); });
@@ -170,8 +173,8 @@ function writeDoc(name,id,data){ if(!USER||!fbDb||applyingRemote) return; col(na
 function setSync(cls,txt){ const c=$('#syncChip'); c.className='chip sync '+cls; c.textContent=cls==='on'?'':txt; c.title=txt; c.hidden=cls==='on'; }
 function syncStatusIdle(){ if(!USER) return setSync('off','local'); setSync(navigator.onLine?'on':'pend', navigator.onLine?'sync ok':'hors ligne'); document.body.classList.toggle('offline',!navigator.onLine); }
 function markDirty(){ save(); }
-function mergeInto(local, remote){ let changed=false; for(const c of ['logs','bw','tests','chats']){ const L=local[c]||(local[c]={}), R=(remote&&remote[c])||{}; for(const k in R){ if(!L[k]||(R[k].updatedAt||0)>(L[k].updatedAt||0)){ L[k]=R[k]; changed=true; writeDoc(c,k,R[k]); } } } return changed; }
-function snapshot(){ return {version:1, exportedAt:new Date().toISOString(), logs:S.logs, bw:S.bw, tests:S.tests}; }
+function mergeInto(local, remote){ let changed=false; for(const c of ['logs','bw','tests','chats','checkins']){ const L=local[c]||(local[c]={}), R=(remote&&remote[c])||{}; for(const k in R){ if(!L[k]||(R[k].updatedAt||0)>(L[k].updatedAt||0)){ L[k]=R[k]; changed=true; writeDoc(c,k,R[k]); } } } return changed; }
+function snapshot(){ return {version:1, exportedAt:new Date().toISOString(), logs:S.logs, bw:S.bw, tests:S.tests, checkins:S.checkins||{}}; }
 window.addEventListener('online',syncStatusIdle); window.addEventListener('offline',syncStatusIdle);
 $('#syncChip').onclick=()=>{};
 
@@ -1063,6 +1066,22 @@ function showBadgeDetail(b){
 }
 
 /* ---------- Aujourd'hui ---------- */
+// Point hebdomadaire : sommeil, fatigue, courbatures, motivation (1 à 5) + poids. Un score de forme module la semaine entière.
+function weekMod(wk){ const W=WEEKS[wk-1]; if(!W||!W.from) return null; const c=(S.checkins||{})[W.from]; return c&&c.mod?c.mod:null; }
+function checkinFor(weekKey){ return (S.checkins||{})[weekKey]||null; }
+function checkinDue(){ const wkKey=weekKeyOf(todayISO()); if(!PROGRAM.sessions.length) return false; if(checkinFor(wkKey)) return false; const first=WEEKS[0]&&WEEKS[0].from; if(first&&wkKey<first) return false; return true; }
+function readinessOf(c){ return Math.round(((c.sleep||3)+(6-(c.fatigue||3))+(6-(c.soreness||3))+(c.motivation||3))/4*10)/10; }
+function modFor(r,c){ if(r<2.6||(c.sleep<=2&&c.fatigue>=4)) return {sets:0.8,rir:1,label:'semaine allégée',why:'forme basse au point du lundi : −20 % de séries, RIR +1, on protège la progression'}; if(r<3.2) return {sets:0.9,rir:0,label:'semaine prudente',why:'forme moyenne : −10 % de séries, charges inchangées'}; return {sets:1,rir:0,label:'semaine normale',why:r>=4.2?'forme haute : on garde le plan, pousse les charges quand le haut de fourchette est atteint':'forme correcte : plan normal'}; }
+function checkinHtml(){
+  if(!checkinDue()) return '';
+  const q=[['sleep','Sommeil cette semaine','Mauvais','Excellent'],['fatigue','Fatigue générale','Aucune','Épuisé'],['soreness','Courbatures, raideurs','Aucune','Partout'],['motivation','Envie de t\'entraîner','Zéro','À fond']];
+  return `<div class="card checkin" id="checkin"><div class="eyebrow">Point du lundi · 30 secondes</div><p class="small muted">Comme un coach qui te regarde arriver : ce que tu réponds règle la semaine entière.</p>${q.map(([k,l,a,b])=>`<div class="ckq"><b>${l}</b><div class="ckscale" data-k="${k}">${[1,2,3,4,5].map(v=>`<button type="button" data-v="${v}" aria-pressed="${v===3}">${v}</button>`).join('')}</div><span class="small muted">${a} → ${b}</span></div>`).join('')}<div class="ckq"><b>Poids ce matin (kg, facultatif)</b><input type="number" step="0.1" min="30" max="250" id="ckBw" inputmode="decimal"></div><button class="btn fill sm" id="ckSave">Valider le point</button></div>`;
+}
+function bindCheckin(){
+  const el=$('#checkin'); if(!el) return;
+  el.querySelectorAll('.ckscale button').forEach(b=>b.onclick=()=>{ b.parentElement.querySelectorAll('button').forEach(x=>x.setAttribute('aria-pressed',x===b)); });
+  $('#ckSave').onclick=()=>{ const c={weekKey:weekKeyOf(todayISO()),date:todayISO(),updatedAt:Date.now()}; el.querySelectorAll('.ckscale').forEach(sc=>{ const on=sc.querySelector('[aria-pressed="true"]'); c[sc.dataset.k]=on?Number(on.dataset.v):3; }); const bw=parseFloat($('#ckBw').value); if(bw>30){ S.bw[c.date]={date:c.date,kg:bw,updatedAt:Date.now()}; writeDoc('bw',c.date,S.bw[c.date]); c.bw=bw; } c.readiness=readinessOf(c); c.mod=modFor(c.readiness,c); S.checkins=S.checkins||{}; S.checkins[c.weekKey]=c; save(); writeDoc('checkins',c.weekKey,c); toast(c.mod.label.charAt(0).toUpperCase()+c.mod.label.slice(1)+' : '+c.mod.why,'ok',6000); render(); };
+}
 function renderHome(){
   const el=$('#tab-home'); if(!el||!PROGRAM.sessions.length) return;
   const date=todayISO(), wk=curWeek(), W=WEEKS[wk-1]; const ses=curSession(); const log=S.logs[logKey(date,ses.id)];
@@ -1076,6 +1095,8 @@ function renderHome(){
   const over=cycleOver(); const af=progressFacts(); const newB=af.unlocked.filter(id=>!(S.badgesSeen||[]).includes(id)); const SK=dayStreak();
   let h=`<div class="hello"><div><p class="eyebrow">${esc(dayLabel)}</p><h2>${esc(hello)}${name?' '+esc(name):''}</h2><p class="streak ${SK.today==='due'?'due':''} ${SK.days?'':'zero'}"><i>🔥</i>${SK.days?`${SK.days} jour${SK.days>1?'s':''} d'affilée${SK.today==='due'?' · séance du jour à faire':''}`:'Commence ta série aujourd\'hui'}</p></div><button class="avbtn ${newB.length?'new':''}" id="homeAvatar" aria-label="Mes badges">${rankSvg(af.stage,44)}</button></div>`;
   if(over) h+=`<div class="card cycend"><div class="card-h"><b>Cycle terminé</b><span class="muted">${fmtD(WEEKS[WEEKS.length-1].to)}</span></div><p>Les ${WEEKS.length} semaines de « ${esc(String(PROGRAM.cycleName||'').split(' · ')[0])} » sont faites. Kai construit le suivant à partir de ton journal.</p><div class="row2"><button class="btn fill sm" id="homeNewCycle">Nouveau cycle avec Kai</button></div></div>`;
+  if(!over) h+=checkinHtml();
+  { const wm=weekMod(wk); if(wm&&wm.sets!==1) h+=`<div class="banner info">${esc(wm.label.charAt(0).toUpperCase()+wm.label.slice(1))} : ${esc(wm.why)}.</div>`; }
   // carte séance du jour
   h+=`<div class="today ${done?'done':''}"><div class="t-top"><span class="eyebrow">${isRest&&!started&&!done?'Pas de séance prévue':'Séance du jour'} · S${wk} ${esc(String(W.label||'').replace(/^S\d+\s*/,''))}</span>${sub?'<span class="tag">sans salle</span>':''}</div>
     <div class="t-name">${esc(sub?sub.name:ses.name)}</div><div class="t-meta">${esc(ses.sub)} · ${exs.length} exercices · ${esc(ses.duration||'')}</div>
@@ -1112,7 +1133,7 @@ function renderHome(){
   const nextS=[1,2,3,4,5,6,7].map(i=>{ const d=(new Date().getDay()+i)%7; return PROGRAM.sessions.find(x=>x.day===d); }).find(Boolean);
   if(nextS&&nextS.id!==ses.id) h+=`<p class="small muted center">Prochaine : ${esc(nextS.dayName)} · ${esc(nextS.name)}</p>`;
   if(isGenericProgram()) h=builtForHtml()+h;
-  el.innerHTML=h; const hg=$('#genericBtn',el); if(hg) hg.onclick=()=>{ showTab('programme'); regenerateProgram(true); };
+  el.innerHTML=h; bindCheckin(); const hg=$('#genericBtn',el); if(hg) hg.onclick=()=>{ showTab('programme'); regenerateProgram(true); };
   const go=()=>{ S.session=ses.id; S.sessionDate=todayISO(); save(); showTab('seance'); };
   const st=$('#homeStart'); if(st) st.onclick=()=>{ S.session=ses.id; S.sessionDate=todayISO(); save(); showTab('seance'); enterFocus(); };
   const op=$('#homeOpen'); if(op) op.onclick=go;
@@ -1228,7 +1249,7 @@ function showSheet(html){ let s=$('#sheet'); if(!s){ s=document.createElement('d
     card.addEventListener('touchend',()=>{ if(y0==null) return; card.style.transition=''; if(drag&&dy>90){ card.style.transform=''; hideSheet(); } else card.style.transform=''; y0=null; drag=false; },{passive:true}); } s.querySelector('.sheet-body').innerHTML=html; s.classList.add('on'); document.body.style.overflow='hidden'; return s; }
 function hideSheet(){ const s=$('#sheet'); if(s){ s.classList.remove('on'); s.classList.remove('tall'); const c=s.querySelector('.sheet-card'); if(c){ c.style.bottom=''; c.style.maxHeight=''; } document.body.style.overflow=''; } COACH.chatOpen=false; }
 function showLex(key){ const l=LEX[key]; if(!l) return; showSheet(`<h3>${esc(l[0])}</h3><p>${esc(l[1])}</p><button class="btn" onclick="hideSheet()">Compris</button>`); }
-let toastT=0; function toast(msg,cls){ let t=$('#toast'); if(!t){ t=document.createElement('div'); t.id='toast'; document.body.appendChild(t); } t.textContent=msg; t.className='on '+(cls||''); clearTimeout(toastT); toastT=setTimeout(()=>t.className='',1800); }
+let toastT=0; function toast(msg,cls,ms){ let t=$('#toast'); if(!t){ t=document.createElement('div'); t.id='toast'; document.body.appendChild(t); } t.textContent=msg; t.className='on '+(cls||''); clearTimeout(toastT); toastT=setTimeout(()=>t.className='',ms||1800); }
 function rirLabel(v){ return v==null?'':v>=3?'F':v>=1?'J':'É'; }
 
 
@@ -1626,7 +1647,7 @@ document.addEventListener('pointerdown',()=>{ if(window.Notification&&Notificati
 
 /* ---------- démarrage ---------- */
 async function boot(){
-  if(!Object.keys(S.logs).length){ const j=await idbGet(); if(j){ try{ const d=JSON.parse(j); if(Object.keys(d.logs||{}).length) S=Object.assign(S,d); }catch(e){} } }
+  if(!Object.keys(S.logs).length){ const j=await idbGet(); if(j){ try{ const d=JSON.parse(j); if(Object.keys(d.logs||{}).length) S=Object.assign(S,d); for(const k of ['logs','bw','tests','chats','checkins','overrides']){ if(!S[k]||typeof S[k]!=='object') S[k]={}; } }catch(e){} } }
   applyTheme(); try{ matchMedia('(prefers-color-scheme: dark)').addEventListener('change',applyTheme); }catch(e){}
   DEFAULT_PROGRAM=null; DEFAULT_CYCLE_HTML=''; // aucun programme embarqué : chaque compte reçoit uniquement le cycle construit pour lui
   if(!window.firebase){ $('#tab-seance').innerHTML='<p>Connexion au service impossible. Ouvre l\'application avec du réseau une première fois.</p>'; return; }

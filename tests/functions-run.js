@@ -106,6 +106,13 @@ const call = (uid, data) => fns.coach({ auth: { uid }, data });
   const bilan = Object.entries(store).find(([k, v]) => k.startsWith(`users/${uid}/coach/week-`));
   assert(bilan && (bilan[1].type === 'bilan' || bilan[1].type === 'cycleEnd'), 'bilan généré pour la semaine');
 
+  console.log('Bilan de cycle → cycle suivant');
+  store[`users/${uid}/checkins/2026-10-19`] = { weekKey: '2026-10-19', sleep: 2, fatigue: 4, soreness: 4, motivation: 3, readiness: 2.3, updatedAt: 1 };
+  const rc = await call(uid, { mode: 'program' }); const pc = store[`users/${uid}/meta/program`];
+  assert(rc && rc.ok && pc.cycleReview && pc.cycleReview.done >= 1 && /Cycle précédent/.test(pc.cycleReview.summary), 'le nouveau cycle part du bilan mesuré (séances faites, charges, forme)');
+  assert(pc.cycleReview.adjust && (pc.cycleReview.adjust.volume < 1 || pc.cycleReview.adjust.rir > 0 || pc.cycleReview.adjust.reasons.length), 'bilan : réglages déduits de l\'état réel');
+  assert(/Mésocycle 2/.test(pc.cycleName), 'numéro de cycle incrémenté');
+
   console.log('Deuxième utilisateur isolé');
   const uid2 = 'user_test_2';
   store[`users/${uid2}/meta/profile`] = { name: 'Deux', age: 50, height: 170, weight: 80, level: 'debutant', goals: ['sante'], days: 2, minutes: 45, gear: ['halteres'] };

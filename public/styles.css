@@ -1225,3 +1225,8 @@ main>section{overflow-x:clip}
 .pm-row{display:flex;gap:16px;margin-bottom:10px}.pm-row span{display:flex;flex-direction:column}.pm-row small{opacity:.65;font-size:.78em}.pm-row b{font-size:1.15em}
 .pm-steps{display:flex;gap:6px;margin-bottom:8px}.pm-step{flex:1;text-align:center;padding:6px 4px;border-radius:9px;background:rgba(255,255,255,.05);font-size:.85em}.pm-step b{display:block;font-size:.75em;opacity:.7}.pm-step.now{outline:2px solid var(--accent,#ff5a4a)}.pm-step.done{opacity:.55;text-decoration:line-through}
 .recov ul{padding-left:18px;margin:6px 0}.recov li{margin:4px 0}.recov summary{cursor:pointer;opacity:.8}
+
+/* Point du lundi */
+.checkin .ckq{margin:10px 0}.checkin .ckq b{display:block;margin-bottom:4px}
+.ckscale{display:flex;gap:6px;margin:4px 0}.ckscale button{flex:1;padding:8px 0;border-radius:9px;border:1px solid var(--line,#232a36);background:rgba(255,255,255,.04);color:inherit;font-weight:600}.ckscale button[aria-pressed="true"]{background:var(--accent,#ff5a4a);border-color:var(--accent,#ff5a4a);color:#fff}
+.checkin input{width:120px}

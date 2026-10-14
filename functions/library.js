@@ -75,6 +75,8 @@ function score(e, ctx) {
   if (soft.some(z => (e.zones || []).includes(z))) s -= 12; // zone fragile : on préfère un exercice qui ne la charge pas
   if (usedWeek.has(e.id)) s -= role === 'main' ? 6 : 9; // variété dans la semaine, un principal peut revenir
   if (usedSession.has(e.id)) s -= 100; // jamais deux fois dans la même séance
+  if ((ctx.favor || []).includes(e.id)) s += 12; // a progressé au cycle précédent : on garde
+  if ((ctx.avoid || []).includes(e.id)) s -= 30; // a stagné en principal : nouveau stimulus
   s += hash(seed + e.id) * 5; // départage stable
   return s;
 }
@@ -115,7 +117,7 @@ function selectExercises(plan, profile, seedStr) {
       for (const pat of chain) {
         const cands = EXERCISES.filter(e => e.pattern === pat && okFor(e) && !usedSession.has(e.id));
         if (!cands.length) continue;
-        const ctx = { role: sl.role, goal: plan.goal, level: plan.level, likes, soft, usedWeek, usedSession, seed, gym, second: plan.second || null, skills: plan.skills || sp.skills || [], age: plan.age || Number(p.age) || 0, flags: plan.flags || {} };
+        const ctx = { role: sl.role, goal: plan.goal, level: plan.level, likes, soft, usedWeek, usedSession, seed, gym, second: plan.second || null, skills: plan.skills || sp.skills || [], age: plan.age || Number(p.age) || 0, flags: plan.flags || {}, favor: plan.favor || [], avoid: plan.avoid || [] };
         cands.sort((a, b) => score(b, ctx) - score(a, ctx));
         picked = cands[0]; alt = cands.find(c => c.id !== picked.id && !usedSession.has(c.id)) || null; usedPattern = pat; break;
       }

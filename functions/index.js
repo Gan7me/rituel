@@ -526,14 +526,14 @@ function dose(goal, role, level) {
   const rir = beginner ? [3, 3, 2, 4] : role === 'acc' ? [3, 2, 1, 4] : [3, 2, 1, 4];
   return { sets, reps, restSec: rest, tempo, rir, rule: role === 'main' ? 'Exercice principal : charge qui monte quand le haut de fourchette est atteint sur toutes les séries au RIR prévu.' : role === 'second' ? 'Second mouvement : volume, +1 rep avant +2,5 %.' : 'Isolation : on cherche la fatigue locale, RIR plus bas en fin de cycle.' };
 }
-function planStructure(profile) {
-  const p = profile || {}; const s = p.spec || {}; const gear = p.gear || []; const gym = gear.includes('salle'); const bodyOnly = !gym && (gear.length === 0 || gear.every(g => g === 'corps' || g === 'cardio'));
+function planStructure(profile, adjust) {
+  const adj = adjust || {}; const p = profile || {}; const s = p.spec || {}; const gear = p.gear || []; const gym = gear.includes('salle'); const bodyOnly = !gym && (gear.length === 0 || gear.every(g => g === 'corps' || g === 'cardio'));
   const goal = s.goalMain || ({ force: 'force', masse: 'masse', perte: 'perte', seche: 'perte', sante: 'sante', perf: 'perf', tractions: 'corps', puissance: 'perf', endurance: 'perf', cardio: 'perte', fessiers: 'masse', silhouette: 'masse', bras: 'masse', jambes: 'force' }[(p.goals || [])[0]] || 'masse');
   const days = (Array.isArray(s.daysList) && s.daysList.length) ? s.daysList.slice().sort((a, b) => a - b) : [[0, 2], [0, 2, 4], [0, 2, 4, 5], [0, 1, 3, 4, 5], [0, 1, 2, 3, 4, 5]][Math.max(2, Math.min(6, Number(p.days) || 3)) - 2];
-  const n = days.length; const minutes = Number(p.minutes) || 60; const level = p.level || 'intermediaire';
+  const n = days.length; const minutes = Number(p.minutes) || 60; const level = adj.level || p.level || 'intermediaire';
   const caps = LEVEL_CAPS[level] || LEVEL_CAPS.intermediaire;
   const banned = new Set(); const soft = new Set();
-  (s.zones || []).forEach(z => (ZONE_RULES[z.zone] || []).forEach(pt => { if (z.sev === 'opere' || z.sev === 'douleur') banned.add(pt); else soft.add(pt); }));
+  (s.zones || []).concat(adj.zones || []).forEach(z => (ZONE_RULES[z.zone] || []).forEach(pt => { if (z.sev === 'opere' || z.sev === 'douleur') banned.add(pt); else soft.add(pt); }));
   if (bodyOnly) ['kneeext', 'carry'].forEach(x => banned.add(x));
   const refuse = s.refuse || []; const likes = s.likes || []; const second = s.goalSecond || (p.goals || [])[1] || null;
   const sports = (s.sports || []).map(x => String(x).toLowerCase()); const age = Number(p.age || s.age) || 0; const skills = s.skills || [];
@@ -560,12 +560,12 @@ function planStructure(profile) {
     if (list.length > maxEx) { const keepCond = list.includes('cond'); list = list.filter(x => x !== 'cond').slice(0, keepCond ? maxEx - 1 : maxEx); if (keepCond) list.push('cond'); }
     // jamais moins de 4 emplacements : on complète avec des schémas sûrs non exclus
     for (const extra of ['core', 'kneeflex', 'hinge', 'hpull', 'calf', 'carry', 'reardelt']) { if (list.length >= 4) break; if (!list.includes(extra) && !banned.has(extra)) list.push(extra); }
-    const slots = list.map((pt, k) => { const role = k === 0 ? 'main' : k === 1 ? 'second' : 'acc'; const d = dose(goal, role, level); if (age >= 50) { d.rir = d.rir.map(r => Math.max(r, 2)); d.restSec = Math.round(d.restSec * 1.15); } if (second === 'endurance' && role !== 'main') { d.reps = role === 'second' ? '12-15' : '15-20'; d.restSec = Math.min(d.restSec, 60); } return Object.assign({ pattern: pt, role, star: k < 2, soft: soft.has(pt) }, d); });
+    const slots = list.map((pt, k) => { const role = k === 0 ? 'main' : k === 1 ? 'second' : 'acc'; const d = dose(goal, role, level); if (age >= 50) { d.rir = d.rir.map(r => Math.max(r, 2)); d.restSec = Math.round(d.restSec * 1.15); } if (second === 'endurance' && role !== 'main') { d.reps = role === 'second' ? '12-15' : '15-20'; d.restSec = Math.min(d.restSec, 60); } if (adj.volume && adj.volume !== 1) d.sets = Math.max(2, Math.round(d.sets * adj.volume)); if (adj.rir) d.rir = d.rir.map((r, i) => i === d.rir.length - 1 ? r : Math.min(4, Math.max(0, r + adj.rir))); return Object.assign({ pattern: pt, role, star: k < 2, soft: soft.has(pt) }, d); });
     // borne de volume par niveau
     let total = slots.reduce((a, x) => a + x.sets, 0); while (total > caps.setsPerSession) { const big = slots.reduce((m, x) => x.sets > m.sets ? x : m, slots[0]); if (big.sets <= 2) break; big.sets--; total--; }
     const dayIdx = days[i]; return { id: 's' + (i + 1), day: (dayIdx + 1) % 7, dayName: DAY_FR[dayIdx], name: goal === 'perte' ? name.replace('force', 'densité') : name, slots };
   });
-  return { goal, second, level, days, minutes, gym, bodyOnly, banned: [...banned], soft: [...soft], sessions, caps, age, skills, sports, flags: { runner, climber, swimmer, contact, cyclist } };
+  return { goal, second, level, days, minutes, gym, bodyOnly, banned: [...banned], soft: [...soft], sessions, caps, age, skills, sports, flags: { runner, climber, swimmer, contact, cyclist }, favor: adj.favor || [], avoid: adj.avoid || [], adjust: adj };
 }
 // Rendu du programme déjà construit pour le coach : il rédige, il ne choisit pas. Les exercices viennent de la bibliothèque.
 function skeletonText(plan, profile) {
@@ -659,6 +659,34 @@ function mergeCoachTexts(prog, parsed) {
 }
 const COACH_TEXT_SCHEMA = `Réponds UNIQUEMENT avec un objet JSON valide (pas de texte autour) : {"cycleName":"Mésocycle 1 · <thème> · <mois année>","rationale":"markdown léger, 150 à 250 mots","nutrition":"60 à 120 mots, cibles chiffrées","warmup":{"common":"...","ramp":"..."},"notes":{"s1-1":"une phrase","s1-2":"..."}}`;
 
+/* Bilan de fin de cycle, déterministe : on observe l'état réel (assiduité, charges, forme hebdomadaire, douleurs)
+   et on en déduit les réglages du cycle suivant. Le programme suivant part de ce qui s'est passé, pas de la fiche seule. */
+function reviewCycle(prev, logs, checkins, profile) {
+  if (!prev || !prev.generatedAt || !Array.isArray(prev.sessions) || !prev.sessions.length) return null;
+  const weeks = prev.weeks || []; const genDay = new Date(prev.generatedAt - 86400000).toISOString().slice(0, 10); const from = weeks[0] && weeks[0].from < genDay ? weeks[0].from : genDay; const to = null; // tout ce qui a été fait depuis la génération précédente compte
+  const L = (logs || []).filter(l => l && l.date && l.date >= from);
+  const planned = weeks.length * prev.sessions.length; const done = L.filter(l => l.done || Object.values(l.sets || {}).flat().some(x => x && x.done)).length;
+  const adherence = planned ? Math.round(100 * done / planned) : 0;
+  const e1 = (w, r) => (!w || !r) ? 0 : (r === 1 ? w : w * (1 + r / 30));
+  const endW1 = from ? new Date(new Date(from + 'T12:00:00').getTime() + 6 * 86400000).toISOString().slice(0, 10) : null;
+  const stars = {}; prev.sessions.forEach(se => se.exercises.forEach(e => { if (e.star) stars[e.id] = e; }));
+  const first = {}, best = {}, prById = {};
+  L.slice().sort((a, b) => a.date < b.date ? -1 : 1).forEach(l => Object.entries(l.sets || {}).forEach(([id, arr]) => { (arr || []).forEach(st => { if (!st || !st.done || !st.w || !st.r) return; const v = e1(st.w, st.r); if (endW1 && l.date <= endW1 && (!first[id] || v > first[id])) first[id] = v; if (!best[id] || v > best[id]) { if (best[id]) prById[id] = (prById[id] || 0) + 1; best[id] = v; } }); }));
+  const measured = Object.keys(first).filter(id => stars[id]); const progress = measured.length ? Math.round(10 * measured.reduce((t, id) => t + 100 * ((best[id] || first[id]) - first[id]) / first[id], 0) / measured.length) / 10 : null;
+  const C = Object.values(checkins || {}).filter(c => c && (!from || c.weekKey >= from) && (!to || c.weekKey <= to)); const readiness = C.length ? Math.round(10 * C.reduce((t, c) => t + (c.readiness || 3), 0) / C.length) / 10 : null;
+  const pain = {}; L.forEach(l => { const z = l.day && l.day.pain; if (z) pain[z] = (pain[z] || 0) + 1; });
+  const zoneKey = z => Object.keys(ZONE_FR).find(k => (ZONE_FR[k] || '').toLowerCase().startsWith(String(z).toLowerCase().slice(0, 4))) || null;
+  const adjust = { volume: 1, rir: 0, favor: [], avoid: [], zones: [], level: null, reasons: [] };
+  if (!done) return { adherence, done, planned, progress, readiness, pain, adjust, summary: 'Aucune séance enregistrée sur le cycle précédent : on repart de la fiche, en calibrage.' };
+  if (adherence < 60) { adjust.volume = 0.85; adjust.reasons.push(`assiduité ${adherence} % : volume −15 %, des séances plus courtes que tu feras vraiment`); }
+  if (readiness != null && readiness < 2.8) { adjust.volume = Math.min(adjust.volume, 0.85); adjust.rir = 1; adjust.reasons.push(`forme moyenne ${readiness}/5 aux points du lundi : volume −15 %, RIR +1`); }
+  if (adherence >= 85 && progress != null && progress >= 5 && (readiness == null || readiness >= 3.5)) { adjust.volume = 1.1; adjust.reasons.push(`assiduité ${adherence} %, +${progress} % sur les prioritaires : volume +10 %`); if ((profile || {}).level === 'debutant') { adjust.level = 'intermediaire'; adjust.reasons.push('tu passes au niveau intermédiaire'); } }
+  if (adherence >= 85 && progress != null && progress < 2) { Object.keys(stars).forEach(id => { const ex = stars[id]; if (ex.exId && !(prById[id] > 0)) adjust.avoid.push(ex.exId); }); adjust.volume = Math.max(adjust.volume, 1.05); adjust.reasons.push(`assidu mais stagnation (+${progress} %) : on change les exercices principaux qui n'ont pas bougé`); }
+  Object.keys(prById).forEach(id => { const ex = prev.sessions.flatMap(se => se.exercises).find(e => e.id === id); if (ex && ex.exId && prById[id] >= 2 && !adjust.avoid.includes(ex.exId)) adjust.favor.push(ex.exId); });
+  Object.entries(pain).forEach(([z, n]) => { const k = zoneKey(z); if (!k) return; const sev = n >= 4 ? 'douleur' : 'fragile'; adjust.zones.push({ zone: k, sev }); adjust.reasons.push(`${z} signalé ${n} fois : zone ${sev === 'douleur' ? 'douloureuse, exercices à risque retirés' : 'fragile, charges modérées'}`); });
+  const summary = `Cycle précédent : ${done}/${planned} séances (${adherence} %)${progress != null ? `, ${progress >= 0 ? '+' : ''}${progress} % sur les prioritaires` : ', charges non mesurées'}${readiness != null ? `, forme moyenne ${readiness}/5` : ''}${Object.keys(pain).length ? `, douleurs : ${Object.entries(pain).map(([z, n]) => z + ' ×' + n).join(', ')}` : ''}. ` + (adjust.reasons.length ? 'Réglages : ' + adjust.reasons.join(' ; ') + '.' : 'Réglages : plan reconduit avec progression normale.');
+  return { adherence, done, planned, progress, readiness, pain, prs: Object.values(prById).reduce((a, b) => a + b, 0), adjust, summary };
+}
 // Réparation déterministe (filet) : un exercice qui viole une règle bloquante est remplacé par une fiche sûre du même schéma.
 function exViolations(e, profile) {
   const p = profile || {}; const gear = p.gear || []; const sp = p.spec || {}; const out = [];
@@ -683,11 +711,15 @@ function repairProgram(prog, profile, plan) {
   if (notes.length) { prog.engine = prog.engine || {}; prog.engine.repairs = notes; }
   return prog;
 }
-async function buildProgram(profile, apiKey, model, seed) {
+async function buildProgram(profile, apiKey, model, seed, review) {
   // 1. Le moteur construit le programme complet, instantanément, sans dépendance : structure, exercices de la bibliothèque, textes de fiche, illustrations.
-  const plan = LIB.selectExercises(planStructure(profile), profile, seed);
+  const plan = LIB.selectExercises(planStructure(profile, review && review.adjust), profile, seed);
   const start = nextMonday();
   let prog = programFromPlan(plan, profile, start);
+  const cycleN = review && review.done ? ((profile || {}).cycleCount || 2) : 1;
+  if (review) { prog.cycleReview = review; prog.cycleReason = review.summary; }
+  const numberCycle = pg => { if (cycleN > 1) pg.cycleName = String(pg.cycleName || 'Mésocycle').replace(/^Mésocycle[^·]*/, 'Mésocycle ' + cycleN + ' ').replace(/\s+·/, ' ·').trim(); return pg; };
+  numberCycle(prog);
   let check = checkProgram(prog, profile);
   if (check.errors.length) { repairProgram(prog, profile, plan); check = checkProgram(prog, profile); }
   prog.checks = { errors: check.errors, warnings: check.warnings, attempts: 0, at: Date.now(), repaired: !!(prog.engine && prog.engine.repairs && prog.engine.repairs.length) };
@@ -695,13 +727,13 @@ async function buildProgram(profile, apiKey, model, seed) {
   // 2. Le coach rédige (rationale, nutrition, échauffement, notes). Borné dans le temps ; s'il échoue, le programme est livré sans ses textes et complété plus tard.
   const sys = systemFor(profile, null);
   const pr = profile || {};
-  const user = `Construis les textes du mésocycle de cet athlète (départ le ${start}). Sois concret et exigeant au niveau déclaré. Le programme doit être visiblement écrit pour ${pr.name || 'cette personne'} : relie chaque choix à ses objectifs (${(pr.goals || []).join(', ') || 'non précisés'}), son niveau (${pr.level || '?'}), son matériel, ses contraintes et ses autres pratiques.\n\n${skeletonText(plan, profile)}\n\n${COACH_TEXT_SCHEMA}`;
+  const user = `Construis les textes du mésocycle de cet athlète (départ le ${start}). Sois concret et exigeant au niveau déclaré. Le programme doit être visiblement écrit pour ${pr.name || 'cette personne'} : relie chaque choix à ses objectifs (${(pr.goals || []).join(', ') || 'non précisés'}), son niveau (${pr.level || '?'}), son matériel, ses contraintes et ses autres pratiques.${review && review.done ? '\n\nBilan mesuré du cycle précédent (à commenter dans le rationale, chiffres à reprendre tels quels) : ' + review.summary : ''}\n\n${skeletonText(plan, profile)}\n\n${COACH_TEXT_SCHEMA}`;
   let lastErr = '';
   for (let attempt = 1; attempt <= 2; attempt++) {
     try {
       const text = await claude(apiKey, model, sys, [{ role: 'user', content: user }], 3500, attempt === 1 ? 120000 : 90000);
       const parsed = JSON.parse(text.slice(text.indexOf('{'), text.lastIndexOf('}') + 1));
-      mergeCoachTexts(prog, parsed); prog.degraded = null; prog.checks.attempts = attempt; return prog;
+      mergeCoachTexts(prog, parsed); numberCycle(prog); prog.degraded = null; prog.checks.attempts = attempt; return prog;
     } catch (e) { lastErr = String(e && e.message || e); if (/401|refusée/.test(lastErr)) throw e; }
   }
   prog.degraded = 'coach'; prog.engine.notes.push('textes du coach indisponibles : ' + lastErr.slice(0, 160)); prog.checks.attempts = 2;
@@ -722,7 +754,12 @@ async function completeCoachTexts(uid, prog, profile, apiKey, model) {
 async function generateProgramFor(uid, meta, apiKey, model) {
   const genRef = db.collection('users').doc(uid).collection('meta').doc('genstate');
     let prog;
-    try { prog = await buildProgram(meta.profile, apiKey, model, uid); }
+    let review = null;
+    try {
+      const prev = meta.program && meta.program.generatedAt ? meta.program : null;
+      if (prev) { const from = '2000-01-01'; const ls = await db.collection('users').doc(uid).collection('logs').where('date', '>=', from).get(); const cs = await db.collection('users').doc(uid).collection('checkins').get().catch(() => ({ docs: [] })); review = reviewCycle(prev, ls.docs.map(d => d.data()), cs.docs.map(d => d.data()), meta.profile); if (review && review.done) meta.profile.cycleCount = (prev.cycleCount || 1) + 1; }
+    } catch (e) { review = null; if (process.env.RITUEL_TEST === '1') console.error('review error', e); }
+    try { prog = await buildProgram(meta.profile, apiKey, model, uid, review); if (meta.profile.cycleCount) prog.cycleCount = meta.profile.cycleCount; }
     catch (e) { await refundQuota(uid, 'program'); throw e; } // un échec ne consomme pas une génération
     prog.generatedAt = Date.now(); prog.model = model; prog.profileSnapshot = meta.profile;
     await recordUsage(uid, 'program', model);
@@ -969,4 +1006,4 @@ exports.dailyNudge = onSchedule({ schedule: '0 18 * * *', timeZone: 'Europe/Pari
 });
 
 // Banc d'essai local uniquement (jamais exposé en production) : accès au moteur pur pour tester des milliers de profils sans appel réseau.
-if (process.env.RITUEL_TEST === '1') exports._engine = { planStructure, programFromPlan, checkProgram, repairProgram, LIB, LEVEL_CAPS };
+if (process.env.RITUEL_TEST === '1') exports._engine = { planStructure, programFromPlan, checkProgram, repairProgram, reviewCycle, LIB, LEVEL_CAPS };
