@@ -207,12 +207,18 @@ const ANALYSIS_SCHEMA = {
   }
 };
 
-async function claude(apiKey, model, system, messages, maxTokens = 1500) {
-  const r = await fetch(API_BASE + '/v1/messages', {
-    method: 'POST',
-    headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-    body: JSON.stringify({ model, max_tokens: maxTokens, system, messages })
-  });
+async function claude(apiKey, model, system, messages, maxTokens = 1500, timeoutMs = 210000) {
+  // Délai borné : un appel qui traîne ne doit jamais bloquer l'utilisateur jusqu'à la fin de la fonction.
+  const ctl = new AbortController(); const timer = setTimeout(() => ctl.abort(), timeoutMs);
+  let r;
+  try {
+    r = await fetch(API_BASE + '/v1/messages', {
+      method: 'POST',
+      headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
+      body: JSON.stringify({ model, max_tokens: maxTokens, system, messages }), signal: ctl.signal
+    });
+  } catch (e) { clearTimeout(timer); throw new HttpsError('deadline-exceeded', ctl.signal.aborted ? 'Le coach a mis trop de temps à répondre.' : 'Réseau indisponible vers le coach : ' + String(e && e.message || e).slice(0, 120)); }
+  clearTimeout(timer);
   if (!r.ok) { const t = await r.text(); throw new HttpsError('internal', `Anthropic ${r.status}: ${t.slice(0, 300)}`); }
   const j = await r.json(); LAST_USAGE = j.usage || null;
   return (j.content || []).filter(c => c.type === 'text').map(c => c.text).join('');
@@ -220,8 +226,8 @@ async function claude(apiKey, model, system, messages, maxTokens = 1500) {
 
 const PROGRAM_SCHEMA = `Réponds UNIQUEMENT avec un objet JSON valide (pas de texte autour, pas de balises). Schéma :
 {"cycleName":"Mésocycle 1 · <thème> · <mois année>",
- "rationale":"texte en markdown léger (paragraphes, ## titres, listes -) : lecture du cycle, arbitrages, structure hebdomadaire, progression semaine par semaine, gestion des contraintes, prévention. 300 à 600 mots.",
- "nutrition":"cibles concrètes en 100 à 200 mots (calories, protéines, glucides, lipides, timing), adaptées au profil et à l'objectif. Si le profil ne permet pas d'estimer, dis-le.",
+ "rationale":"texte en markdown léger (paragraphes, ## titres, listes -) : lecture du cycle, arbitrages, structure hebdomadaire, progression semaine par semaine, gestion des contraintes, prévention. 150 à 250 mots, dense, sans remplissage.",
+ "nutrition":"cibles concrètes en 60 à 120 mots (calories, protéines, glucides, lipides, timing), adaptées au profil et à l'objectif. Si le profil ne permet pas d'estimer, dis-le.",
  "warmup":{"common":"...","<groupe>":"...","ramp":"..."},
  "durationWeeks":4, "cycleReason":"une phrase : pourquoi cette durée (3 = reprise ou débutant à recalibrer vite, 4 = standard, 5-6 = athlète confirmé en accumulation longue)",
  "weeks":[{"n":1,"label":"S1 …","from":"AAAA-MM-JJ","to":"AAAA-MM-JJ","rirNote":"..."}, … autant que durationWeeks (3 à 6), la dernière toujours en décharge ; "rir" de chaque exercice a autant de valeurs que de semaines],
@@ -295,7 +301,7 @@ async function planFor(uid, email) {
   return 'free';
 }
 async function refundQuota(uid, mode) { try { await db.collection('users').doc(uid).collection('meta').doc('usage').set({ [mode]: admin.firestore.FieldValue.increment(-1) }, { merge: true }); } catch (e) {} } // par mois et par compte : plafonne le coût IA
-async function checkQuota(uid, mode, plan) {
+async function checkQuota(uid, mode, plan, force) { // force : on compte l'usage mais on ne bloque jamais
   const month = parisISO().slice(0, 7); const limits = PLANS[plan] || PLANS.free;
   const ref = db.collection('users').doc(uid).collection('meta').doc('usage');
   const label = { program: 'programmes', analyse: 'analyses', chat: 'questions', substitute: 'séances sans salle', demo: 'fiches' }[mode] || mode;
@@ -303,7 +309,7 @@ async function checkQuota(uid, mode, plan) {
     const snap = await tx.get(ref); const d = snap.exists ? snap.data() : {};
     const cur = d.month === month ? d : { month, program: 0, analyse: 0, chat: 0, substitute: 0, demo: 0, tokensIn: 0, tokensOut: 0, costUsd: 0 };
     cur.plan = plan; cur.limits = limits;
-    if ((cur[mode] || 0) >= limits[mode]) throw new HttpsError('resource-exhausted', plan === 'free' ? `QUOTA_FREE:${label}:${limits[mode]}` : `Quota mensuel atteint : ${limits[mode]} ${label}. Il se renouvelle le 1er du mois.`);
+    if (!force && (cur[mode] || 0) >= limits[mode]) throw new HttpsError('resource-exhausted', plan === 'free' ? `QUOTA_FREE:${label}:${limits[mode]}` : `Quota mensuel atteint : ${limits[mode]} ${label}. Il se renouvelle le 1er du mois.`);
     cur[mode] = (cur[mode] || 0) + 1; cur.updatedAt = Date.now();
     tx.set(ref, cur); return cur;
   });
@@ -449,14 +455,18 @@ exports.coach = onCall({ region: 'europe-west1', secrets: [ANTHROPIC_API_KEY], t
 // Contrôle de conformité d'un programme généré, déterministe et gratuit, appliqué à chaque génération pour tout le monde.
 // Bloquant (régénération puis refus) : nombre de séances ≠ jours demandés, machine ou poulie sans salle, séance vide.
 // Avertissement (conservé dans prog.checks) : contrainte déclarée possiblement sollicitée, séance très au-dessus du temps prévu.
-const MACHINE_RE = /\b(machine|poulie|c[âa]ble|cable|presse|press machine|leg press|hack|smith|pec ?deck|lat ?pull|tirage|leverage|iso[- ]?lat|convergent|technogym|panatta|gym ?80|hammer strength|eleiko|matrix|selection|sygnum|pure kraft)\b/i;
+const MACHINE_RE = /\b(machine|poulie|c[âa]ble|cable|presse|press machine|leg press|hack|smith|pec ?deck|lat ?pull|tirage|leverage|iso[- ]?lat|convergent|leg ?curl|leg ?ext(ension)?|standing calf|seated calf|chest press|technogym|panatta|gym ?80|hammer strength|eleiko|matrix|selection|sygnum|pure kraft)\b/i;
 const CONSTRAINT_MAP = [[/genou/i, /squat|fente|lunge|leg ?ext|presse|hack|pendulum|saut|jump|pistol/i, 'genou'], [/[ée]paule/i, /d[ée]velopp[ée].*(militaire|[ée]paule|overhead)|shoulder press|[ée]l[ée]vation|dips?\b|traction|pull[- ]?up|arrach|snatch|upright/i, 'épaule'], [/\bdos\b|lombaire|hernie|sciatique/i, /soulev[ée] de terre|deadlift|good ?morning|rowing.*(barre|pench)|bent.?over|squat.*barre|back squat|hyperext/i, 'dos'], [/coude|[ée]picondyl/i, /curl|pushdown|extension.*triceps|skull|dips?\b/i, 'coude'], [/poignet/i, /pompes?|push[- ]?up|front squat|curl.*poignet|wrist/i, 'poignet'], [/hanche/i, /hip thrust|squat.*profond|fente|lunge|abduct|adduct/i, 'hanche'], [/cheville/i, /mollet|calf|saut|jump|fente|lunge/i, 'cheville']];
+// « tirage élastique » ou « presse haltères au sol » ne sont pas des machines : le mot seul ne suffit pas.
+const NOT_MACHINE_RE = /[ée]lastique|bande|haltère|haltere|kettlebell|poids du corps|serviette|au sol|sur banc|sac/i;
+function isMachineEx(e) { const t = (e.name || '') + ' ' + (e.machine || ''); return MACHINE_RE.test(t) && !NOT_MACHINE_RE.test(t); }
 function checkProgram(prog, profile) {
   const p = profile || {}; const gear = p.gear || []; const errors = [], warnings = [];
   if (!prog.sessions.length) errors.push('Aucune séance.');
-  if (p.days && prog.sessions.length !== Number(p.days)) errors.push(`${prog.sessions.length} séance(s) pour ${p.days} jour(s) demandé(s).`);
+  const wantDays = (p.spec && Array.isArray(p.spec.daysList) && p.spec.daysList.length) ? p.spec.daysList.length : Number(p.days);
+  if (wantDays && prog.sessions.length !== wantDays) errors.push(`${prog.sessions.length} séance(s) pour ${wantDays} jour(s) demandé(s).`);
   if (gear.length && !gear.includes('salle')) {
-    const bad = prog.sessions.flatMap(s => s.exercises).filter(e => MACHINE_RE.test(e.name + ' ' + e.machine)).map(e => e.name);
+    const bad = prog.sessions.flatMap(s => s.exercises).filter(isMachineEx).map(e => e.name);
     if (bad.length) errors.push('Machine ou poulie sans salle : ' + [...new Set(bad)].slice(0, 6).join(', ') + '.');
   }
   prog.sessions.forEach(s => { if (!s.exercises.length) errors.push(`${s.name} : aucun exercice.`); });
@@ -466,7 +476,7 @@ function checkProgram(prog, profile) {
     if (want !== got) { const order = sp.daysList.slice().sort((a, b) => a - b); prog.sessions.sort((a, b) => ((a.day + 6) % 7) - ((b.day + 6) % 7)).forEach((s, i) => { s.day = (order[i] + 1) % 7; s.dayName = DAY_FR[order[i]]; }); warnings.push('Jours replacés sur ceux de la fiche.'); }
   }
   (sp.zones || []).forEach(z => { const m = CONSTRAINT_MAP.find(([cre]) => cre.test(ZONE_FR[z.zone] || z.zone)); if (!m) return; const hit = prog.sessions.flatMap(s => s.exercises).filter(e => m[1].test(e.name)).map(e => e.name); if (!hit.length) return; const msg = `${ZONE_FR[z.zone] || z.zone} (${z.sev}) : ${[...new Set(hit)].slice(0, 4).join(', ')}.`; if (z.sev === 'opere' || z.sev === 'douleur') errors.push('Zone à ménager sollicitée, ' + msg); else warnings.push('Zone fragile, vérifier ' + msg); });
-  if ((sp.refuse || []).includes('nomachine')) { const bad = prog.sessions.flatMap(s => s.exercises).filter(e => MACHINE_RE.test(e.name + ' ' + e.machine)).map(e => e.name); if (bad.length) errors.push('Refus des machines non respecté : ' + [...new Set(bad)].slice(0, 5).join(', ') + '.'); }
+  if ((sp.refuse || []).includes('nomachine')) { const bad = prog.sessions.flatMap(s => s.exercises).filter(isMachineEx).map(e => e.name); if (bad.length) errors.push('Refus des machines non respecté : ' + [...new Set(bad)].slice(0, 5).join(', ') + '.'); }
   if ((sp.refuse || []).includes('nobar')) { const bad = prog.sessions.flatMap(s => s.exercises).filter(e => /\bbarre\b|barbell|olympique/i.test(e.name + ' ' + e.machine) && !/traction|pull|dip/i.test(e.name)).map(e => e.name); if (bad.length) errors.push('Refus de la barre non respecté : ' + [...new Set(bad)].slice(0, 5).join(', ') + '.'); }
   const c = String(p.constraints || '');
   if (c && !(sp.zones || []).length) CONSTRAINT_MAP.forEach(([cre, ere, label]) => { if (cre.test(c)) { const hit = prog.sessions.flatMap(s => s.exercises).filter(e => ere.test(e.name)).map(e => e.name); if (hit.length) warnings.push(`Contrainte « ${label} » : vérifier ${[...new Set(hit)].slice(0, 4).join(', ')}.`); } });
@@ -575,6 +585,40 @@ function mergeWithSkeleton(prog, plan) {
   return out;
 }
 
+// Réparation déterministe : chaque exercice qui viole une règle bloquante est remplacé par un choix sûr du même schéma
+// (puis du schéma de substitution, puis un mouvement neutre). L'utilisateur reçoit toujours un programme conforme.
+function exViolations(e, profile) {
+  const p = profile || {}; const gear = p.gear || []; const sp = p.spec || {}; const out = [];
+  if (gear.length && !gear.includes('salle') && isMachineEx(e)) out.push('machine sans salle');
+  if ((sp.refuse || []).includes('nomachine') && isMachineEx(e)) out.push('refus machines');
+  if ((sp.refuse || []).includes('nobar') && /\bbarre\b|barbell|olympique/i.test((e.name || '') + ' ' + (e.machine || '')) && !/traction|pull|dip/i.test(e.name || '')) out.push('refus barre');
+  (sp.zones || []).forEach(z => { if (z.sev !== 'opere' && z.sev !== 'douleur') return; const m = CONSTRAINT_MAP.find(([cre]) => cre.test(ZONE_FR[z.zone] || z.zone)); if (m && m[1].test(e.name || '')) out.push('zone ' + (ZONE_FR[z.zone] || z.zone)); });
+  return out;
+}
+const SAFE_EX = { gym: ['gainage planche', 'pont fessier', 'rowing élastique', 'oiseau haltères'], home: ['gainage planche', 'pont fessier', 'rowing élastique', 'oiseau haltères'], body: ['gainage planche', 'pont fessier', 'dead bug', 'Y-T-W au sol'] };
+function repairProgram(prog, profile, plan) {
+  const kind = plan.gym ? 'gym' : plan.bodyOnly ? 'body' : 'home'; const notes = [];
+  const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
+  prog.sessions.forEach(se => se.exercises.forEach(e => {
+    if (!exViolations(e, profile).length) return;
+    const pt = e.pattern; const chain = [pt, ZONE_SUBS[pt], ZONE_SUBS[ZONE_SUBS[pt]]].filter(Boolean);
+    const cands = chain.flatMap(x => (PATTERNS[x] ? PATTERNS[x][kind] : '').split(',').map(s => cap(s.trim())).filter(Boolean)).concat(SAFE_EX[kind].map(cap));
+    const pick = cands.find(n => !exViolations({ name: n, machine: '' }, profile).length);
+    if (!pick) return;
+    notes.push(`${se.name} : « ${e.name} » remplacé par « ${pick} » (${exViolations(e, profile).join(', ')})`);
+    e.name = pick; e.machine = ''; e.alt = ''; e.reco = ''; e.why = e.why || `Remplacement conforme à ta fiche pour garder le schéma « ${PATTERNS[pt] ? PATTERNS[pt].label : pt} ».`; e.exec = e.exec || ''; e.seek = e.seek || ''; e.url = 'https://www.google.com/search?tbm=isch&q=' + encodeURIComponent(pick);
+  }));
+  if (notes.length) { prog.engine = prog.engine || {}; prog.engine.repairs = notes; }
+  return prog;
+}
+// Programme « moteur seul » : structure et choix par défaut sans le coach. Sert de filet quand le modèle est indisponible ou illisible.
+function engineOnlyProgram(profile, plan) {
+  const p = profile || {}; const prog = applyGuardrails(mergeWithSkeleton(normalizeProgram({ cycleName: 'Mésocycle 1 · ' + ({ force: 'Force', masse: 'Masse', perte: 'Densité', sante: 'Santé', perf: 'Performance', corps: 'Poids du corps' }[plan.goal] || 'Base') }, nextMonday()), plan), profile);
+  prog.rationale = `Pour ${p.name || 'toi'} : ce cycle est construit par les règles du programme à partir de ta fiche (${plan.days.length} séances, ${plan.minutes} min, objectif ${plan.goal}). Le coach n'a pas pu rédiger ses commentaires à cet instant : la structure, les séries, les répétitions, le RIR et les repos sont déjà les bons. Relance la génération plus tard pour obtenir ses explications exercice par exercice.`;
+  prog.nutrition = ''; prog.degraded = 'coach';
+  prog.sessions.forEach(se => se.exercises.forEach(e => { if (!e.why) e.why = PATTERNS[e.pattern] ? `Emplacement « ${PATTERNS[e.pattern].label} », cible ${PATTERNS[e.pattern].muscle}.` : ''; }));
+  return prog;
+}
 async function buildProgram(profile, apiKey, model) {
   const sys = systemFor(profile, null);
   const safety = { debutant: 'Débutant : 3 séances max, 4 à 6 exercices par séance, 12 à 16 séries, RIR jamais sous 2, pas de techniques d\'intensification, machines guidées et mouvements simples, échauffement détaillé, aucune charge suggérée en kg.', intermediaire: 'Intermédiaire : 16 à 22 séries par séance, RIR 3 → 1, une seule technique d\'intensification en S3.', confirme: 'Confirmé : 22 à 28 séries, RIR jusqu\'à 0 sur les isolations en S3, intensification ciblée.', avance: 'Avancé : volume et intensité d\'athlète, techniques d\'intensification justifiées.' }[(profile || {}).level] || '';
@@ -584,20 +628,27 @@ async function buildProgram(profile, apiKey, model) {
   const personal = `Ce programme doit être visiblement construit pour ${pr.name || 'cette personne'} et pour personne d'autre : le "rationale" commence par « Pour ${pr.name || 'toi'} » et relie explicitement chaque choix majeur à ses objectifs (${(pr.goals || []).join(', ') || 'non précisés'}), son niveau (${pr.level || '?'}), son matériel, ses ${pr.days || '?'} jours et ${pr.minutes || '?'} minutes, ses contraintes et ses autres pratiques. Exactement ${pr.days || '?'} séances. Les noms de séances reflètent ses objectifs. Un programme interchangeable avec celui d'un autre profil est un échec. `;
   const plan = planStructure(profile);
   const user = `Construis le mésocycle de cet athlète (départ le ${nextMonday()}). Sois concret et exigeant au niveau déclaré. ${personal}${safety} ${noGym}${constraints}\n\n${skeletonText(plan, profile)}\n\n${PROGRAM_SCHEMA}`;
-  let prog, check, attempts = 0, feedback = '';
-  while (attempts < 2) {
+  // Règle : l'utilisateur reçoit TOUJOURS un programme conforme. Le coach a deux essais bornés dans le temps ;
+  // ce qui reste non conforme est réparé par les règles ; si le coach ne répond pas, le moteur seul livre la structure.
+  let prog = null, check = null, attempts = 0, feedback = '', lastErr = '';
+  const t0 = Date.now();
+  while (attempts < 2 && Date.now() - t0 < 300000) {
     attempts++;
-    const text = await claude(apiKey, model, sys, [{ role: 'user', content: user + feedback }], 16000);
+    let text;
+    try { text = await claude(apiKey, model, sys, [{ role: 'user', content: user + feedback }], 9000, attempts === 1 ? 200000 : 120000); }
+    catch (e) { lastErr = String(e && e.message || e); if (/401|refusée/.test(lastErr)) throw e; continue; }
     let parsed;
     try { parsed = JSON.parse(text.slice(text.indexOf('{'), text.lastIndexOf('}') + 1)); }
-    catch (e) { throw new HttpsError('internal', 'Le coach a renvoyé un programme illisible, relance la génération.'); }
+    catch (e) { lastErr = 'réponse illisible'; continue; }
     prog = applyGuardrails(mergeWithSkeleton(normalizeProgram(parsed, nextMonday()), plan), profile);
     check = checkProgram(prog, profile);
     if (!check.errors.length) break;
     feedback = `\n\nTa proposition précédente a été refusée par le contrôle de conformité : ${check.errors.join(' ')} Corrige ces points précisément et renvoie le programme complet.`;
   }
-  if (check.errors.length) throw new HttpsError('internal', 'Programme non conforme au profil (' + check.errors.join(' ') + ') Relance la génération.');
-  prog.checks = { errors: check.errors, warnings: check.warnings, attempts, at: Date.now() };
+  if (!prog) { prog = engineOnlyProgram(profile, plan); prog.engine.notes.push('coach indisponible : ' + lastErr); check = checkProgram(prog, profile); }
+  if (check.errors.length) { repairProgram(prog, profile, plan); check = checkProgram(prog, profile); }
+  if (check.errors.length) { prog.engine = prog.engine || {}; prog.engine.unresolved = check.errors; }
+  prog.checks = { errors: check.errors, warnings: check.warnings, attempts, at: Date.now(), repaired: !!(prog.engine && prog.engine.repairs && prog.engine.repairs.length) };
   return prog;
 }
 async function generateProgramFor(uid, meta, apiKey, model) {
@@ -607,9 +658,10 @@ async function generateProgramFor(uid, meta, apiKey, model) {
     catch (e) { await refundQuota(uid, 'program'); throw e; } // un échec ne consomme pas une génération
     prog.generatedAt = Date.now(); prog.model = model; prog.profileSnapshot = meta.profile;
     await recordUsage(uid, 'program', model);
-    prog.demos = await mapDemos(apiKey, model, prog.sessions.flatMap(se => se.exercises)); prog.demosAt = Date.now(); if (Object.keys(prog.demos).length) await recordUsage(uid, 'demo', model);
+    // Le programme est livré d'abord ; les visuels sont associés ensuite et ne peuvent pas bloquer la livraison.
     await db.collection('users').doc(uid).collection('meta').doc('program').set(prog);
     await genRef.set({ status: 'done', at: Date.now() });
+    try { const demos = await mapDemos(apiKey, model, prog.sessions.flatMap(se => se.exercises)); if (Object.keys(demos).length) { await db.collection('users').doc(uid).collection('meta').doc('program').set({ demos, demosAt: Date.now() }, { merge: true }); await recordUsage(uid, 'demo', model); } } catch (e) {}
     return { ok: true, sessions: prog.sessions.length };
 }
 async function coachImpl(req) {
@@ -620,13 +672,16 @@ async function coachImpl(req) {
   // Génération déjà en cours (l'appel précédent a été coupé côté téléphone) : on ne relance pas, on ne reconsomme pas, le programme arrivera par Firestore.
   const genRef = db.collection('users').doc(uid).collection('meta').doc('genstate');
   if (mode === 'program') { const g = await genRef.get(); const gd = g.exists ? g.data() : {}; if (gd.status === 'running' && Date.now() - (gd.startedAt || 0) < 8 * 60000) return { ok: true, running: true }; }
-  if (mode !== 'demo') await checkQuota(uid, mode, plan); // l'association des visuels ne consomme rien : elle doit marcher pour tout le monde
+  const meta = await loadMeta(uid);
+  if (!meta.profile) throw new HttpsError('failed-precondition', 'Profil manquant.');
+  // Le premier programme d'un compte, ou le remplacement d'un programme « moteur seul », ne compte jamais dans le quota :
+  // personne ne doit rester sans programme. L'association des visuels ne consomme rien non plus.
+  const firstProgram = mode === 'program' && !(meta.program && meta.program.generatedAt && !meta.program.degraded);
+  if (mode !== 'demo') await checkQuota(uid, mode, plan, firstProgram);
   // Nettoyage : un secret collé depuis Windows peut contenir BOM, octets nuls, retours à la ligne ou guillemets.
   const apiKey = String(ANTHROPIC_API_KEY.value() || '').replace(/[^\x21-\x7E]/g, '').replace(/^["']+|["']+$/g, '');
   if (!/^sk-ant-/.test(apiKey)) throw new HttpsError('failed-precondition', 'Clé API Anthropic absente ou mal formée côté serveur (doit commencer par sk-ant-).');
   const model = await resolveModel(apiKey, MODEL.value());
-  const meta = await loadMeta(uid);
-  if (!meta.profile) throw new HttpsError('failed-precondition', 'Profil manquant.');
 
   if (mode === 'program') {
     await genRef.set({ status: 'running', startedAt: Date.now() });

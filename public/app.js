@@ -18,7 +18,7 @@ function humanErr(e){ const c=(e&&e.code)||''; const m=(e&&e.message)||String(e|
   if(/network|Failed to fetch|internet/i.test(m)||!navigator.onLine) return 'Pas de réseau. Le coach a besoin d\'une connexion ; tes séries sont enregistrées et partiront toutes seules.';
   if(/invalid-argument/.test(c)) return 'Le serveur n\'a pas compris la demande (version de l\'app en retard ?). Recharge l\'application depuis Réglages.';
   return m; }
-const APP_VERSION='3.36.0';
+const APP_VERSION='3.37.0';
 const ADMIN_RE=/^(ganeme\.asloune@nexisafe\.com|gads@live\.fr)$/i;
 let PROGRAM={sessions:[]};
 let WEEKS = [
@@ -1394,8 +1394,10 @@ function isGenericProgram(){ if(USER&&ADMIN_RE.test(USER.email||'')) return fals
 function builtForHtml(){
   if(isGenericProgram()) return `<div class="banner warn" id="genericBan"><b>Programme générique.</b> Ce cycle n'a pas été construit pour toi : ${esc(COACH_NAME)} peut en écrire un à partir de ton profil (objectifs, niveau, matériel, jours). <button class="btn sm" id="genericBtn">Construire mon programme</button></div>`;
   const ps=PROGRAM.profileSnapshot||PROFILE; if(!ps) return '';
+  const deg=PROGRAM.degraded==='coach'?`<div class="banner warn" id="degradedBan"><b>Structure prête, commentaires du coach à venir.</b> ${esc(COACH_NAME)} n'a pas pu rédiger ses explications au moment de la génération : séances, séries, répétitions et repos sont déjà les bons, tu peux t'entraîner. <button class="btn sm" id="genericBtn">Compléter avec ${esc(COACH_NAME)}</button></div>`:'';
+  const rep=(PROGRAM.engine&&PROGRAM.engine.repairs&&PROGRAM.engine.repairs.length)?`<p class="small">${esc(PROGRAM.engine.repairs.length)} exercice(s) ajusté(s) par le contrôle de conformité pour respecter ta fiche.</p>`:'';
   const goals=(ps.goals||[]).map(g=>GOAL_FR[g]||g).join(', '); const gear=(ps.gear||[]).map(g=>GEAR_FR[g]||g).join(', ');
-  return `<div class="builtfor"><span class="eyebrow">Construit pour ${esc(ps.name||'toi')}</span><p class="small">${esc([ps.level,goals,ps.days?ps.days+' séances/sem':'',ps.minutes?ps.minutes+' min':'',gear,ps.constraints?'contraintes : '+ps.constraints:''].filter(Boolean).join(' · '))}</p></div>`;
+  return deg+`<div class="builtfor"><span class="eyebrow">Construit pour ${esc(ps.name||'toi')}</span><p class="small">${esc([ps.level,goals,ps.days?ps.days+' séances/sem':'',ps.minutes?ps.minutes+' min':'',gear,ps.constraints?'contraintes : '+ps.constraints:''].filter(Boolean).join(' · '))}</p>${rep}</div>`;
 }
 function renderProgramme(){
   if(!$('#tab-programme')) return;
