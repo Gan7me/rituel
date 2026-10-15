@@ -496,11 +496,16 @@ const PATTERNS = {
   triceps: { label: 'extension triceps', muscle: 'triceps', gym: 'pushdown corde, extension overhead, dip machine', home: 'extension haltère nuque, kickback', body: 'pompes serrées, dips banc', elbow: true },
   core: { label: 'gainage et abdominaux', muscle: 'sangle abdominale', gym: 'crunch poulie, relevés de jambes suspendu, planche', home: 'planche, relevés de jambes, dead bug', body: 'planche, hollow hold, relevés de jambes' },
   carry: { label: 'port de charge (farmer walk)', muscle: 'corps entier, grip', gym: 'farmer walk haltères ou poignées', home: 'farmer walk haltères, kettlebells', body: 'marche avec sac lesté' },
-  cond: { label: 'finisher métabolique court (5 à 8 minutes)', muscle: 'condition physique', gym: 'rameur, vélo, kettlebell swing, circuit', home: 'swing kettlebell, circuit haltères, corde', body: 'circuit poids du corps, montées de genoux' }
+  cond: { label: 'finisher métabolique court (5 à 8 minutes)', muscle: 'condition physique', gym: 'rameur, vélo, kettlebell swing, circuit', home: 'swing kettlebell, circuit haltères, corde', body: 'circuit poids du corps, montées de genoux' },
+  // schémas complémentaires : jamais placés par défaut, utilisés quand l'athlète les demande (exercices voulus) ou pour des variantes
+  olympic: { label: 'haltérophilie (clean, snatch, jerk, push press)', muscle: 'corps entier, puissance', gym: 'hang clean, push press, power snatch', home: 'clean haltères, push press haltères', body: 'burpee sauté' },
+  plyo: { label: 'pliométrie (sauts, bonds)', muscle: 'puissance des jambes', gym: 'box jump, saut en longueur', home: 'squat sauté, fentes sautées', body: 'squat sauté, bonds' },
+  mobility: { label: 'mobilité et étirement', muscle: 'amplitude articulaire', gym: 'étirements ciblés', home: 'étirements ciblés', body: 'étirements ciblés' },
+  neck: { label: 'cou', muscle: 'fléchisseurs et extenseurs du cou', gym: 'machine à cou, harnais', home: 'isométrie contre la main', body: 'isométrie contre la main' }
 };
 // Exclusions par zone à ménager : opéré ou douloureux → le schéma est retiré et remplacé ; fragile → charge et amplitude réduites (consigne).
-const ZONE_RULES = { genou: ['squat', 'lunge', 'kneeext'], epaule: ['vpush', 'vpull', 'latdelt'], dos: ['hinge'], coude: ['biceps', 'triceps'], poignet: ['hpush'], hanche: ['lunge'], cheville: ['calf', 'lunge'], cou: ['vpush'] };
-const ZONE_SUBS = { squat: 'hinge', lunge: 'kneeflex', kneeext: 'kneeflex', vpush: 'hpush', vpull: 'hpull', latdelt: 'reardelt', hinge: 'squat', biceps: 'hpull', triceps: 'hpush', hpush: 'hpull', calf: 'core' };
+const ZONE_RULES = { genou: ['squat', 'lunge', 'kneeext', 'plyo'], epaule: ['vpush', 'vpull', 'latdelt', 'olympic'], dos: ['hinge', 'olympic'], coude: ['biceps', 'triceps'], poignet: ['hpush', 'olympic'], hanche: ['lunge'], cheville: ['calf', 'lunge', 'plyo'], cou: ['vpush', 'neck'] };
+const ZONE_SUBS = { squat: 'hinge', lunge: 'kneeflex', kneeext: 'kneeflex', vpush: 'hpush', vpull: 'hpull', latdelt: 'reardelt', hinge: 'squat', biceps: 'hpull', triceps: 'hpush', hpush: 'hpull', calf: 'core', olympic: 'hinge', plyo: 'squat', neck: 'core', mobility: 'core' };
 // Modèles de séance par nombre de jours : liste de schémas, le premier est l'exercice principal (★).
 const SPLITS = {
   2: [['Corps entier A', ['squat', 'hpush', 'hpull', 'hinge', 'core']], ['Corps entier B', ['hinge', 'vpull', 'vpush', 'lunge', 'core']]],
@@ -554,7 +559,7 @@ function planStructure(profile, adjust) {
     const cnt = {}; template = template.map(([nm, pats]) => { const base = nm.replace(/ [ABC]$/, ''); cnt[base] = (cnt[base] || 0) + 1; const tot = base.startsWith('Bas') ? s.split.lower : s.split.upper; return [tot > 1 ? base + ' ' + 'ABCDEF'[cnt[base] - 1] : base, pats]; });
   }
   const wantIds = (s.wantEx || []).filter(id => LIB.BY_ID[id]); const wantPats = wantIds.map(id => LIB.BY_ID[id].pattern);
-  const LOWER_PAT = new Set(['squat', 'hinge', 'lunge', 'kneeflex', 'kneeext', 'calf']);
+  const LOWER_PAT = new Set(['squat', 'hinge', 'lunge', 'kneeflex', 'kneeext', 'calf', 'plyo']);
   const sessions = template.map(([name, pats], i) => {
     let list = pats.map(pt => banned.has(pt) ? (ZONE_SUBS[pt] && !banned.has(ZONE_SUBS[pt]) ? ZONE_SUBS[pt] : null) : pt).filter(Boolean);
     list = list.filter((pt, k) => list.indexOf(pt) === k || pt === 'hpush' || pt === 'hpull');

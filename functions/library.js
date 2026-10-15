@@ -68,6 +68,7 @@ function score(e, ctx) {
   if (likes.includes('bras') && (e.pattern === 'biceps' || e.pattern === 'triceps') && e.tier === 3) s += 2;
   if (gym && tags.includes('leger') && goal !== 'corps') s -= role === 'acc' ? 14 : 22; // en salle, un exercice sans matériel n'exploite pas le parc
   if (tags.includes('niche')) s -= 10; // utile en complément, jamais par défaut
+  if (e.src === 'photo') s -= 6; // fiche issue de la base étendue : les fiches éditoriales restent prioritaires à qualité égale
   if (!gym && goal !== 'corps' && tags.includes('leger') && role !== 'acc') s -= 4;
   if (level === 'debutant' && tags.includes('machine')) s += 8;
   if (level === 'debutant' && tags.includes('barre')) s -= 6;
@@ -98,7 +99,7 @@ function allowed(e, profile, level, gearSet) {
   if (refuse.includes('cardio') && e.pattern === 'cond' && (e.req || []).includes('cardio')) return false;
   return true;
 }
-const ZONE_SUBS = { squat: 'hinge', lunge: 'kneeflex', kneeext: 'kneeflex', vpush: 'hpush', vpull: 'hpull', latdelt: 'reardelt', hinge: 'squat', biceps: 'hpull', triceps: 'hpush', hpush: 'hpull', calf: 'core', cond: 'core', carry: 'core' };
+const ZONE_SUBS = { squat: 'hinge', lunge: 'kneeflex', kneeext: 'kneeflex', vpush: 'hpush', vpull: 'hpull', latdelt: 'reardelt', hinge: 'squat', biceps: 'hpull', triceps: 'hpush', hpush: 'hpull', calf: 'core', cond: 'core', carry: 'core', olympic: 'hinge', plyo: 'squat', neck: 'core', mobility: 'core' };
 
 /* Sélection : plan = sortie de planStructure (sessions avec slots {pattern, role, soft}, banned, goal, level, gym),
    profile = fiche. Retourne le plan enrichi : chaque slot reçoit .ex (fiche d'exercice) et .alt (alternative). */
@@ -117,7 +118,10 @@ function selectExercises(plan, profile, seedStr) {
       const chain = [sl.pattern, ZONE_SUBS[sl.pattern], ZONE_SUBS[ZONE_SUBS[sl.pattern]], 'core'].filter((x, i, a) => x && a.indexOf(x) === i);
       let picked = null, alt = null, usedPattern = sl.pattern;
       for (const pat of chain) {
-        const cands = EXERCISES.filter(e => e.pattern === pat && okFor(e) && !usedSession.has(e.id));
+        // Les fiches éditoriales (195) ont la priorité ; la base étendue (issue des photos) ne sert que sur demande explicite ou quand rien d'autre n'est possible.
+        const all = EXERCISES.filter(e => e.pattern === pat && okFor(e) && !usedSession.has(e.id));
+        let cands = all.filter(e => e.src !== 'photo' || (plan.want || []).includes(e.id));
+        if (!cands.length) cands = all;
         if (!cands.length) continue;
         const ctx = { role: sl.role, goal: plan.goal, level: plan.level, likes, soft, usedWeek, usedSession, seed, gym, second: plan.second || null, skills: plan.skills || sp.skills || [], age: plan.age || Number(p.age) || 0, flags: plan.flags || {}, favor: plan.favor || [], avoid: plan.avoid || [], want: plan.want || [] };
         cands.sort((a, b) => score(b, ctx) - score(a, ctx));
