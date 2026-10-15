@@ -1230,3 +1230,8 @@ main>section{overflow-x:clip}
 .checkin .ckq{margin:10px 0}.checkin .ckq b{display:block;margin-bottom:4px}
 .ckscale{display:flex;gap:6px;margin:4px 0}.ckscale button{flex:1;padding:8px 0;border-radius:9px;border:1px solid var(--line,#232a36);background:rgba(255,255,255,.04);color:inherit;font-weight:600}.ckscale button[aria-pressed="true"]{background:var(--accent,#ff5a4a);border-color:var(--accent,#ff5a4a);color:#fff}
 .checkin input{width:120px}
+
+/* Ajuster le programme · charge habituelle */
+.adjrow{display:flex;align-items:center;justify-content:space-between;padding:6px 0}.stepper{display:flex;align-items:center;gap:10px}.stepper button{width:34px;height:34px;border-radius:9px;border:1px solid var(--line,#232a36);background:rgba(255,255,255,.05);color:inherit;font-size:1.1em}.stepper b{min-width:20px;text-align:center}
+.chk{display:flex;align-items:center;gap:8px}
+.myload{margin:10px 0}.myload label{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.myload input{width:90px}

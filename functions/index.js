@@ -544,7 +544,18 @@ function planStructure(profile, adjust) {
   const runner = sports.some(x => /course|trail|running|marathon/.test(x)); const climber = sports.some(x => /escalade|climb/.test(x)); const swimmer = sports.some(x => /natation|swim/.test(x)); const contact = sports.some(x => /rugby|sport co|football|arts martiaux|mma|judo/.test(x)); const cyclist = sports.some(x => /vélo|velo|cyclisme/.test(x));
   if (climber) soft.add('vpull'); // les avant-bras et les coudes sont déjà chargés par la grimpe
   if (swimmer) soft.add('vpush'); // épaules très sollicitées en natation
-  const sessions = SPLITS[Math.max(2, Math.min(6, n))].map(([name, pats], i) => {
+  // Répartition demandée par l'athlète (bas / haut du corps) : elle remplace le modèle standard.
+  const LOWER_SETS = [['Bas du corps A', ['squat', 'hinge', 'kneeflex', 'calf', 'core']], ['Bas du corps B', ['hinge', 'lunge', 'kneeext', 'calf', 'core']], ['Bas du corps C', ['squat', 'lunge', 'kneeflex', 'hinge', 'core']]];
+  const UPPER_SETS = [['Haut du corps A', ['hpush', 'vpull', 'vpush', 'hpull', 'biceps', 'triceps']], ['Haut du corps B', ['vpull', 'hpush', 'hpull', 'latdelt', 'reardelt', 'triceps', 'biceps']], ['Haut du corps C', ['hpush', 'hpull', 'vpush', 'vpull', 'reardelt', 'biceps']]];
+  let template = SPLITS[Math.max(2, Math.min(6, n))];
+  if (s.split && Number.isInteger(s.split.lower) && Number.isInteger(s.split.upper) && s.split.lower + s.split.upper === n && n >= 2) {
+    const L = [], U = []; for (let k = 0; k < s.split.lower; k++) L.push(LOWER_SETS[k % 3].slice()); for (let k = 0; k < s.split.upper; k++) U.push(UPPER_SETS[k % 3].slice());
+    template = []; let li = 0, ui = 0; for (let k = 0; k < n; k++) { const pickLower = (li < L.length) && (ui >= U.length || li * U.length <= ui * L.length); template.push(pickLower ? L[li++] : U[ui++]); }
+    const cnt = {}; template = template.map(([nm, pats]) => { const base = nm.replace(/ [ABC]$/, ''); cnt[base] = (cnt[base] || 0) + 1; const tot = base.startsWith('Bas') ? s.split.lower : s.split.upper; return [tot > 1 ? base + ' ' + 'ABCDEF'[cnt[base] - 1] : base, pats]; });
+  }
+  const wantIds = (s.wantEx || []).filter(id => LIB.BY_ID[id]); const wantPats = wantIds.map(id => LIB.BY_ID[id].pattern);
+  const LOWER_PAT = new Set(['squat', 'hinge', 'lunge', 'kneeflex', 'kneeext', 'calf']);
+  const sessions = template.map(([name, pats], i) => {
     let list = pats.map(pt => banned.has(pt) ? (ZONE_SUBS[pt] && !banned.has(ZONE_SUBS[pt]) ? ZONE_SUBS[pt] : null) : pt).filter(Boolean);
     list = list.filter((pt, k) => list.indexOf(pt) === k || pt === 'hpush' || pt === 'hpull');
     if (goal === 'perte' && !refuse.includes('cardio') && !list.includes('cond')) list.push('cond');
@@ -557,7 +568,10 @@ function planStructure(profile, adjust) {
       if (SECOND.add2 && !banned.has(SECOND.add2) && !list.includes(SECOND.add2)) list.push(SECOND.add2);
     }
     if ((runner || cyclist) && goal !== 'force' && goal !== 'masse') { const k = list.indexOf('lunge'); if (k > 0 && list.length > 4) list.splice(k, 1); } // jambes déjà très sollicitées : on retire l'unilatéral de volume
-    if (list.length > maxEx) { const keepCond = list.includes('cond'); list = list.filter(x => x !== 'cond').slice(0, keepCond ? maxEx - 1 : maxEx); if (keepCond) list.push('cond'); }
+    // exercices voulus : leur schéma doit exister dans une séance de la bonne moitié du corps
+    wantPats.forEach((pt, wi) => { if (banned.has(pt) || list.includes(pt)) return; const isLower = LOWER_PAT.has(pt); const sessLower = pats.some(x => LOWER_PAT.has(x)); const sessUpper = pats.some(x => !LOWER_PAT.has(x) && x !== 'core' && x !== 'cond' && x !== 'carry'); if ((isLower && sessLower) || (!isLower && sessUpper) || (!sessLower && !sessUpper)) { if ((wi + i) % 2 === 0 || n === 1) list.splice(Math.min(2, list.length), 0, pt); } });
+    if (s.coreEnd) { const k = list.indexOf('core'); if (k >= 0) list.splice(k, 1); list.push('core'); }
+    if (list.length > maxEx) { const keepCond = list.includes('cond'), keepCore = s.coreEnd && list.includes('core'); list = list.filter(x => x !== 'cond' && !(keepCore && x === 'core')).slice(0, maxEx - (keepCond ? 1 : 0) - (keepCore ? 1 : 0)); if (keepCore) list.push('core'); if (keepCond) list.push('cond'); }
     // jamais moins de 4 emplacements : on complète avec des schémas sûrs non exclus
     for (const extra of ['core', 'kneeflex', 'hinge', 'hpull', 'calf', 'carry', 'reardelt']) { if (list.length >= 4) break; if (!list.includes(extra) && !banned.has(extra)) list.push(extra); }
     const slots = list.map((pt, k) => { const role = k === 0 ? 'main' : k === 1 ? 'second' : 'acc'; const d = dose(goal, role, level); if (age >= 50) { d.rir = d.rir.map(r => Math.max(r, 2)); d.restSec = Math.round(d.restSec * 1.15); } if (second === 'endurance' && role !== 'main') { d.reps = role === 'second' ? '12-15' : '15-20'; d.restSec = Math.min(d.restSec, 60); } if (adj.volume && adj.volume !== 1) d.sets = Math.max(2, Math.round(d.sets * adj.volume)); if (adj.rir) d.rir = d.rir.map((r, i) => i === d.rir.length - 1 ? r : Math.min(4, Math.max(0, r + adj.rir))); return Object.assign({ pattern: pt, role, star: k < 2, soft: soft.has(pt) }, d); });
@@ -565,7 +579,7 @@ function planStructure(profile, adjust) {
     let total = slots.reduce((a, x) => a + x.sets, 0); while (total > caps.setsPerSession) { const big = slots.reduce((m, x) => x.sets > m.sets ? x : m, slots[0]); if (big.sets <= 2) break; big.sets--; total--; }
     const dayIdx = days[i]; return { id: 's' + (i + 1), day: (dayIdx + 1) % 7, dayName: DAY_FR[dayIdx], name: goal === 'perte' ? name.replace('force', 'densité') : name, slots };
   });
-  return { goal, second, level, days, minutes, gym, bodyOnly, banned: [...banned], soft: [...soft], sessions, caps, age, skills, sports, flags: { runner, climber, swimmer, contact, cyclist }, favor: adj.favor || [], avoid: adj.avoid || [], adjust: adj };
+  return { goal, second, level, days, minutes, gym, bodyOnly, banned: [...banned], soft: [...soft], sessions, caps, age, skills, sports, flags: { runner, climber, swimmer, contact, cyclist }, favor: (adj.favor || []).concat(wantIds), avoid: adj.avoid || [], want: wantIds, adjust: adj };
 }
 // Rendu du programme déjà construit pour le coach : il rédige, il ne choisit pas. Les exercices viennent de la bibliothèque.
 function skeletonText(plan, profile) {
@@ -727,7 +741,7 @@ async function buildProgram(profile, apiKey, model, seed, review) {
   // 2. Le coach rédige (rationale, nutrition, échauffement, notes). Borné dans le temps ; s'il échoue, le programme est livré sans ses textes et complété plus tard.
   const sys = systemFor(profile, null);
   const pr = profile || {};
-  const user = `Construis les textes du mésocycle de cet athlète (départ le ${start}). Sois concret et exigeant au niveau déclaré. Le programme doit être visiblement écrit pour ${pr.name || 'cette personne'} : relie chaque choix à ses objectifs (${(pr.goals || []).join(', ') || 'non précisés'}), son niveau (${pr.level || '?'}), son matériel, ses contraintes et ses autres pratiques.${review && review.done ? '\n\nBilan mesuré du cycle précédent (à commenter dans le rationale, chiffres à reprendre tels quels) : ' + review.summary : ''}\n\n${skeletonText(plan, profile)}\n\n${COACH_TEXT_SCHEMA}`;
+  const user = `Construis les textes du mésocycle de cet athlète (départ le ${start}). Sois concret et exigeant au niveau déclaré. Le programme doit être visiblement écrit pour ${pr.name || 'cette personne'} : relie chaque choix à ses objectifs (${(pr.goals || []).join(', ') || 'non précisés'}), son niveau (${pr.level || '?'}), son matériel, ses contraintes et ses autres pratiques.${(pr.spec && pr.spec.wishes) ? '\n\nDemande explicite de l\'athlète (à prendre en compte dans le rationale et les notes) : « ' + String(pr.spec.wishes).slice(0, 500) + ' »' : ''}${review && review.done ? '\n\nBilan mesuré du cycle précédent (à commenter dans le rationale, chiffres à reprendre tels quels) : ' + review.summary : ''}\n\n${skeletonText(plan, profile)}\n\n${COACH_TEXT_SCHEMA}`;
   let lastErr = '';
   for (let attempt = 1; attempt <= 2; attempt++) {
     try {
@@ -861,7 +875,7 @@ async function coachImpl(req) {
   if (mode === 'chat') {
     const msgs = (req.data.messages || []).filter(m => m && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string').slice(-12).map(m => ({ role: m.role, content: m.content.slice(0, 4000) }));
     if (!msgs.length || msgs[msgs.length - 1].role !== 'user') throw new HttpsError('invalid-argument', 'Message manquant.');
-    const sys = `${SYSTEM}\n\nProgramme :\n${programSummary}\n\n${context}\n\nSemaine en cours : S${req.data.week || '?'}. Réponds en moins de 200 mots sauf si la question demande un plan détaillé, et termine toujours ta réponse : jamais de phrase coupée.`;
+    const sys = `${SYSTEM}\n\nProgramme :\n${programSummary}\n\n${context}\n\nSemaine en cours : S${req.data.week || '?'}. Réponds en moins de 200 mots sauf si la question demande un plan détaillé, et termine toujours ta réponse : jamais de phrase coupée. Important : tu ne peux pas modifier le programme depuis cette conversation. Si l'athlète veut changer la répartition des séances, ajouter ou retirer des exercices, ou refaire le cycle, dis-le clairement et renvoie-le vers l'onglet Programme, bouton « Ajuster mon programme » (répartition bas/haut, exercices voulus ou à éviter, abdos en fin de séance, message au coach) ; le nouveau programme se construit immédiatement. Pour noter une charge de départ : fiche de l'exercice, champ « Ma charge habituelle ».`;
     const text = await claude(apiKey, model, sys, msgs, 1800);
     const cost = await recordUsage(uid, 'chat', model);
     return { text, costUsd: cost };
@@ -899,7 +913,7 @@ async function sendPush(uid, title, body, data) {
 function parisISO(d) { return (d || new Date()).toLocaleDateString('sv-SE', { timeZone: 'Europe/Paris' }); }
 function isoDaysAgo(n) { const d = new Date(); d.setDate(d.getDate() - n); return parisISO(d); }
 // Une séance est considérée faite si elle a été terminée, ou si elle a des séries enregistrées un jour passé (jamais clôturée).
-function isDone(l, today) { return !!(l && (l.done || (Object.keys(l.sets || {}).length && l.date < (today || parisISO())))); }
+function isDone(l, today) { if (!l) return false; const hasSet = Object.values(l.sets || {}).some(arr => (arr || []).some(x => x && x.done)); return !!((l.done && hasSet) || (hasSet && l.date < (today || parisISO()))); }
 async function activeUsers() {
   const refs = await db.collection('users').listDocuments();
   const out = [];

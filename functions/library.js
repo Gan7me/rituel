@@ -75,6 +75,7 @@ function score(e, ctx) {
   if (soft.some(z => (e.zones || []).includes(z))) s -= 12; // zone fragile : on préfère un exercice qui ne la charge pas
   if (usedWeek.has(e.id)) s -= role === 'main' ? 6 : 9; // variété dans la semaine, un principal peut revenir
   if (usedSession.has(e.id)) s -= 100; // jamais deux fois dans la même séance
+  if ((ctx.want || []).includes(e.id)) s += 60; // demandé explicitement par l'athlète
   if ((ctx.favor || []).includes(e.id)) s += 12; // a progressé au cycle précédent : on garde
   if ((ctx.avoid || []).includes(e.id)) s -= 30; // a stagné en principal : nouveau stimulus
   s += hash(seed + e.id) * 5; // départage stable
@@ -88,8 +89,9 @@ function allowed(e, profile, level, gearSet) {
   const banned = new Set((sp.zones || []).filter(z => z.sev === 'opere' || z.sev === 'douleur').map(z => z.zone));
   if (!hasReq(e.req, gear)) return false;
   if ((LEVEL_RANK[e.level] ?? 0) > lvl) return false;
-  if (e.maxLevel && lvl > (LEVEL_RANK[e.maxLevel] ?? 3)) return false; // variante d'apprentissage, pas pour un athlète confirmé
+  if (e.maxLevel && lvl > (LEVEL_RANK[e.maxLevel] ?? 3) && !(sp.wantEx || []).includes(e.id)) return false; // variante d'apprentissage, pas pour un athlète confirmé (sauf demande explicite)
   if ((e.zones || []).some(z => banned.has(z))) return false;
+  if ((sp.avoidEx || []).includes(e.id)) return false; // exercice refusé explicitement par l'athlète
   if (refuse.includes('nomachine') && (e.tags || []).includes('machine')) return false;
   if (refuse.includes('nobar') && (e.tags || []).includes('barre')) return false;
   if (refuse.includes('burpees') && /burpee/i.test(e.name)) return false;
@@ -117,7 +119,7 @@ function selectExercises(plan, profile, seedStr) {
       for (const pat of chain) {
         const cands = EXERCISES.filter(e => e.pattern === pat && okFor(e) && !usedSession.has(e.id));
         if (!cands.length) continue;
-        const ctx = { role: sl.role, goal: plan.goal, level: plan.level, likes, soft, usedWeek, usedSession, seed, gym, second: plan.second || null, skills: plan.skills || sp.skills || [], age: plan.age || Number(p.age) || 0, flags: plan.flags || {}, favor: plan.favor || [], avoid: plan.avoid || [] };
+        const ctx = { role: sl.role, goal: plan.goal, level: plan.level, likes, soft, usedWeek, usedSession, seed, gym, second: plan.second || null, skills: plan.skills || sp.skills || [], age: plan.age || Number(p.age) || 0, flags: plan.flags || {}, favor: plan.favor || [], avoid: plan.avoid || [], want: plan.want || [] };
         cands.sort((a, b) => score(b, ctx) - score(a, ctx));
         picked = cands[0]; alt = cands.find(c => c.id !== picked.id && !usedSession.has(c.id)) || null; usedPattern = pat; break;
       }
