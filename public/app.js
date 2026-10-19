@@ -18,7 +18,7 @@ function humanErr(e){ const c=(e&&e.code)||''; const m=(e&&e.message)||String(e|
   if(/network|Failed to fetch|internet/i.test(m)||!navigator.onLine) return 'Pas de réseau. Le coach a besoin d\'une connexion ; tes séries sont enregistrées et partiront toutes seules.';
   if(/invalid-argument/.test(c)) return 'Le serveur n\'a pas compris la demande (version de l\'app en retard ?). Recharge l\'application depuis Réglages.';
   return m; }
-const APP_VERSION='3.44.0';
+const APP_VERSION='3.45.0';
 const ADMIN_RE=/^(ganeme\.asloune@nexisafe\.com|gads@live\.fr)$/i;
 let PROGRAM={sessions:[]};
 let WEEKS = [
@@ -1084,6 +1084,12 @@ function bindCheckin(){
   el.querySelectorAll('.ckscale button').forEach(b=>b.onclick=()=>{ b.parentElement.querySelectorAll('button').forEach(x=>x.setAttribute('aria-pressed',x===b)); });
   $('#ckSave').onclick=()=>{ const c={weekKey:weekKeyOf(todayISO()),date:todayISO(),updatedAt:Date.now()}; el.querySelectorAll('.ckscale').forEach(sc=>{ const on=sc.querySelector('[aria-pressed="true"]'); c[sc.dataset.k]=on?Number(on.dataset.v):3; }); const bw=parseFloat($('#ckBw').value); if(bw>30){ S.bw[c.date]={date:c.date,kg:bw,updatedAt:Date.now()}; writeDoc('bw',c.date,S.bw[c.date]); c.bw=bw; } c.readiness=readinessOf(c); c.mod=modFor(c.readiness,c); S.checkins=S.checkins||{}; S.checkins[c.weekKey]=c; save(); writeDoc('checkins',c.weekKey,c); toast(c.mod.label.charAt(0).toUpperCase()+c.mod.label.slice(1)+' : '+c.mod.why,'ok',6000); render(); };
 }
+function coachCardHtml(){ let h='';
+  const last=COACH.items[0];
+  if(last){ const txt=last.type==='bilan'||last.type==='cycleEnd'?(last.nextWeek||last.analysis):last.type==='nudge'?last.analysis:(last.nextFocus||last.analysis); h+=`<div class="card coachcard" id="homeCoach" role="button" tabindex="0"><div class="card-h"><b>${coachAvatar(last.adjustments&&last.adjustments.length&&!last.applied?'attention':'idle','xs')} ${esc(COACH_NAME)}</b><span class="muted">${last.createdAt?new Date(last.createdAt).toLocaleDateString('fr-FR',{day:'numeric',month:'short'}):''}</span></div><p>${lexify(esc(String(txt||'').slice(0,180)))}${String(txt||'').length>180?'…':''}</p>${last.adjustments&&last.adjustments.length&&!last.applied?'<span class="tag">charges à appliquer</span>':''}</div>`; }
+  else h+=`<div class="card"><div class="card-h"><b>${coachAvatar('idle','xs')} ${esc(COACH_NAME)}</b></div><p class="muted">Ton coach. Après ta première séance terminée, il l'analyse et fixe les charges suivantes.</p></div>`;
+  return h; }
+function isSimpleHome(){ if(S.homeFull) return false; return Object.values(S.logs).filter(l=>l.done).length<3; }
 function renderHome(){
   const el=$('#tab-home'); if(!el||!PROGRAM.sessions.length) return;
   const date=todayISO(), wk=curWeek(), W=WEEKS[wk-1]; const ses=curSession(); const log=S.logs[logKey(date,ses.id)];
@@ -1097,7 +1103,7 @@ function renderHome(){
   const over=cycleOver(); const af=progressFacts(); const newB=af.unlocked.filter(id=>!(S.badgesSeen||[]).includes(id)); const SK=dayStreak();
   let h=`<div class="hello"><div><p class="eyebrow">${esc(dayLabel)}</p><h2>${esc(hello)}${name?' '+esc(name):''}</h2><p class="streak ${SK.today==='due'?'due':''} ${SK.days?'':'zero'}"><i>🔥</i>${SK.days?`${SK.days} jour${SK.days>1?'s':''} d'affilée${SK.today==='due'?' · séance du jour à faire':''}`:'Commence ta série aujourd\'hui'}</p></div><button class="avbtn ${newB.length?'new':''}" id="homeAvatar" aria-label="Mes badges">${rankSvg(af.stage,44)}</button></div>`;
   if(over) h+=`<div class="card cycend"><div class="card-h"><b>Cycle terminé</b><span class="muted">${fmtD(WEEKS[WEEKS.length-1].to)}</span></div><p>Les ${WEEKS.length} semaines de « ${esc(String(PROGRAM.cycleName||'').split(' · ')[0])} » sont faites. Kai construit le suivant à partir de ton journal.</p><div class="row2"><button class="btn fill sm" id="homeNewCycle">Nouveau cycle avec Kai</button></div></div>`;
-  if(!over) h+=checkinHtml();
+  if(!over&&!isSimpleHome()) h+=checkinHtml();
   { const wm=weekMod(wk); if(wm&&wm.sets!==1) h+=`<div class="banner info">${esc(wm.label.charAt(0).toUpperCase()+wm.label.slice(1))} : ${esc(wm.why)}.</div>`; }
   // carte séance du jour
   h+=`<div class="today ${done?'done':''}"><div class="t-top"><span class="eyebrow">${isRest&&!started&&!done?'Pas de séance prévue':'Séance du jour'} · S${wk} ${esc(String(W.label||'').replace(/^S\d+\s*/,''))}</span>${sub?'<span class="tag">sans salle</span>':''}</div>
@@ -1107,6 +1113,26 @@ function renderHome(){
     ${!started&&!done?`<button class="link t-nogym" id="homeNogym">Pas de salle aujourd'hui ?</button>`:''}</div>`;
   // semaine : pastilles (semaine calendaire courante, lundi → dimanche)
   const dow=(new Date(date+'T12:00:00').getDay()+6)%7; const a=addDays(date,-dow);
+  // Accueil simple tant que moins de 3 séances faites : l'essentiel seulement, le reste s'ouvre ensuite.
+  const simple=isSimpleHome();
+  if(simple){
+    const weekDoneS=Object.values(S.logs).filter(l=>l.done&&l.date>=a&&l.date<=addDays(a,6)).length; let dotsS=''; const dn0=['L','M','M','J','V','S','D'];
+    for(let i=0;i<7;i++){ const d=addDays(a,i); const dayIdx=(i+1)%7; const planned=PROGRAM.sessions.find(x=>x.day===dayIdx); const did=Object.values(S.logs).some(l=>l.done&&l.date===d); const cls=did?'ok':d<date?(planned?'miss':'rest'):d===date?'now':(planned?'plan':'rest'); dotsS+=`<button class="dot ${cls}" data-day="${planned?planned.id:''}" data-date="${d}"><i></i><span>${dn0[i]}</span></button>`; }
+    h+=`<div class="card wk"><div class="card-h"><b>Cette semaine</b><span class="muted">${weekDoneS}/${PROGRAM.sessions.length} séances</span></div><div class="dots">${dotsS}</div></div>`;
+    if(!over&&Object.values(S.logs).some(l=>l.done)) h+=checkinHtml();
+    h+=coachCardHtml();
+    const nDoneAll=Object.values(S.logs).filter(l=>l.done).length;
+    h+=`<div class="card howto"><div class="card-h"><b>Comment ça marche</b><span class="muted">${nDoneAll}/3 séances</span></div><ol>
+      <li><b>Démarre la séance du jour.</b> Tout est prêt : exercices, séries, charges de départ. Coche chaque série faite.</li>
+      <li><b>${esc(COACH_NAME)} analyse</b> chaque séance terminée et règle les charges de la suivante. Tu n'as rien à calculer.</li>
+      <li><b>Pour changer quelque chose</b> (jours, exercices, abdos en fin de séance) : onglet Programme → « Ajuster mon programme ».</li></ol>
+      <p class="small muted">Après 3 séances, l'accueil affiche aussi tes défis, médailles, tonnage, poids et tests.</p><button class="link" id="homeFull">Tout afficher dès maintenant</button></div>`;
+    const nextS0=[1,2,3,4,5,6,7].map(i=>{ const d=(new Date().getDay()+i)%7; return PROGRAM.sessions.find(x=>x.day===d); }).find(Boolean);
+    if(nextS0&&nextS0.id!==ses.id) h+=`<p class="small muted center">Prochaine : ${esc(nextS0.dayName)} · ${esc(nextS0.name)}</p>`;
+    if(isGenericProgram()) h=builtForHtml()+h;
+    el.innerHTML=h; bindCheckin(); bindHome(el,ses); const hf=$('#homeFull'); if(hf) hf.onclick=()=>{ S.homeFull=true; save(); renderHome(); };
+    return;
+  }
   const dn=['L','M','M','J','V','S','D']; let dots='';
   for(let i=0;i<7;i++){ const d=addDays(a,i); const dayIdx=(i+1)%7; const planned=PROGRAM.sessions.find(x=>x.day===dayIdx); const did=Object.values(S.logs).some(l=>l.done&&l.date===d); const cls=did?'ok':d<date?(planned?'miss':'rest'):d===date?'now':(planned?'plan':'rest'); dots+=`<button class="dot ${cls}" data-day="${planned?planned.id:''}" data-date="${d}"><i></i><span>${dn[i]}</span></button>`; }
   const weekDone=Object.values(S.logs).filter(l=>l.done&&l.date>=a&&l.date<=addDays(a,6)).length;
@@ -1127,15 +1153,14 @@ function renderHome(){
   const tests=Object.values(S.tests||{}).sort((x,y)=>x.date<y.date?-1:1); const lastT=tests[tests.length-1]; const RT=refTest(); const goal=RT.goal;
   h+=`<div class="tiles2"><div class="card qk"><div class="card-h"><b>Poids</b>${dBw!=null?`<i class="${dBw<0?'down':dBw>0?'up':'flat'}">${dBw>0?'+':''}${String(dBw).replace('.',',')} kg / 7 j</i>`:''}</div><div class="qv"><b>${lastBw?String(lastBw.kg).replace('.',','):'—'}</b><span>kg${lastBw?' · '+fmtD(lastBw.date):''}</span></div><form class="qf" id="bwQuick"><input type="number" step="0.1" inputmode="decimal" placeholder="${lastBw?String(lastBw.kg):'69,0'}" aria-label="Poids du jour"><button class="btn sm fill" type="submit">OK</button></form></div>
     <div class="card qk"><div class="card-h"><b>${esc(RT.short)}</b>${goal?`<span class="muted">objectif ${goal}</span>`:''}</div><div class="qv"><b>${lastT?lastT.reps:'—'}</b><span>${lastT?'le '+fmtD(lastT.date):'pas encore testé'}</span></div>${goal&&lastT?`<div class="xpbar ok"><i style="width:${Math.min(100,Math.round(100*lastT.reps/goal))}%"></i></div>`:''}<form class="qf" id="tQuick"><input type="number" inputmode="numeric" placeholder="${RT.unit}" aria-label="${esc(RT.label)}"><button class="btn sm" type="submit">Noter</button></form></div></div>`;
-  // dernier mot du coach
-  const last=COACH.items[0];
-  if(last){ const txt=last.type==='bilan'||last.type==='cycleEnd'?(last.nextWeek||last.analysis):last.type==='nudge'?last.analysis:(last.nextFocus||last.analysis); h+=`<div class="card coachcard" id="homeCoach" role="button" tabindex="0"><div class="card-h"><b>${coachAvatar(last.adjustments&&last.adjustments.length&&!last.applied?'attention':'idle','xs')} ${esc(COACH_NAME)}</b><span class="muted">${last.createdAt?new Date(last.createdAt).toLocaleDateString('fr-FR',{day:'numeric',month:'short'}):''}</span></div><p>${lexify(esc(String(txt||'').slice(0,180)))}${String(txt||'').length>180?'…':''}</p>${last.adjustments&&last.adjustments.length&&!last.applied?'<span class="tag">charges à appliquer</span>':''}</div>`; }
-  else h+=`<div class="card"><div class="card-h"><b>${coachAvatar('idle','xs')} ${esc(COACH_NAME)}</b></div><p class="muted">Ton coach. Après ta première séance terminée, il l'analyse et fixe les charges suivantes.</p></div>`;
+  h+=coachCardHtml();
   // prochaine séance
   const nextS=[1,2,3,4,5,6,7].map(i=>{ const d=(new Date().getDay()+i)%7; return PROGRAM.sessions.find(x=>x.day===d); }).find(Boolean);
   if(nextS&&nextS.id!==ses.id) h+=`<p class="small muted center">Prochaine : ${esc(nextS.dayName)} · ${esc(nextS.name)}</p>`;
   if(isGenericProgram()) h=builtForHtml()+h;
-  el.innerHTML=h; bindCheckin(); const hg=$('#genericBtn',el); if(hg) hg.onclick=()=>{ showTab('programme'); regenerateProgram(true); };
+  el.innerHTML=h; bindCheckin(); bindHome(el,ses);
+}
+function bindHome(el,ses){ const date=todayISO(); const hg=$('#genericBtn',el); if(hg) hg.onclick=()=>{ showTab('programme'); regenerateProgram(true); };
   const go=()=>{ S.session=ses.id; S.sessionDate=todayISO(); save(); showTab('seance'); };
   const st=$('#homeStart'); if(st) st.onclick=()=>{ S.session=ses.id; S.sessionDate=todayISO(); save(); showTab('seance'); enterFocus(); };
   const op=$('#homeOpen'); if(op) op.onclick=go;

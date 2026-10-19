@@ -1235,3 +1235,7 @@ main>section{overflow-x:clip}
 .adjrow{display:flex;align-items:center;justify-content:space-between;padding:6px 0}.stepper{display:flex;align-items:center;gap:10px}.stepper button{width:34px;height:34px;border-radius:9px;border:1px solid var(--line,#232a36);background:rgba(255,255,255,.05);color:inherit;font-size:1.1em}.stepper b{min-width:20px;text-align:center}
 .chk{display:flex;align-items:center;gap:8px}
 .myload{margin:10px 0}.myload label{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.myload input{width:90px}
+/* accueil simple : comment ça marche */
+.card.howto ol{margin:6px 0 8px;padding-left:20px;display:grid;gap:8px}
+.card.howto li{font-size:14px;line-height:1.45}
+.card.howto .link{margin-top:4px;padding:0}

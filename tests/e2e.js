@@ -110,6 +110,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   await p.evaluate((pg) => window.__setMeta([{ id: 'profile', data: { name: 'Test', level: 'confirme', weight: 69 } }, { id: 'program', data: pg }]), prog);
   await sleep(300);
   console.log('Point du lundi');
+  await p.evaluate(() => { S.homeFull = true; save(); renderHome(); }); // accueil complet pour ce scénario (l'accueil simple est testé plus bas)
   await p.click('.tabs button[data-tab="home"]'); await sleep(200);
   assert(await p.$('#checkin .ckscale[data-k=sleep]'), 'accueil : point hebdomadaire proposé (sommeil, fatigue, courbatures, envie)');
   await p.evaluate(() => { document.querySelector('.ckscale[data-k=sleep] [data-v="1"]').click(); document.querySelector('.ckscale[data-k=fatigue] [data-v="5"]').click(); document.querySelector('.ckscale[data-k=soreness] [data-v="4"]').click(); document.querySelector('#ckSave').click(); }); await sleep(250);
@@ -286,6 +287,11 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   await p.evaluate(() => { window.confirm = () => false; document.querySelector('#ivNext').click(); }); await sleep(300);
   assert(await p.evaluate(() => !!document.querySelector('#tab-reglages') && !document.querySelector('.onb.iv')), 'retour aux réglages après la fiche');
   await p.click('.tabs button[data-tab="home"]'); await sleep(200);
+  await p.evaluate(() => { S.homeFull = false; renderHome(); }); await sleep(200);
+  assert(await p.evaluate(() => Object.values(S.logs).filter(l => l.done).length < 3 ? (!!document.querySelector('.card.howto') && !document.querySelector('.tiles3') && !document.querySelector('.avcard')) : true), 'accueil simple avant 3 séances : « comment ça marche », pas de défis ni de chiffres');
+  await p.evaluate(() => { const b = document.querySelector('#homeFull'); if (b) b.click(); }); await sleep(200);
+  assert(await p.evaluate(() => S.homeFull === true || Object.values(S.logs).filter(l => l.done).length >= 3), 'accueil complet demandé : réglage conservé');
+  if (process.env.SHOT) { await p.evaluate(() => { S.homeFull = false; renderHome(); }); await sleep(200); await p.screenshot({ path: process.env.SHOT, fullPage: true }); await p.evaluate(() => { S.homeFull = true; renderHome(); }); await sleep(200); }
   assert(await p.evaluate(() => !!document.querySelector('#homeAvatar .rank') && document.querySelectorAll('.avcard .badge').length >= 1 && document.querySelectorAll('.tiles3 .tr').length === 3 && !!document.querySelector('#bwQuick') && !!document.querySelector('#tQuick')), 'accueil : rang, badges, chiffres, saisie rapide');
   await p.evaluate(() => { const f = document.querySelector('#bwQuick'); f.querySelector('input').value = '68.4'; f.requestSubmit(); }); await sleep(150);
   assert(await p.evaluate(() => S.bw[todayISO()] && S.bw[todayISO()].kg === 68.4), 'pesée rapide enregistrée depuis l\'accueil');
