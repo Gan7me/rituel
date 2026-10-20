@@ -1242,3 +1242,102 @@ main>section{overflow-x:clip}
 
 .card.testdue{border-left:3px solid var(--accent,#e0322b)}
 .card.testdue .qf{margin-top:8px}
+
+/* ---------- épure 3.48 : séance ---------- */
+.sesshead .shrow{display:flex;align-items:baseline;justify-content:space-between;gap:10px}
+.sesshead .shrow h2{margin:0;font-size:26px;letter-spacing:-.02em}
+.sesshead .shrow .meta{display:inline;font-variant-numeric:tabular-nums;white-space:nowrap}
+.dayrow{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin:0 0 10px}
+.dayrow .ivchip{padding:7px 11px;font-size:13px}
+.gtgline{display:flex;align-items:center;gap:10px;background:var(--surface);border-radius:var(--r-sm);padding:9px 12px;margin:0 0 10px;font-size:14px;box-shadow:var(--shadow)}
+.gtgline .n{flex:0 0 auto;height:24px;padding:0 8px;border-radius:999px;background:var(--accent-soft);color:var(--accent-ink);font-weight:700;font-size:12px}
+.gtgline>span:not(.gtgrow){flex:1 1 auto;min-width:0;color:var(--ink2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.gtgline .gtgrow{margin:0;gap:6px;flex-wrap:nowrap}
+.gtgline .gtgrow label{padding:0;background:none;position:relative}
+.gtgline .gtgrow input{position:absolute;opacity:0;width:28px;height:28px;margin:0}
+.gtgline .gtgrow label span{width:28px;height:28px;border-radius:50%;border:2px solid var(--line);display:grid;place-items:center;font-size:12px;font-weight:700;color:var(--muted)}
+.gtgline .gtgrow input:checked+span{background:var(--ok);border-color:var(--ok);color:#fff}
+.ex.cur{padding:0 0 12px;overflow:hidden}
+.ex.cur .exh,.ex.cur .mach,.ex.cur .rx3,.ex.cur .coachline,.ex.cur .sets,.ex.cur .row2,.ex.cur .fnav,.ex.cur .tgtline{margin-left:16px;margin-right:16px}
+.ex.cur .exh{margin-top:14px}
+.ex.cur .exh .n{display:none}
+.ex.cur .exh .name{font-size:21px}
+.dhero{display:block;width:100%;aspect-ratio:3/2;background:var(--surface2);position:relative;padding:0;border:0}
+.dhero img{width:100%;height:100%;object-fit:cover;display:block}
+.dhero span{position:absolute;left:12px;bottom:10px;background:rgba(11,13,16,.75);color:#fff;font-size:11px;letter-spacing:.06em;text-transform:uppercase;padding:4px 8px;border-radius:999px}
+.ex.cur .mach{margin-top:4px;margin-left:16px;display:flex;gap:8px;align-items:baseline}
+.ex.cur .mach span{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ex.cur .mach .link{font-size:13px;font-weight:600;white-space:nowrap}
+.rx3{display:flex;gap:8px;margin:12px 0 10px}
+.rx3>div{flex:1 1 0;min-width:0;background:var(--surface2);border-radius:12px;padding:8px 6px;text-align:center}
+.rx3>div b{display:block;font-family:var(--disp);font-size:18px;letter-spacing:-.01em;font-variant-numeric:tabular-nums;white-space:nowrap}
+.rx3>div span{font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+.rx3>div[data-lex]{cursor:pointer}
+details.notes{background:var(--surface);border-radius:var(--r-sm);padding:10px 14px;margin:14px 0 0;box-shadow:var(--shadow)}
+details.notes summary{font-weight:600;font-size:14.5px;cursor:pointer;list-style:none}
+details.notes summary::-webkit-details-marker{display:none}
+details.notes textarea{margin-top:10px;min-height:70px}
+/* ---------- épure 3.48 : fiche exercice ---------- */
+#sheet .dplay{border-radius:16px;overflow:hidden;margin:-4px 0 10px}
+#sheet h3.sh{font-size:22px;margin:6px 0 2px;letter-spacing:-.01em}
+.tabs2{display:flex;background:var(--surface2);border-radius:12px;padding:4px;margin:10px 0}
+.tabs2 button{flex:1 1 0;text-align:center;padding:8px 0;border-radius:9px;font-size:13.5px;font-weight:600;color:var(--muted);background:none}
+.tabs2 button.on{background:var(--surface);color:var(--ink);box-shadow:var(--shadow)}
+.pts{list-style:none;padding:0;margin:0 0 12px;display:grid;gap:8px}
+.pts li{display:flex;gap:10px;font-size:14.5px;line-height:1.45}
+.pts li i{flex:none;width:22px;height:22px;border-radius:50%;background:var(--accent-soft);color:var(--accent-ink);display:grid;place-items:center;font-style:normal;font-size:12px;font-weight:800;margin-top:1px}
+.machine{background:var(--surface2);border-radius:12px;padding:10px 12px;margin:0 0 10px;font-size:13.5px}
+.machine b{display:block}.machine span{color:var(--muted);font-size:12.5px}
+.card.kai{display:flex;gap:10px;align-items:center;font-size:14px;margin:0 0 10px}
+.card.kai .k{flex:none;width:30px;height:30px;border-radius:9px;background:var(--ink);color:var(--bg);display:grid;place-items:center;font-weight:800;font-size:13px}
+/* ---------- épure 3.48 : accueil ---------- */
+.hello{margin-bottom:12px}
+.hello h2{font-size:24px;margin:2px 0 0}
+#tab-home .hero{background:var(--ink);color:var(--bg);border-radius:var(--r-lg);padding:18px 18px 14px;margin:0 0 12px;display:block}
+#tab-home .hero .eyebrow{color:var(--muted)}
+#tab-home .hero .t-top{display:flex;align-items:center;gap:8px;margin-bottom:4px}
+#tab-home .hero .t-top .tag{margin-left:auto}
+#tab-home .hero .streakpill{margin-left:auto;font-size:12px;font-weight:700;background:rgba(255,255,255,.1);padding:3px 8px;border-radius:999px}
+#tab-home .hero .t-name{font-family:var(--disp);font-size:30px;font-weight:800;letter-spacing:-.02em;line-height:1.05;margin:2px 0 2px}
+#tab-home .hero .t-meta{color:var(--muted);font-size:14px;margin-bottom:12px}
+#tab-home .hero .nums{display:flex;gap:18px;margin:0 0 14px}
+#tab-home .hero .nums div b{display:block;font-family:var(--disp);font-size:22px;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+#tab-home .hero .nums div span{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}
+#tab-home .hero .prog{margin:0 0 12px;color:var(--muted)}
+#tab-home .hero .prog .bar{background:rgba(255,255,255,.15)}
+#tab-home .hero .t-actions{display:flex;align-items:center;gap:12px}
+#tab-home .hero .t-actions .btn{flex:1 1 auto;padding:14px;font-size:16px}
+#tab-home .hero .t-actions .btn:not(.fill){background:rgba(255,255,255,.12);color:var(--bg)}
+#tab-home .hero .t-nogym{color:var(--muted);font-size:13px;white-space:nowrap}
+#tab-home .hero .dots{display:flex;justify-content:space-between;margin:16px 2px 0}
+#tab-home .hero .dot span{color:var(--muted)}
+#tab-home .hero.done .t-name{opacity:.8}
+.feelcard .frow{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.feelcard .frow b{font-size:15px}
+.feelcard .link{font-size:13px}
+.feel{display:flex;gap:8px;margin-top:10px}
+.feel button{flex:1 1 0;border:1px solid var(--line);background:var(--surface);border-radius:12px;padding:10px 0;font-size:24px;line-height:1}
+.feel button:active{background:var(--accent-soft);border-color:var(--accent)}
+#tab-home .tiles3 .tr b{font-size:22px}
+#tab-home .tiles3 .tr span{display:block;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-top:2px}
+/* ---------- épure 3.48 : programme ---------- */
+.cyc{background:var(--ink);color:var(--bg);border-radius:var(--r-lg);padding:18px;margin:0 0 12px}
+.cyc .eyebrow{color:var(--muted)}
+.cyc h2{font-size:22px;margin:4px 0 12px;letter-spacing:-.02em;line-height:1.1;color:var(--bg)}
+.cyc .wks{display:flex;gap:6px;margin-bottom:8px}
+.cyc .wks button{flex:1 1 0;text-align:center;border-radius:10px;padding:9px 0;background:rgba(255,255,255,.1);font-size:13px;font-weight:600;color:var(--muted)}
+.cyc .wks button[aria-pressed="true"]{background:var(--bg);color:var(--ink)}
+.cyc .wkline{font-size:12.5px;color:var(--muted);margin:0 0 14px}
+.prom{display:flex;justify-content:space-between;align-items:flex-end;gap:12px}
+.prom b{display:block;font-family:var(--disp);font-size:26px;letter-spacing:-.02em;font-variant-numeric:tabular-nums;white-space:nowrap}
+.prom small{display:block;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.08em;margin-bottom:2px}
+.prom .bar{flex:1 1 40px;height:6px;background:rgba(255,255,255,.15);border-radius:3px;overflow:hidden;margin-bottom:10px}
+.prom .bar i{display:block;height:100%;background:var(--accent)}
+#tab-programme .acts{display:flex;gap:8px;margin:0 0 14px}
+#tab-programme .acts .btn{flex:1 1 0;padding:11px 6px;font-size:13.5px;white-space:nowrap}
+#tab-programme .pses .pmeta{font-variant-numeric:tabular-nums}
+.doc .promise{margin:10px 0 14px}
+.prom>div{min-width:0}
+.prom>div:first-child{flex:0 1 auto;max-width:58%}
+.prom small{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.prow .nm .star{color:var(--accent);font-size:12px;margin-left:4px;vertical-align:2px}
