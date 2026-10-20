@@ -42,7 +42,7 @@ GOALS.forEach(goal => GEARS.forEach(gear => DAYS.forEach(days => {
 })));
 
 const banned = z => ({ epaule: /d[ée]velopp[ée].*(militaire|[ée]paule|overhead)|shoulder press|[ée]l[ée]vation|dips?\b|traction|pull[- ]?up|arrach|snatch|upright/i, genou: /squat|fente|lunge|leg ?ext|presse|hack|pendulum|saut|jump|pistol/i })[z];
-let fail = 0, n = 0, repaired = 0, subs = 0; const byPattern = {}; const exCount = {};
+let fail = 0, n = 0, repaired = 0, subs = 0, cycles = 0; const byPattern = {}; const exCount = {};
 const t0 = Date.now();
 for (const p of profiles) {
   n++;
@@ -52,11 +52,14 @@ for (const p of profiles) {
   if (check.errors.length) { repairProgram(prog, p, plan); check = checkProgram(prog, p); repaired++; }
   const problems = check.errors.slice();
   if (prog.sessions.length !== p.days) problems.push('séances ≠ jours');
-  const gear = LIB.availableGear(p); const caps = LEVEL_CAPS[p.level];
+  const gear = LIB.availableGear(p); const caps = LEVEL_CAPS[p.level]; const GOAL_PATS = E.goalPatterns ? E.goalPatterns(p) : [];
+  const canPull = LIB.EXERCISES.some(x => x.pattern === 'vpull' && LIB.allowed(x, p, p.level, gear));
   const hard = new Set((p.spec.zones || []).filter(z => z.sev !== 'fragile').map(z => z.zone));
   prog.sessions.forEach(se => {
     const ids = se.exercises.map(e => e.exId); if (new Set(ids).size !== ids.length) problems.push(se.name + ' : exercice en double');
     if (se.exercises.length < 4) problems.push(se.name + ' : moins de 4 exercices');
+    { const want = Math.min(Math.max(4, Math.min(caps.exPerSession, Math.round(p.minutes / 10))), ({ debutant: 5, intermediaire: 6, confirme: 7, avance: 8 })[p.level]); if (se.exercises.length < want) problems.push(`${se.name} : ${se.exercises.length} exercices pour un ${p.level} à ${p.minutes} min (attendu ≥ ${want})`); }
+    if (GOAL_PATS.includes('vpull') && canPull && /Poussée|Tirage|Haut|Corps/.test(se.name) && !se.exercises.some(e => (LIB.BY_ID[e.exId] || {}).pattern === 'vpull')) problems.push(se.name + ' : objectif tractions sans tirage vertical');
     if (se.exercises.reduce((a, e) => a + e.sets, 0) > caps.setsPerSession) problems.push(se.name + ' : volume au-dessus du plafond');
     se.exercises.forEach(e => {
       const ex = LIB.BY_ID[e.exId]; if (!ex) { problems.push('exercice inconnu ' + e.exId); return; }
@@ -69,8 +72,41 @@ for (const p of profiles) {
       if (e.pattern !== ex.pattern) subs++;
     });
   });
+  // Cycles suivants : la personne vit le cycle (assidue et progresse / assidue et stagne / absente), le bilan règle le suivant.
+  if (!problems.length && E.reviewCycle && E.goalPatterns) {
+    prog.generatedAt = Date.parse('2026-10-18T12:00:00Z');
+    const isBw = e => /traction|pull-up|dips|pompe|gainage|planche|crunch|relev/i.test(e.name);
+    const SCEN = { progresse: { skip: 0, w: (k) => 60 + 2.5 * k, r: 6 }, stagne: { skip: 0, w: () => 60, r: 6 }, absent: { skip: 1, w: () => 60, r: 6 } };
+    Object.entries(SCEN).forEach(([sname, sc]) => {
+      let prev = prog; let prevN = prog.sessions.map(se => se.exercises.length);
+      for (let cyc = 2; cyc <= 3; cyc++) {
+        const logs = []; prev.weeks.forEach((w, wi) => prev.sessions.forEach((se, si) => { if (sc.skip && (wi + si) % 2) return; const date = new Date(Date.parse(w.from + 'T12:00:00') + ((se.day + 6) % 7) * 86400000).toISOString().slice(0, 10); const sets = {}; se.exercises.forEach(e => { sets[e.id] = [1, 2, 3].map(() => ({ done: true, w: isBw(e) ? 0 : sc.w(wi), r: isBw(e) ? 10 + (sname === 'progresse' ? 2 * wi : 0) : sc.r })); }); logs.push({ date, done: true, sets }); }));
+        const rv = E.reviewCycle(prev, logs, {}, p);
+        if (!rv) { problems.push(`cycle ${cyc} (${sname}) : bilan absent`); break; }
+        const design = E.cycleDesign(p, rv, cyc); const adj = Object.assign({}, rv.adjust); adj.volume = (adj.volume || 1) * design.adjust.volume; adj.rir = (adj.rir || 0) + design.adjust.rir;
+        if (design.weeks < 3 || design.weeks > 6) problems.push(`cycle ${cyc} (${sname}) : durée ${design.weeks} semaines`);
+        if (!design.reasons.length) problems.push(`cycle ${cyc} (${sname}) : conception sans justification`);
+        if (sname === 'absent' && design.weeks !== 3) problems.push(`cycle ${cyc} (absent) : ${design.weeks} semaines au lieu d'un cycle court de reprise`);
+        if (Object.keys(rv.pain || {}).length && design.focus === 'realisation') problems.push(`cycle ${cyc} (${sname}) : réalisation malgré douleurs`);
+        const plan2 = LIB.selectExercises(planStructure(p, adj), p, 'seed' + n + sname + cyc);
+        const next = programFromPlan(plan2, p, '2026-11-15', design.weeks); next.generatedAt = Date.parse('2026-11-14T12:00:00Z');
+        if (next.weeks.length !== design.weeks) problems.push(`cycle ${cyc} (${sname}) : ${next.weeks.length} semaines construites pour ${design.weeks} décidées`);
+        const chk = checkProgram(next, p); if (chk.errors.length) problems.push(`cycle ${cyc} (${sname}) : ${chk.errors[0]}`);
+        next.sessions.forEach((se, si) => {
+          if (se.exercises.length < prevN[si]) problems.push(`cycle ${cyc} (${sname}) : ${se.name} passe de ${prevN[si]} à ${se.exercises.length} exercices`);
+          if (GOAL_PATS.includes('vpull') && canPull && /Poussée|Tirage|Haut|Corps/.test(se.name) && !se.exercises.some(e => (LIB.BY_ID[e.exId] || {}).pattern === 'vpull')) problems.push(`cycle ${cyc} (${sname}) : ${se.name} a perdu les tractions`);
+          se.exercises.forEach(e => { if (!rv.adjust.avoid.includes(e.exId)) return; const lib = LIB.BY_ID[e.exId]; const alts = LIB.EXERCISES.filter(x => x.pattern === lib.pattern && x.id !== lib.id && !rv.adjust.avoid.includes(x.id) && !se.exercises.some(y => y.exId === x.id) && LIB.allowed(x, p, p.level, gear)); if (alts.length) problems.push(`cycle ${cyc} (${sname}) : ${lib.name} écarté mais réutilisé (${alts.length} alternative(s))`); });
+        });
+        if (sname === 'absent' && rv.adjust.volume >= 1) problems.push(`cycle ${cyc} (absent) : assiduité ${rv.adherence} % sans baisse de volume`);
+        if (sname === 'progresse' && rv.adjust.avoid.length) problems.push(`cycle ${cyc} (progresse) : exercices écartés alors que tout progresse`);
+        if (sname === 'stagne' && rv.adherence >= 85 && !rv.adjust.avoid.length && Object.keys(LEVEL_CAPS).length) { const stars = prev.sessions.flatMap(se => se.exercises.filter(e => e.star && !isBw(e) && !GOAL_PATS.includes((LIB.BY_ID[e.exId] || {}).pattern))); if (stars.length) problems.push(`cycle ${cyc} (stagne) : rien ne change malgré la stagnation`); }
+        if (rv.adjust.avoid.some(id => GOAL_PATS.includes((LIB.BY_ID[id] || {}).pattern))) problems.push(`cycle ${cyc} (${sname}) : le geste de l'objectif a été écarté`);
+        prev = next; prevN = next.sessions.map(se => se.exercises.length); cycles++;
+      }
+    });
+  }
   if (problems.length) { fail++; if (fail <= 12) console.log('✗', p.name, JSON.stringify({ goal: p.goals[0], level: p.level, place: p.spec.place, gym: p.spec.gymGear, home: p.spec.homeGear, days: p.days, min: p.minutes, zones: p.spec.zones, refuse: p.spec.refuse }), '\n   ', problems.slice(0, 4).join(' | ')); }
 }
 const top = Object.entries(exCount).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([k, v]) => k + ':' + v).join(' ');
-console.log(`${n} profils en ${Date.now() - t0} ms · ${fail} non conforme(s) · ${repaired} réparé(s) · ${subs} emplacement(s) substitué(s) · exercices distincts utilisés : ${Object.keys(exCount).length}/${LIB.EXERCISES.length}\nles plus utilisés : ${top}`);
+console.log(`${n} profils · ${cycles} cycles suivants simulés en ${Date.now() - t0} ms · ${fail} non conforme(s) · ${repaired} réparé(s) · ${subs} emplacement(s) substitué(s) · exercices distincts utilisés : ${Object.keys(exCount).length}/${LIB.EXERCISES.length}\nles plus utilisés : ${top}`);
 process.exit(fail ? 1 : 0);

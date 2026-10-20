@@ -74,7 +74,7 @@ function score(e, ctx) {
   if (level === 'debutant' && tags.includes('barre')) s -= 6;
   if ((level === 'confirme' || level === 'avance') && e.tier === 1 && role === 'main') s += 4;
   if (soft.some(z => (e.zones || []).includes(z))) s -= 12; // zone fragile : on préfère un exercice qui ne la charge pas
-  if (usedWeek.has(e.id)) s -= role === 'main' ? 6 : 9; // variété dans la semaine, un principal peut revenir
+  if (usedWeek.has(e.id)) s -= role === 'main' ? 6 : 14; // variété dans la semaine, un principal peut revenir, un accessoire ne revient pas trois fois
   if (usedSession.has(e.id)) s -= 100; // jamais deux fois dans la même séance
   if ((ctx.want || []).includes(e.id)) s += 60; // demandé explicitement par l'athlète
   if ((ctx.favor || []).includes(e.id)) s += 12; // a progressé au cycle précédent : on garde
@@ -119,7 +119,8 @@ function selectExercises(plan, profile, seedStr) {
       let picked = null, alt = null, usedPattern = sl.pattern;
       for (const pat of chain) {
         // Les fiches éditoriales (195) ont la priorité ; la base étendue (issue des photos) ne sert que sur demande explicite ou quand rien d'autre n'est possible.
-        const all = EXERCISES.filter(e => e.pattern === pat && okFor(e) && !usedSession.has(e.id));
+        let all = EXERCISES.filter(e => e.pattern === pat && okFor(e) && !usedSession.has(e.id));
+        { const av = plan.avoid || []; const fresh = all.filter(e => !av.includes(e.id)); if (fresh.length) all = fresh; } // un principal qui a stagné ne revient pas tant qu'il existe une autre fiche du schéma
         let cands = all.filter(e => e.src !== 'photo' || (plan.want || []).includes(e.id));
         if (!cands.length) cands = all;
         if (!cands.length) continue;
@@ -130,6 +131,8 @@ function selectExercises(plan, profile, seedStr) {
       if (!picked) { const safe = ['plank', 'dead_bug', 'side_plank', 'ytw', 'glute_bridge', 'bw_calf', 'wall_sit', 'shadow_box'].map(id => BY_ID[id]).find(x => x && !usedSession.has(x.id) && hasReq(x.req, gear)); picked = safe || BY_ID.plank; usedPattern = picked.pattern; }
       if (usedPattern !== sl.pattern) notes.push(`${se.name} : « ${sl.pattern} » remplacé par « ${usedPattern} » (matériel ou zone à ménager)`);
       sl.ex = picked; sl.alt = alt; sl.usedPattern = usedPattern;
+      // un exercice sans charge (pont fessier, pompes, gainage) ne se prescrit pas en 3-5 répétitions : dose en répétitions, sauf tractions et dips qui se lestent
+      if ((picked.tags || []).includes('leger') && !(picked.tags || []).includes('tractions') && !/dips|traction|pull/i.test(picked.name) && !picked.timed && sl.reps && /^\d+-\d+$/.test(sl.reps) && Number(sl.reps.split('-')[1]) < 10) { sl.reps = '10-15'; sl.restSec = Math.min(sl.restSec || 90, 90); }
       usedSession.add(picked.id); usedWeek.add(picked.id);
     });
   });

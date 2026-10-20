@@ -1239,3 +1239,6 @@ main>section{overflow-x:clip}
 .card.howto ol{margin:6px 0 8px;padding-left:20px;display:grid;gap:8px}
 .card.howto li{font-size:14px;line-height:1.45}
 .card.howto .link{margin-top:4px;padding:0}
+
+.card.testdue{border-left:3px solid var(--accent,#e0322b)}
+.card.testdue .qf{margin-top:8px}

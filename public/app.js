@@ -18,7 +18,7 @@ function humanErr(e){ const c=(e&&e.code)||''; const m=(e&&e.message)||String(e|
   if(/network|Failed to fetch|internet/i.test(m)||!navigator.onLine) return 'Pas de réseau. Le coach a besoin d\'une connexion ; tes séries sont enregistrées et partiront toutes seules.';
   if(/invalid-argument/.test(c)) return 'Le serveur n\'a pas compris la demande (version de l\'app en retard ?). Recharge l\'application depuis Réglages.';
   return m; }
-const APP_VERSION='3.45.0';
+const APP_VERSION='3.47.0';
 const ADMIN_RE=/^(ganeme\.asloune@nexisafe\.com|gads@live\.fr)$/i;
 let PROGRAM={sessions:[]};
 let WEEKS = [
@@ -361,7 +361,7 @@ function renderReglages(){
   const ts=$('#themeSeg'); if(ts) ts.querySelectorAll('button').forEach(b=>b.onclick=()=>{ S.theme=b.dataset.theme; save(); applyTheme(); renderReglages(); });
   const adb=$('#adminBtn'); if(adb) adb.onclick=showAdmin;
   $('#profBtn').onclick=()=>{ if(!USER) return; const before=JSON.stringify([PROFILE&&PROFILE.goals,PROFILE&&PROFILE.gear,PROFILE&&PROFILE.days,PROFILE&&PROFILE.level,PROFILE&&PROFILE.constraints]); document.querySelector('.tabs').hidden=true; $('#weekChip').hidden=true;
-    IV.start(PROFILE||{},{step:9,onDone:()=>{ restoreShell(); render(); showTab('reglages'); toast('Profil enregistré','ok'); const after=JSON.stringify([PROFILE.goals,PROFILE.gear,PROFILE.days,PROFILE.level,PROFILE.constraints]); if(after!==before&&PROGRAM.sessions.length&&confirm('Ton profil a changé. Demander à '+COACH_NAME+' un nouveau cycle construit dessus ?')){ showTab('programme'); regenerateProgram(true); } }}); };
+    IV.start(PROFILE||{},{step:10,onDone:()=>{ restoreShell(); render(); showTab('reglages'); toast('Profil enregistré','ok'); const after=JSON.stringify([PROFILE.goals,PROFILE.gear,PROFILE.days,PROFILE.level,PROFILE.constraints]); if(after!==before&&PROGRAM.sessions.length&&confirm('Ton profil a changé. Demander à '+COACH_NAME+' un nouveau cycle construit dessus ?')){ showTab('programme'); regenerateProgram(true); } }}); };
   $('#progBtn').onclick=()=>document.querySelector('.tabs button[data-tab="programme"]').click();
   $('#diagBtn').onclick=showDiag;
   const db=$('#dataBtn'); if(db) db.onclick=()=>showSheet(`<h3>Tes données</h3><p class="small"><b>Ce que l'app enregistre</b> : ton profil (prénom, âge, sexe, taille, poids, niveau, objectifs, matériel, jours, zones à ménager, préférences), ton programme, tes séances (charges, répétitions, ressenti, notes), ton poids et tes tests, tes échanges avec ${esc(COACH_NAME)}, ton forfait.</p><p class="small"><b>Où</b> : sur ton compte, chez notre hébergeur en Europe. Personne d'autre n'y a accès : chaque donnée est liée à l'identifiant unique de ton compte, pas à ton prénom.</p><p class="small"><b>Ce qui est envoyé au coach IA</b> : ta fiche et tes séances, sans e-mail ni identifiant, le temps de construire la réponse. Rien n'est utilisé pour entraîner un modèle.</p><p class="small"><b>Partagé avec d'autres utilisateurs</b> : rien, sauf si tu actives le classement entre amis (prénom, code ami, XP), désactivable à tout moment.</p><p class="small"><b>Durée</b> : tant que ton compte existe. Suppression du compte et de toutes ses données depuis Réglages → Compte, effet immédiat.</p><div class="row2"><button class="btn sm" id="dataExp">Exporter mes données</button><a class="btn sm" href="confidentialite.html" target="_blank" rel="noopener">Politique complète</a></div><button class="btn" onclick="hideSheet()">Fermer</button>`) && setTimeout(()=>{ const e=$('#dataExp'); if(e) e.onclick=()=>$('#expBtn').click(); },0);
@@ -634,7 +634,24 @@ const IV=(function(){ let d={}, i=0, mode='onb'; let onDone=null;
       <div class="ivq"><b>Autres sports</b><div class="ivchips">${IV_SPORTS.map(s=>chip('sports',s,s,has('sports',s),true)).join('')}</div><input class="ivtext" data-f="sportsNote" placeholder="Fréquence, volume (ex. : trail 60 km par semaine, gardes de 24 h)" value="${esc(d.sportsNote||'')}"></div>
       <p class="small muted">Rituel ne remplace pas un avis médical. En cas de douleur ou de reprise après blessure, valide ton programme avec un professionnel de santé.</p>`,ok:()=>{ for(const z of (d.zones||[])) if(!(d.zoneSev||{})[z]){ toast('Précise la gravité pour chaque zone'); return false; } return true; },rerender:['zones'],alt:['Rien à signaler',()=>{ d.zones=[]; IV.go(8); }]},
     {t:'Ce que tu ne veux pas',s:'Aussi important que le reste. Je m\'y tiendrai.',h:()=>`<div class="ivchips">${IV_REFUSE.map(([v,l])=>chip('refuse',v,l,has('refuse',v),true)).join('')}</div><div class="ivq"><b>Et ce que tu aimes</b><div class="ivchips">${IV_LIKES.map(([v,l])=>chip('likes',v,l,has('likes',v),true)).join('')}</div></div><div class="ivq"><b>Tes repères actuels (facultatif)</b><input class="ivtext" data-f="experience" placeholder="Ex. : squat 100 kg × 5, 35 tractions, développé 80 kg" value="${esc(d.experience||'')}"></div>`,ok:()=>true},
-    {t:'Ta fiche',s:`C'est exactement ce que ${COACH_NAME} recevra. Corrige si quelque chose cloche.`,h:()=>`<div class="ivrecap">${ivRecapHtml(ivProfile(d))}</div><div class="ivchips small">${[['Objectifs',1],['Niveau',3],['Matériel',4],['Jours',5],['Zones',7],['Préférences',8]].map(([l,k])=>`<button type="button" class="ivchip" data-go="${k}">Modifier · ${l}</button>`).join('')}</div>`,ok:()=>true}
+    {t:'Tes réglages de séance',s:'Facultatif. Appliqué tel quel par les règles du programme.',h:()=>{ const n=(d.daysList||[]).length||3; const sp=d.split&&Number.isInteger(d.split.lower)&&d.split.lower+d.split.upper===n?d.split:null; const lower=sp?sp.lower:Math.round(n/2);
+      return `<div class="ivq"><b>Répartition de tes ${n} séances</b><div class="adjrow"><span>Bas du corps</span><div class="stepper"><button type="button" data-d="-1">−</button><b id="adjLower">${lower}</b><button type="button" data-d="1">+</button></div></div><div class="adjrow"><span>Haut du corps</span><b id="adjUpper">${n-lower}</b></div><p class="small muted">Par défaut, la répartition est choisie par ton objectif et tes jours.</p></div>
+      <div class="ivq"><label class="chk"><input type="checkbox" id="adjCore" ${d.coreEnd?'checked':''}> Abdos et gainage à la fin de chaque séance</label></div>
+      <div class="ivq"><b>Exercices que je veux</b><input class="ivtext" id="adjWantQ" placeholder="Tape un nom : hip thrust, presse, fentes…"><div class="ivchips" id="adjWantList"></div><div class="ivchips" id="adjWant"></div></div>
+      <div class="ivq"><b>Exercices à éviter</b><input class="ivtext" id="adjAvoidQ" placeholder="Tape un nom"><div class="ivchips" id="adjAvoidList"></div><div class="ivchips" id="adjAvoid"></div></div>
+      <div class="ivq"><b>Message pour ${esc(COACH_NAME)}</b><textarea class="ivtext" id="adjNote" rows="2" placeholder="Ce qui ne va pas, ce que tu attends">${esc(d.wishes||'')}</textarea></div>`; },
+      bind:(body)=>{ const n=(d.daysList||[]).length||3; let lower=Number($('#adjLower').textContent); d.split=d.split&&d.split.lower+d.split.upper===n?d.split:null; let want=(d.wantEx||[]).slice(), avoid=(d.avoidEx||[]).slice();
+        body.querySelectorAll('.stepper button').forEach(b=>b.onclick=()=>{ const k=Number(b.dataset.d); if(lower+k<0||lower+k>n) return; lower+=k; $('#adjLower').textContent=lower; $('#adjUpper').textContent=n-lower; d.split={lower,upper:n-lower}; });
+        $('#adjCore').onchange=e=>{ d.coreEnd=e.target.checked; };
+        $('#adjNote').oninput=e=>{ d.wishes=e.target.value.trim().slice(0,500); };
+        const chips=(host,list,rm)=>{ host.innerHTML=list.map(id=>{ const e=(EXMIN||[]).find(x=>x.id===id); return `<button type="button" class="ivchip on" data-id="${id}">${esc(e?e.n:id)} ✕</button>`; }).join(''); host.querySelectorAll('button').forEach(c=>c.onclick=()=>rm(c.dataset.id)); };
+        const draw=()=>{ d.wantEx=want; d.avoidEx=avoid; chips($('#adjWant'),want,id=>{ want=want.filter(x=>x!==id); draw(); }); chips($('#adjAvoid'),avoid,id=>{ avoid=avoid.filter(x=>x!==id); draw(); }); };
+        const bindSearch=(q,listEl,add)=>{ q.oninput=async()=>{ const lib=await loadExMin(); const t=q.value.trim().toLowerCase(); if(t.length<2){ listEl.innerHTML=''; return; } const hits=lib.filter(e=>e.n.toLowerCase().includes(t)||(e.m||'').toLowerCase().includes(t)).slice(0,8); listEl.innerHTML=hits.map(e=>`<button type="button" class="ivchip" data-id="${e.id}">${esc(e.n)}</button>`).join(''); listEl.querySelectorAll('button').forEach(b=>b.onclick=()=>{ add(b.dataset.id); q.value=''; listEl.innerHTML=''; draw(); }); }; };
+        loadExMin().then(draw);
+        bindSearch($('#adjWantQ'),$('#adjWantList'),id=>{ if(!want.includes(id)) want.push(id); avoid=avoid.filter(x=>x!==id); });
+        bindSearch($('#adjAvoidQ'),$('#adjAvoidList'),id=>{ if(!avoid.includes(id)) avoid.push(id); want=want.filter(x=>x!==id); }); },
+      ok:()=>true,alt:['Rien à régler',()=>IV.go(10)]},
+    {t:'Ta fiche',s:`C'est exactement ce que ${COACH_NAME} recevra. Corrige si quelque chose cloche.`,h:()=>`<div class="ivrecap">${ivRecapHtml(ivProfile(d))}</div><div class="ivchips small">${[['Objectifs',1],['Niveau',3],['Matériel',4],['Jours',5],['Zones',7],['Préférences',8],['Réglages',9]].map(([l,k])=>`<button type="button" class="ivchip" data-go="${k}">Modifier · ${l}</button>`).join('')}</div>`,ok:()=>true}
   ];
   function set(f,v,multi){ if(f.includes('.')){ const [a,b]=f.split('.'); d[a]=d[a]||{}; d[a][b]=v; return; } if(multi){ const arr=(d[f]||[]).slice(); const vv=/^\d+$/.test(v)&&f==='daysList'?Number(v):v; const k=arr.indexOf(vv); if(k>=0) arr.splice(k,1); else arr.push(vv); if(f==='skills'){ if(vv==='none') arr.splice(0,arr.length,'none'); else { const n=arr.indexOf('none'); if(n>=0) arr.splice(n,1); } } d[f]=arr; } else d[f]=d[f]===v?undefined:v; }
   function render(){ const sc=screens[i]; const m=document.querySelector('main'); const last=i===screens.length-1;
@@ -651,6 +668,7 @@ const IV=(function(){ let d={}, i=0, mode='onb'; let onDone=null;
       if(sc.react) sc.react(); });
     body.addEventListener('input',e=>{ const t=e.target; if(t.classList.contains('ivtext')) set(t.dataset.f,t.value.trim()); });
     body.querySelectorAll('[data-go]').forEach(b=>b.onclick=()=>IV.go(Number(b.dataset.go)));
+    if(sc.bind) sc.bind(body);
     const bk=$('#ivBack'); if(bk) bk.onclick=()=>IV.go(i-1);
     const al=$('#ivAlt'); if(al) al.onclick=sc.alt[1];
     $('#ivNext').onclick=async()=>{ if(!sc.ok()) return; if(!last){ IV.go(i+1); return; } await finish(); };
@@ -675,7 +693,7 @@ function ivProfile(s){ const days=(s.daysList||[]).slice().sort((a,b)=>a-b); con
   const equipment=[s.brand&&s.brand!=='Autre'?s.brand:'',(s.place!=='maison')?'salle : '+(s.gymGear||[]).map(v=>(IV_GYM.find(x=>x[0]===v)||[])[1]).filter(Boolean).join(', '):'',(s.place!=='salle')?'maison : '+(s.homeGear||[]).map(v=>(IV_HOME.find(x=>x[0]===v)||[])[1]).filter(Boolean).join(', '):''].filter(Boolean).join(' · ');
   const refuse=(s.refuse||[]).map(v=>(IV_REFUSE.find(x=>x[0]===v)||[])[1]).filter(Boolean), likes=(s.likes||[]).map(v=>(IV_LIKES.find(x=>x[0]===v)||[])[1]).filter(Boolean);
   return { name:String(s.name||'').trim(), age:Number(s.age)||null, sex:s.sex||'h', height:Number(s.height)||null, weight:Number(s.weight)||null, level:ivLevel(s), goals, goalsText:[refuse.length?'Refuse : '+refuse.join(', '):'',likes.length?'Aime : '+likes.join(', '):''].filter(Boolean).join('. '), days:days.length, daysList:days, minutes:Number(s.minutes)||60, gear:ivGear(s), equipment, sports, constraints, experience:s.experience||'', refTest:'tractions',
-    spec:{ goalMain:s.goalMain, goalSecond:s.goalSecond||null, years:s.years, skills:s.skills||[], place:s.place, gymGear:s.gymGear||[], homeGear:s.homeGear||[], brand:s.brand||'', daysList:days, minutes:Number(s.minutes)||60, zones, sports:s.sports||[], sportsNote:s.sportsNote||'', refuse:s.refuse||[], likes:s.likes||[], experience:s.experience||'', name:s.name, age:s.age, sex:s.sex, height:s.height, weight:s.weight, v:1 } }; }
+    spec:{ goalMain:s.goalMain, goalSecond:s.goalSecond||null, years:s.years, skills:s.skills||[], place:s.place, gymGear:s.gymGear||[], homeGear:s.homeGear||[], brand:s.brand||'', daysList:days, minutes:Number(s.minutes)||60, zones, sports:s.sports||[], sportsNote:s.sportsNote||'', refuse:s.refuse||[], likes:s.likes||[], experience:s.experience||'', name:s.name, age:s.age, sex:s.sex, height:s.height, weight:s.weight, split:(s.split&&s.split.lower+s.split.upper===days.length)?s.split:null, coreEnd:!!s.coreEnd, wantEx:s.wantEx||[], avoidEx:s.avoidEx||[], wishes:s.wishes||'', v:1 } }; }
 function ivRecapHtml(p){ const s=p.spec||{}; const gm=IV_GOALS.find(x=>x[0]===s.goalMain), g2=IV_GOAL2.find(x=>x[0]===s.goalSecond);
   return `<p><b>${esc(p.name||'')}</b>, ${p.age||'?'} ans, ${p.height||'?'} cm, ${p.weight||'?'} kg · <b>${IV_LEVEL_FR[p.level]||p.level}</b> (${esc((IV_YEARS.find(x=>x[0]===s.years)||['',''])[1].toLowerCase())}${(s.skills||[]).filter(x=>x!=='none').length?', '+(s.skills||[]).filter(x=>x!=='none').map(v=>(IV_SKILLS.find(x=>x[0]===v)||[])[1].toLowerCase()).join(', '):''})</p>
     <p>Objectif n°1 <b>${esc(gm?gm[1].toLowerCase():'')}</b>${g2?' · n°2 <b>'+esc(g2[1].toLowerCase())+'</b>':''} · <b>${p.days} jours</b> ${(p.daysList||[]).map(k=>IV_DAYS[k]).join(' ')} · <b>${p.minutes} min</b> maxi</p>
@@ -684,7 +702,8 @@ function ivRecapHtml(p){ const s=p.spec||{}; const gm=IV_GOALS.find(x=>x[0]===s.
     ${p.sports?`<p>${esc(p.sports)}</p>`:''}
     ${(s.refuse||[]).length?`<p>Refuse : ${esc((s.refuse||[]).map(v=>(IV_REFUSE.find(x=>x[0]===v)||[])[1]).join(', ').toLowerCase())}</p>`:''}
     ${(s.likes||[]).length?`<p>Aime : ${esc((s.likes||[]).map(v=>(IV_LIKES.find(x=>x[0]===v)||[])[1]).join(', ').toLowerCase())}</p>`:''}
-    ${p.experience?`<p>Repères : ${esc(p.experience)}</p>`:''}`; }
+    ${p.experience?`<p>Repères : ${esc(p.experience)}</p>`:''}
+    ${(s.split||s.coreEnd||(s.wantEx||[]).length||(s.avoidEx||[]).length)?`<p>Réglages : ${[s.split?`${s.split.lower} bas / ${s.split.upper} haut`:'',s.coreEnd?'abdos en fin de séance':'',(s.wantEx||[]).length?`veut ${(s.wantEx||[]).map(id=>{ const e=(EXMIN||[]).find(x=>x.id===id); return e?e.n:id; }).join(', ')}`:'',(s.avoidEx||[]).length?`évite ${(s.avoidEx||[]).map(id=>{ const e=(EXMIN||[]).find(x=>x.id===id); return e?e.n:id; }).join(', ')}`:''].filter(Boolean).join(' · ')}</p>`:''}`; }
 
 function showOnboarding(step){ ONB_STEP=step;
   restoreShell(); document.querySelector('.tabs').hidden=true; $('#weekChip').hidden=true;
@@ -702,7 +721,7 @@ function showOnboarding(step){ ONB_STEP=step;
   $('#genBtn').onclick=()=>generateProgram(); const od=$('#onbDiag'); if(od) od.onclick=showDiag;
   if(GEN_STATE&&GEN_STATE.status==='running'&&Date.now()-(GEN_STATE.startedAt||0)<8*60000){ $('#genBtn').hidden=true; $('#genWait').hidden=false; GENERATING=true; }
   else if(GEN_STATE&&GEN_STATE.status==='error'&&!GENERATING){ $('#genMsg').textContent='La dernière tentative a échoué : '+GEN_STATE.message+'. Réessaie, le programme est construit uniquement à partir de ton profil.'; $('#genBtn').textContent='Réessayer'; }
-  $('#backProf').onclick=()=>IV.start(PROFILE||{},{step:9});
+  $('#backProf').onclick=()=>IV.start(PROFILE||{},{step:10});
   const ib=$('#importBtn'); if(ib) ib.onclick=async()=>{ ib.disabled=true; try{ await saveProgram(DEFAULT_PROGRAM, DEFAULT_CYCLE_HTML); toast('Programme de base installé','ok'); }catch(e){ ib.disabled=false; $('#genMsg').textContent=humanErr(e); logErr('import',e); } };
 }
 const ONB_DRAFT={};
@@ -798,9 +817,19 @@ function applyProgram(p){
   const sm=document.querySelector('.brand small'); if(sm) sm.textContent=p.cycleName||'';
   restoreShell(); autoCloseLogs(); renderCycle(); render(); ensureDemos(); prefetchDemos();
 }
+// Ce que le coach a vu sur le cycle précédent (chiffres) et pourquoi ce cycle a cette durée et cette orientation.
+function cycleWhyHtml(){
+  const rv=PROGRAM.cycleReview, d=PROGRAM.cycleDesign; if(!rv&&!d) return '';
+  let h='';
+  if(rv&&rv.done){ const rows=[['Séances',`${rv.done}/${rv.planned} (${rv.adherence} %)`],rv.progress!=null?['Charges sur les prioritaires',`${rv.progress>=0?'+':''}${rv.progress} %`]:null,rv.prs?['Records',String(rv.prs)]:null,rv.readiness!=null?['Forme (points du lundi)',`${rv.readiness}/5`]:null,rv.rirAvg!=null?['Réserve moyenne notée',`RIR ${rv.rirAvg} (${rv.failShare} % des séries à l'échec)`]:null,rv.tests&&rv.tests.end!=null?['Test',`${rv.tests.start} → ${rv.tests.end}`]:null,rv.weight?['Poids',`${rv.weight.start} → ${rv.weight.end} kg`]:null,rv.eased?['Séances allégées',String(rv.eased)]:null,Object.keys(rv.pain||{}).length?['Douleurs',Object.entries(rv.pain).map(([z,n])=>z+' ×'+n).join(', ')]:null].filter(Boolean);
+    h+=`<h3>Ce que j'ai vu sur le cycle précédent</h3><div class="tw"><table><tbody>${rows.map(([k,v])=>`<tr><td>${esc(k)}</td><td class="num">${esc(v)}</td></tr>`).join('')}</tbody></table></div>${(rv.adjust&&rv.adjust.reasons||[]).length?`<p><b>Réglages :</b> ${esc(rv.adjust.reasons.join(' ; '))}.</p>`:'<p>Plan reconduit avec progression normale.</p>'}`; }
+  if(d) h+=`<h3>Pourquoi ce cycle : ${d.weeks} semaines, bloc ${esc((d.focusLabel||'').toLowerCase())}</h3><ul>${(d.reasons||[]).map(r=>`<li>${esc(r.charAt(0).toUpperCase()+r.slice(1))}.</li>`).join('')}</ul>${d.testAtEnd?'<p><b>Test en fin de cycle</b> : la dernière semaine inclut le test de l\'objectif, c\'est lui qui mesure le bloc.</p>':''}`;
+  return h;
+}
 function cycleHtml(){
   if(PROGRAM.cycleHtml) return PROGRAM.cycleHtml;
   let h=`<h2>${esc(PROGRAM.cycleName||'Cycle')}</h2>`;
+  h+=cycleWhyHtml();
   if(PROGRAM.rationale) h+=mdToHtml(PROGRAM.rationale);
   if(PROGRAM.weeks) h+=`<h3>Semaines</h3><div class="tw"><table><thead><tr><th>Semaine</th><th>Dates</th><th>Consigne</th></tr></thead><tbody>${PROGRAM.weeks.map(w=>`<tr><td>${esc(w.label)}</td><td class="num">${fmtD(w.from)}–${fmtD(w.to)}</td><td>${esc(w.rirNote||'')}</td></tr>`).join('')}</tbody></table></div>`;
   if(PROGRAM.nutrition) h+=`<h3>Nutrition</h3>${mdToHtml(PROGRAM.nutrition)}`;
@@ -1089,6 +1118,13 @@ function coachCardHtml(){ let h='';
   if(last){ const txt=last.type==='bilan'||last.type==='cycleEnd'?(last.nextWeek||last.analysis):last.type==='nudge'?last.analysis:(last.nextFocus||last.analysis); h+=`<div class="card coachcard" id="homeCoach" role="button" tabindex="0"><div class="card-h"><b>${coachAvatar(last.adjustments&&last.adjustments.length&&!last.applied?'attention':'idle','xs')} ${esc(COACH_NAME)}</b><span class="muted">${last.createdAt?new Date(last.createdAt).toLocaleDateString('fr-FR',{day:'numeric',month:'short'}):''}</span></div><p>${lexify(esc(String(txt||'').slice(0,180)))}${String(txt||'').length>180?'…':''}</p>${last.adjustments&&last.adjustments.length&&!last.applied?'<span class="tag">charges à appliquer</span>':''}</div>`; }
   else h+=`<div class="card"><div class="card-h"><b>${coachAvatar('idle','xs')} ${esc(COACH_NAME)}</b></div><p class="muted">Ton coach. Après ta première séance terminée, il l'analyse et fixe les charges suivantes.</p></div>`;
   return h; }
+// Dernière semaine du cycle : le test de l'objectif est dû (c'est lui qui mesure le cycle), tant qu'il n'a pas été noté cette semaine.
+function testDueHtml(){
+  if(!WEEKS.length) return ''; const wk=weekFor(todayISO()); if(wk<WEEKS.length) return '';
+  const W=WEEKS[wk-1]; const RT=refTest(); const doneThisWeek=Object.values(S.tests||{}).some(t=>t.date>=W.from&&t.date<=W.to); if(doneThisWeek) return '';
+  const last=Object.values(S.tests||{}).sort((a,b)=>a.date<b.date?-1:1).pop();
+  return `<div class="card testdue"><div class="card-h"><b>Semaine de test</b><span class="muted">${esc(RT.short)}</span></div><p>Dernière semaine du cycle : refais ton test ${esc(RT.label.toLowerCase())}, frais, en début de séance. C'est lui qui mesure le cycle et règle le suivant.${last?` Dernier : <b>${last.reps} ${RT.unit}</b> le ${fmtD(last.date)}.`:''}</p><form class="qf" id="tDue"><input type="number" inputmode="numeric" placeholder="${RT.unit}" aria-label="${esc(RT.label)}"><button class="btn sm fill" type="submit">Noter le test</button></form></div>`;
+}
 function isSimpleHome(){ if(S.homeFull) return false; return Object.values(S.logs).filter(l=>l.done).length<3; }
 function renderHome(){
   const el=$('#tab-home'); if(!el||!PROGRAM.sessions.length) return;
@@ -1105,6 +1141,7 @@ function renderHome(){
   if(over) h+=`<div class="card cycend"><div class="card-h"><b>Cycle terminé</b><span class="muted">${fmtD(WEEKS[WEEKS.length-1].to)}</span></div><p>Les ${WEEKS.length} semaines de « ${esc(String(PROGRAM.cycleName||'').split(' · ')[0])} » sont faites. Kai construit le suivant à partir de ton journal.</p><div class="row2"><button class="btn fill sm" id="homeNewCycle">Nouveau cycle avec Kai</button></div></div>`;
   if(!over&&!isSimpleHome()) h+=checkinHtml();
   { const wm=weekMod(wk); if(wm&&wm.sets!==1) h+=`<div class="banner info">${esc(wm.label.charAt(0).toUpperCase()+wm.label.slice(1))} : ${esc(wm.why)}.</div>`; }
+  h+=testDueHtml();
   // carte séance du jour
   h+=`<div class="today ${done?'done':''}"><div class="t-top"><span class="eyebrow">${isRest&&!started&&!done?'Pas de séance prévue':'Séance du jour'} · S${wk} ${esc(String(W.label||'').replace(/^S\d+\s*/,''))}</span>${sub?'<span class="tag">sans salle</span>':''}</div>
     <div class="t-name">${esc(sub?sub.name:ses.name)}</div><div class="t-meta">${esc(ses.sub)} · ${exs.length} exercices · ${esc(ses.duration||'')}</div>
@@ -1171,6 +1208,7 @@ function bindHome(el,ses){ const date=todayISO(); const hg=$('#genericBtn',el); 
   el.querySelectorAll('.tr[data-view]').forEach(b=>b.onclick=()=>{ SUIVI_VIEW=b.dataset.view; renderSuivi(); showTab('suivi'); });
   el.querySelectorAll('.dot[data-day]').forEach(b=>b.onclick=()=>{ if(!b.dataset.day) return; S.session=b.dataset.day; S.sessionDate=todayISO(); save(); showTab('seance'); });
   const bq=$('#bwQuick'); if(bq) bq.onsubmit=e=>{ e.preventDefault(); const kg=parseFloat(bq.querySelector('input').value.replace(',','.')); if(isNaN(kg)||kg<30||kg>250) return; S.bw[date]={date,kg,updatedAt:Date.now()}; save(); writeDoc('bw',date,S.bw[date]); toast('Pesée notée','ok'); renderHome(); renderSuivi(); };
+  const td=$('#tDue'); if(td) td.onsubmit=e=>{ e.preventDefault(); const r=parseInt(td.querySelector('input').value); if(isNaN(r)||r<0||r>500) return; S.tests[date]={date,reps:r,updatedAt:Date.now()}; save(); writeDoc('tests',date,S.tests[date]); toast('Test noté','ok'); renderHome(); renderSuivi(); setTimeout(checkUnlocks,400); };
   const tq=$('#tQuick'); if(tq) tq.onsubmit=e=>{ e.preventDefault(); const r=parseInt(tq.querySelector('input').value); if(isNaN(r)||r<0||r>200) return; S.tests[date]={date,reps:r,updatedAt:Date.now()}; save(); writeDoc('tests',date,S.tests[date]); toast('Test noté','ok'); renderHome(); renderSuivi(); setTimeout(checkUnlocks,400); };
 }
 /* ---------- mode séance plein écran ---------- */
@@ -1477,24 +1515,9 @@ function recoveryHtml(){
 // Ajustements demandés par l'athlète : répartition bas/haut, abdos en fin de séance, exercices voulus ou à éviter, message au coach.
 let EXMIN=null; async function loadExMin(){ if(EXMIN) return EXMIN; try{ EXMIN=await fetch('exercises-min.json').then(r=>r.json()); }catch(e){ EXMIN=[]; } return EXMIN; }
 function adjustSheet(){
-  const sp=(PROFILE&&PROFILE.spec)||{}; const n=(sp.daysList||[]).length||PROFILE.days||3; const cur=sp.split||null;
-  let lower=cur?cur.lower:Math.round(n/2); let upper=n-lower; let want=(sp.wantEx||[]).slice(), avoid=(sp.avoidEx||[]).slice(); const coreEnd=!!sp.coreEnd;
-  const sheet=showSheet(`<h3>Ajuster mon programme</h3><p class="small muted">Ce que tu règles ici est appliqué tel quel par les règles du programme. Le nouveau cycle se construit tout de suite après.</p>
-    <div class="ivq"><b>Répartition de tes ${n} séances</b><div class="adjrow"><span>Bas du corps</span><div class="stepper"><button type="button" data-d="-1">−</button><b id="adjLower">${lower}</b><button type="button" data-d="1">+</button></div></div><div class="adjrow"><span>Haut du corps</span><b id="adjUpper">${upper}</b></div></div>
-    <div class="ivq"><label class="chk"><input type="checkbox" id="adjCore" ${coreEnd?'checked':''}> Abdos et gainage à la fin de chaque séance</label></div>
-    <div class="ivq"><b>Exercices que je veux</b><input class="ivtext" id="adjWantQ" placeholder="Tape un nom : hip thrust, presse, fentes…"><div class="ivchips" id="adjWantList"></div><div class="ivchips" id="adjWant"></div></div>
-    <div class="ivq"><b>Exercices à éviter</b><input class="ivtext" id="adjAvoidQ" placeholder="Tape un nom"><div class="ivchips" id="adjAvoidList"></div><div class="ivchips" id="adjAvoid"></div></div>
-    <div class="ivq"><b>Message pour ${esc(COACH_NAME)}</b><textarea id="adjNote" rows="2" placeholder="Ce qui ne va pas, ce que tu attends">${esc(sp.wishes||'')}</textarea></div>
-    <div class="row2"><button class="btn fill" id="adjGo">Reconstruire mon programme</button><button class="btn" onclick="hideSheet()">Annuler</button></div>`);
-  const refreshSplit=()=>{ $('#adjLower').textContent=lower; $('#adjUpper').textContent=upper; };
-  sheet.querySelectorAll('.stepper button').forEach(b=>b.onclick=()=>{ const d=Number(b.dataset.d); if(lower+d<0||lower+d>n) return; lower+=d; upper=n-lower; refreshSplit(); });
-  const chips=(host,list,rm)=>{ host.innerHTML=list.map(id=>{ const e=(EXMIN||[]).find(x=>x.id===id); return `<button type="button" class="ivchip on" data-id="${id}">${esc(e?e.n:id)} ✕</button>`; }).join(''); host.querySelectorAll('button').forEach(c=>c.onclick=()=>rm(c.dataset.id)); };
-  const draw=()=>{ chips($('#adjWant'),want,id=>{ want=want.filter(x=>x!==id); draw(); }); chips($('#adjAvoid'),avoid,id=>{ avoid=avoid.filter(x=>x!==id); draw(); }); };
-  const bindSearch=(q,listEl,add)=>{ q.oninput=async()=>{ const lib=await loadExMin(); const t=q.value.trim().toLowerCase(); if(t.length<2){ listEl.innerHTML=''; return; } const hits=lib.filter(e=>e.n.toLowerCase().includes(t)||(e.m||'').toLowerCase().includes(t)).slice(0,8); listEl.innerHTML=hits.map(e=>`<button type="button" class="ivchip" data-id="${e.id}">${esc(e.n)}</button>`).join(''); listEl.querySelectorAll('button').forEach(b=>b.onclick=()=>{ add(b.dataset.id); q.value=''; listEl.innerHTML=''; draw(); }); }; };
-  loadExMin().then(draw);
-  bindSearch($('#adjWantQ'),$('#adjWantList'),id=>{ if(!want.includes(id)) want.push(id); avoid=avoid.filter(x=>x!==id); });
-  bindSearch($('#adjAvoidQ'),$('#adjAvoidList'),id=>{ if(!avoid.includes(id)) avoid.push(id); want=want.filter(x=>x!==id); });
-  $('#adjGo').onclick=async()=>{ const p=JSON.parse(JSON.stringify(PROFILE)); p.spec=p.spec||{}; p.spec.split={lower,upper}; p.spec.coreEnd=$('#adjCore').checked; p.spec.wantEx=want; p.spec.avoidEx=avoid; p.spec.wishes=$('#adjNote').value.trim().slice(0,500); PROFILE=p; try{ await fbDb.collection('users').doc(USER.uid).collection('meta').doc('profile').set(p); }catch(err){ alert('Enregistrement impossible : '+err.message); return; } hideSheet(); showTab('programme'); regenerateProgram(true); };
+  // Même parcours que l'inscription : objectifs, niveau, matériel, jours, zones, préférences, réglages, fiche. Le cycle se reconstruit à la fin.
+  if(!USER) return; document.querySelector('.tabs').hidden=true; $('#weekChip').hidden=true;
+  IV.start(PROFILE||{},{step:1,onDone:()=>{ restoreShell(); render(); showTab('programme'); regenerateProgram(true); }});
 }
 function renderProgramme(){
   if(!$('#tab-programme')) return;

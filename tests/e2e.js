@@ -92,11 +92,14 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   assert(await p.$('.ivopt[data-f="zoneSev.genou"]'), 'gravité obligatoire pour une zone cochée');
   await p.evaluate(() => document.querySelector('.ivopt[data-f="zoneSev.genou"][data-v=douleur]').click()); await p.click('#ivNext'); await sleep(120);
   await p.evaluate(() => document.querySelector('.ivchip[data-f=refuse][data-v=cardio]').click()); await p.click('#ivNext'); await sleep(120);
+  assert(await p.$('#adjLower') && await p.$('#adjWantQ'), 'écran réglages : répartition, abdos en fin, exercices voulus ou évités');
+  await p.evaluate(() => { document.querySelector('#adjCore').click(); document.querySelector('.stepper button[data-d="1"]').click(); }); await p.click('#ivNext'); await sleep(120);
   assert((await p.$eval('.ivrecap', e => e.textContent)).includes('Léo') && (await p.$eval('.ivrecap', e => e.textContent)).includes('genou'), 'fiche récapitulative');
   await p.click('#ivNext'); await sleep(300);
   const profWrite = await p.evaluate(() => window.__writes.find(w => w.name === 'meta' && w.id === 'profile'));
   if (!profWrite) console.log('   writes:', JSON.stringify(await p.evaluate(() => window.__writes)).slice(0, 300));
   assert(profWrite && profWrite.d.name === 'Léo' && profWrite.d.goals.includes('masse') && profWrite.d.level === 'intermediaire' && profWrite.d.days === 4 && profWrite.d.gear.includes('salle') && /genou/.test(profWrite.d.constraints) && profWrite.d.spec && profWrite.d.spec.zones[0].sev === 'douleur', 'profil enregistré : champs compatibles + fiche structurée');
+  assert(profWrite && profWrite.d.spec && profWrite.d.spec.coreEnd === true && profWrite.d.spec.split && profWrite.d.spec.split.lower === 3 && profWrite.d.spec.split.upper === 1, 'réglages de séance enregistrés dans la fiche (3 bas / 1 haut, abdos en fin)');
   assert(await p.$('#genBtn'), 'écran de génération');
   await p.click('#genBtn'); await sleep(50);
   assert(await p.evaluate(() => (window.__calls || []).some(c => c.p && c.p.mode === 'program')), 'génération demandée au coach');
@@ -283,7 +286,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   await p.evaluate(() => document.querySelector('#tClose').click()); await sleep(300);
   assert(await p.evaluate(() => !document.querySelector('.trophies') && !document.body.classList.contains('unlocking')), 'écran Trophées fermé');
   await p.click('#profBtn'); await sleep(250);
-  assert(await p.$('.iv .ivrecap') && (await p.$eval('.onb.iv .eyebrow', e => e.textContent)).includes('10 sur 10'), 'profil : entretien rouvert sur la fiche');
+  assert(await p.$('.iv .ivrecap') && (await p.$eval('.onb.iv .eyebrow', e => e.textContent)).includes('11 sur 11'), 'profil : entretien rouvert sur la fiche');
   await p.evaluate(() => { window.confirm = () => false; document.querySelector('#ivNext').click(); }); await sleep(300);
   assert(await p.evaluate(() => !!document.querySelector('#tab-reglages') && !document.querySelector('.onb.iv')), 'retour aux réglages après la fiche');
   await p.click('.tabs button[data-tab="home"]'); await sleep(200);
@@ -296,11 +299,26 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   await p.evaluate(() => { const f = document.querySelector('#bwQuick'); f.querySelector('input').value = '68.4'; f.requestSubmit(); }); await sleep(150);
   assert(await p.evaluate(() => S.bw[todayISO()] && S.bw[todayISO()].kg === 68.4), 'pesée rapide enregistrée depuis l\'accueil');
 
+  console.log('Ajuster mon programme');
+  await p.click('.tabs button[data-tab="programme"]'); await sleep(200);
+  await p.evaluate(() => document.querySelector('#adjBtn').click()); await sleep(250);
+  assert(await p.evaluate(() => !!document.querySelector('.onb.iv') && document.querySelector('.onb.iv .eyebrow').textContent.includes('2 sur 11')), 'ajuster = entretien rouvert sur l\'objectif');
+  await p.evaluate(() => IV.go(10)); await sleep(150);
+  await p.evaluate(() => { window.__calls = []; document.querySelector('#ivNext').click(); }); await sleep(400);
+  assert(await p.evaluate(() => (window.__calls || []).some(c => c.name === 'coach') && !document.querySelector('.onb.iv')), 'fiche validée : nouveau cycle demandé');
+  await p.evaluate((pg) => window.__setMeta([{ id: 'profile', data: { name: 'Test', level: 'confirme', weight: 69 } }, { id: 'program', data: pg }]), prog); await sleep(300);
+  await p.click('.tabs button[data-tab="home"]'); await sleep(200);
+
   console.log('Déblocage');
   await p.evaluate(() => { S.badgesSeen = progressFacts().unlocked.filter(id => id !== 's1'); S.badgesSeenV = 2; checkUnlocks(); }); await sleep(400);
   assert(await p.evaluate(() => !!document.querySelector('.unlock.on') && document.querySelector('.unlock h2').textContent === 'Première séance' && !!document.querySelector('.unlock .badge img')), 'cérémonie de déblocage affichée pour le nouveau badge');
   await p.evaluate(() => document.querySelector('#uClose').click()); await sleep(400);
   assert(await p.evaluate(() => !document.querySelector('.unlock') && S.badgesSeen.includes('s1')), 'cérémonie fermée, badge marqué vu');
+
+  console.log('Semaine de test');
+  const okTest = await p.evaluate(() => { if (!document.querySelector('#tab-home')) return true; const keep = WEEKS; const t = todayISO(); WEEKS = [{ n: 1, label: 'S1', from: addDays(t, -3), to: addDays(t, 3) }]; renderHome(); const shown = !!document.querySelector('.card.testdue #tDue'); const f = document.querySelector('#tDue'); if (f) { f.querySelector('input').value = '41'; f.requestSubmit(); } const noted = S.tests[t] && S.tests[t].reps === 41; const hidden = !document.querySelector('.card.testdue'); WEEKS = keep; renderHome(); return shown && noted && hidden; });
+  assert(okTest, 'dernière semaine du cycle : test dû sur l\'accueil, noté en un geste, bannière refermée');
+
 
   console.log('Thème sombre');
   await p.emulateMediaFeatures([{ name: 'prefers-color-scheme', value: 'dark' }]); await sleep(150);
