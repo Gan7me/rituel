@@ -79,8 +79,11 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   assert(await p.$('.ivcard[data-f=goalMain]'), 'objectif obligatoire : reste à l\'écran 2');
   await p.evaluate(() => document.querySelector('.ivcard[data-v=masse]').click()); await p.click('#ivNext'); await sleep(120);
   await p.click('#ivNext'); await sleep(120); // second objectif facultatif
-  await p.evaluate(() => { document.querySelector('.ivopt[data-f=years][data-v="2"]').click(); document.querySelector('.ivchip[data-f=skills][data-v=squat]').click(); }); await sleep(50);
-  assert((await p.$eval('#ivLevelSay', e => e.textContent)).includes('intermédiaire'), 'niveau déduit (1 à 3 ans + squat = intermédiaire)');
+  await p.evaluate(() => { document.querySelector('.ivopt[data-f=years][data-v="2"]').click(); const set = (sel, v) => { const i = document.querySelector(sel); i.value = v; i.dispatchEvent(new Event('change')); }; set('[data-perf="pullups"]', '8'); set('[data-perf="squat.w"]', '90'); set('[data-perf="squat.r"]', '5'); }); await sleep(50);
+  assert((await p.$eval('#ivLevelSay', e => e.textContent)).includes('intermédiaire'), 'niveau déduit des chiffres (8 tractions, squat 90 × 5 à 78 kg = intermédiaire)');
+  await p.evaluate(() => { const set = (sel, v) => { const i = document.querySelector(sel); i.value = v; i.dispatchEvent(new Event('change')); }; set('[data-perf="pullups"]', '35'); set('[data-perf="squat.w"]', '140'); set('[data-perf="squat.r"]', '5'); set('[data-perf="deadlift.w"]', '180'); set('[data-perf="deadlift.r"]', '3'); }); await sleep(50);
+  assert((await p.$eval('#ivLevelSay', e => e.textContent)).includes('avancé') && (await p.$eval('#ivLevelSay', e => e.textContent)).includes('35 tractions'), 'niveau avancé reconnu (35 tractions, squat 140 × 5, soulevé 180 × 3) et dit à l\'athlète');
+  await p.evaluate(() => { const set = (sel, v) => { const i = document.querySelector(sel); i.value = v; i.dispatchEvent(new Event('change')); }; set('[data-perf="pullups"]', '8'); set('[data-perf="squat.w"]', '90'); set('[data-perf="deadlift.w"]', ''); set('[data-perf="deadlift.r"]', ''); }); await sleep(50);
   await p.click('#ivNext'); await sleep(120);
   await p.evaluate(() => document.querySelector('.ivcard[data-f=place][data-v=salle]').click()); await sleep(50);
   await p.evaluate(() => { ['machines','poulies','barres','halteres'].forEach(v => document.querySelector('.ivchip[data-f=gymGear][data-v=' + v + ']').click()); }); await p.click('#ivNext'); await sleep(120);
@@ -100,6 +103,8 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   if (!profWrite) console.log('   writes:', JSON.stringify(await p.evaluate(() => window.__writes)).slice(0, 300));
   assert(profWrite && profWrite.d.name === 'Léo' && profWrite.d.goals.includes('masse') && profWrite.d.level === 'intermediaire' && profWrite.d.days === 4 && profWrite.d.gear.includes('salle') && /genou/.test(profWrite.d.constraints) && profWrite.d.spec && profWrite.d.spec.zones[0].sev === 'douleur', 'profil enregistré : champs compatibles + fiche structurée');
   assert(profWrite && profWrite.d.spec && profWrite.d.spec.coreEnd === true && profWrite.d.spec.split && profWrite.d.spec.split.lower === 3 && profWrite.d.spec.split.upper === 1, 'réglages de séance enregistrés dans la fiche (3 bas / 1 haut, abdos en fin)');
+  assert(await p.evaluate(() => { const t = Object.values(S.tests || {})[0]; return !!t && t.reps === 8 && t.source === 'entretien' && S.loads && S.loads.back_squat && S.loads.back_squat.kg > 0; }), 'chiffres de l\'entretien devenus références : test de tractions et charge habituelle de squat');
+  await p.evaluate(() => { S.tests = {}; S.loads = {}; save(); }); // le reste du scénario part d'un journal vide
   assert(await p.$('#genBtn'), 'écran de génération');
   await p.click('#genBtn'); await sleep(50);
   assert(await p.evaluate(() => (window.__calls || []).some(c => c.p && c.p.mode === 'program')), 'génération demandée au coach');
@@ -199,7 +204,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   await p.evaluate(() => document.querySelector('.ana .anaf [data-detail]').click()); await sleep(200);
   assert(await p.$('#sheet.on .exl'), 'détail de l\'analyse en feuille');
   await p.evaluate(() => hideSheet()); await sleep(150);
-  await p.click('#chatNew'); await sleep(250);
+  await p.evaluate(() => document.querySelector('#chatNew').click()); await sleep(250);
   assert(await p.evaluate(() => COACH.view === 'chat' && !!document.querySelector('.kask #askInput') && document.body.classList.contains('chatmode') && getComputedStyle(document.querySelector('.tabs')).display === 'none'), 'conversation plein écran, barre d\'onglets masquée');
   assert((await p.$$('.ksug .chip2')).length === 3, 'suggestions de départ');
   await p.evaluate(() => window.__echo(true));
@@ -312,6 +317,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   if (process.env.SHOT) { await p.evaluate(() => { S.homeFull = false; renderHome(); }); await sleep(200); await p.screenshot({ path: process.env.SHOT, fullPage: true }); await p.evaluate(() => { S.homeFull = true; renderHome(); }); await sleep(200); }
   assert(await p.evaluate(() => !!document.querySelector('#homeAvatar .rank') && (document.querySelectorAll('#tab-home .tiles3 .tr').length === 3 || document.querySelectorAll('#tab-home .prog3 .pt').length === 3) && !document.querySelector('#bwQuick')), 'accueil : rang, trois chiffres de progression, pas de formulaire');
   assert(await p.evaluate(() => { const P = sinceStart(); return !!P && P.sessions >= 1 && !!document.querySelector('#tab-home .prog3 .pt b'); }), 'progression depuis le début calculée et affichée en trois tuiles (force, test, poids)');
+  assert(await p.evaluate(() => { const start = WEEKS[0].from; const mk = (d, w) => ({ date: d, session: 's1', done: true, sets: { 'old-1': [{ done: true, w, r: 5 }], 'old-2': [{ done: true, w: w - 20, r: 8 }] } }); S.logs['h1'] = mk(addDays(start, -28), 80); S.logs['h2'] = mk(addDays(start, -21), 85); S.logs['h3'] = mk(addDays(start, -14), 90); S.logs['h4'] = mk(addDays(start, -7), 95); const P = sinceStart(); const ok = !!P.force && P.force.delta > 10 && P.cycles.length >= 2 && P.cycles[0].reconstructed && P.cycles[0].sessions === 4; delete S.logs.h1; delete S.logs.h2; delete S.logs.h3; delete S.logs.h4; return ok; }), 'quatre semaines d\'un cycle précédent (sans archive) : progression de force calculée et cycle listé dans « Où j\'en suis »');
   await p.evaluate(() => { SUIVI_VIEW = 'forme'; renderSuivi(); }); await p.click('.tabs button[data-tab="suivi"]'); await sleep(250);
   assert(await p.evaluate(() => !!document.querySelector('#tab-suivi .card.since .prog3')), 'progrès : carte « Depuis le début » en tête');
   assert(await p.evaluate(() => !!document.querySelector('#tab-suivi .chal') && document.querySelectorAll('#tab-suivi .avcard .badge').length >= 1 ), 'progrès : défis et médailles déplacés ici');
@@ -342,6 +348,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   await p.emulateMediaFeatures([{ name: 'prefers-color-scheme', value: 'dark' }]); await sleep(150);
   const bg = await p.evaluate(() => getComputedStyle(document.body).backgroundColor);
   assert(bg === 'rgb(11, 13, 16)', 'fond sombre appliqué (' + bg + ')');
+  if (process.env.SHOTDIR) { await p.click('.tabs button[data-tab="home"]'); await sleep(200); await p.screenshot({ path: process.env.SHOTDIR + '/home_dark.png', fullPage: false }); await p.click('.tabs button[data-tab="programme"]'); await sleep(200); await p.screenshot({ path: process.env.SHOTDIR + '/prog_dark.png', fullPage: false }); }
 
   await b.close(); srv.close();
   console.log(`\n${failures} échec(s), ${errors.length} erreur(s) JS`);
