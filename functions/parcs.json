@@ -1,0 +1,374 @@
+{
+ "ON AIR": {
+  "note": "Parc ON AIR Lyon : Technogym, Hammer Strength, Gym 80, Panatta, Eleiko, Glutebuilder. Modèles vérifiés sur les catalogues fabricants (septembre 2026) ; la ventilation exacte par club n'est pas publiée, Gerland a le parc bas du corps le plus fourni (espace Booty, haltérophilie).",
+  "hack_squat": [
+   "Panatta Super Hack Squat 1FW087",
+   "Gym 80 Pure Kraft 4159 Hack Squat",
+   "Technogym Pure Strength Hack Squat MG8500"
+  ],
+  "hack_reverse": [
+   "Panatta Super Hack Squat 1FW087 (face au dossier)",
+   "Gym 80 Pure Kraft 4159 Hack Squat"
+  ],
+  "pendulum_squat": [
+   "Panatta Super Pendulum Squat",
+   "Gym 80 Pure Kraft 4353N Pendulum Squat",
+   "Hammer Strength Pendulum-X Squat"
+  ],
+  "leg_press": [
+   "Hammer Strength Linear Leg Press",
+   "Technogym Pure Strength Linear Leg Press MG7500",
+   "Panatta Super Leg Press 45°"
+  ],
+  "leg_press_h": [
+   "Gym 80 Sygnum 3030 Seated Leg Press",
+   "Panatta Super Horizontal Leg Press Dual System",
+   "Technogym Selection Leg Press M951"
+  ],
+  "single_leg_press": [
+   "Panatta Super Leg Press 45° Dual System",
+   "Hammer Strength Linear Leg Press"
+  ],
+  "belt_squat": [
+   "Panatta Belt Squat 1FW095",
+   "Gym 80 Pure Kraft 4360 Belt Squat",
+   "Hammer Strength Belt Squat",
+   "Technogym Pure Belt Squat"
+  ],
+  "smith_squat": [
+   "Panatta Olympic Smith Counterbalanced 1FW520",
+   "Hammer Strength Vertical Smith Machine",
+   "Eleiko Prestera Half Rack avec Smith"
+  ],
+  "hip_thrust_m": [
+   "Panatta Hip Thrust 1FW097",
+   "Technogym Pure Strength Hip Thrust MG8000",
+   "Hammer Strength Glute Drive",
+   "Glutebuilder Hip Thrust Elite"
+  ],
+  "hip_thrust": [
+   "Eleiko Performance Bar sur banc",
+   "Panatta Hip Thrust 1FW097"
+  ],
+  "back_ext": [
+   "Banc à lombaires 45° (zone charges libres)",
+   "Technogym Selection Lower Back M958"
+  ],
+  "back_ext_m": [
+   "Technogym Selection Lower Back M958",
+   "Gym 80 Sygnum 3007 Lower Back"
+  ],
+  "reverse_hyper": [
+   "Panatta Reverse Hyperextension 1FW096",
+   "Hammer Strength Glute Ham / Reverse Hyper"
+  ],
+  "ghr": [
+   "Gym 80 Pure Kraft 4434 Glute Ham Developer",
+   "Hammer Strength Glute Ham / Reverse Hyper"
+  ],
+  "nordic": [
+   "Hammer Strength Assisted Nordic Ham",
+   "Gym 80 Pure Kraft 4375 Inverse Leg Curl"
+  ],
+  "glute_kick": [
+   "Gym 80 Pure Kraft 4321 Gluteus Kick",
+   "Glutebuilder Pendulum Kick Back",
+   "Technogym Selection Glute M979"
+  ],
+  "hip_abd": [
+   "Technogym Selection Abductor M918",
+   "Gym 80 Sygnum 3028 Abduction",
+   "Glutebuilder 3D Multi Abductor"
+  ],
+  "hip_add": [
+   "Technogym Selection Adductor M917",
+   "Gym 80 Sygnum 3029 Adduction"
+  ],
+  "seated_leg_curl": [
+   "Gym 80 Sygnum 3003 Seated Leg Curl",
+   "Technogym Selection Leg Curl M990",
+   "Panatta Seated Leg Curling 1FW183"
+  ],
+  "lying_leg_curl": [
+   "Panatta Leg Curling 1FW182",
+   "Gym 80 Pure Kraft 4337 Lying Leg Curl",
+   "Technogym Selection Prone Leg Curl ML10"
+  ],
+  "leg_ext": [
+   "Technogym Selection Leg Extension M991",
+   "Gym 80 Sygnum 3001 Leg Extension",
+   "Panatta Leg Extension 1FW181"
+  ],
+  "leg_ext_sl": [
+   "Panatta Alternate Leg Extension 1FW281",
+   "Hammer Strength Iso-Lateral Leg Extension"
+  ],
+  "standing_calf": [
+   "Gym 80 Pure Kraft 4345 55° Standing Calf",
+   "Gym 80 Sygnum 3018 Standing Calf",
+   "Panatta Super Calf Hack 1FW092"
+  ],
+  "seated_calf": [
+   "Technogym Pure Strength Seated Calf MG4600",
+   "Panatta Super Seated Calf 1FW088",
+   "Gym 80 Pure Kraft 4026 Seated Calf"
+  ],
+  "calf_press": [
+   "Hammer Strength Linear Leg Press",
+   "Technogym Pure Strength Linear Leg Press MG7500"
+  ],
+  "calf_press_s": [
+   "Technogym Selection Rotary Calf M915",
+   "Gym 80 Sygnum 3030 Seated Leg Press"
+  ],
+  "tibia": [
+   "Gym 80 Pure Kraft 4348 Tibia Dorsi Flexion",
+   "Hammer Strength Tibia Dorsi-Flexion"
+  ],
+  "chest_press": [
+   "Technogym Selection Chest Press M970",
+   "Gym 80 Sygnum 3016 Seated Chest Press",
+   "Panatta Super Vertical Chest Press"
+  ],
+  "conv_press": [
+   "Hammer Strength Iso-Lateral Bench Press",
+   "Technogym Pure Strength Chest Press MG0500",
+   "Gym 80 Pure Kraft 4328 Seated Chest Press Dual"
+  ],
+  "incline_press_m": [
+   "Hammer Strength Iso-Lateral Incline Press",
+   "Technogym Pure Strength Incline Chest Press MG1500",
+   "Gym 80 Pure Kraft 4329N Incline Chest Press Dual"
+  ],
+  "decline_press_m": [
+   "Hammer Strength Iso-Lateral Decline Chest Press",
+   "Gym 80 Pure Kraft 4346 Decline Chest Press Dual"
+  ],
+  "pec_deck": [
+   "Technogym Selection Pectoral Machine M913",
+   "Gym 80 Sygnum 3022 Butterfly",
+   "Panatta Super Middle Chest Flight"
+  ],
+  "cable_fly": [
+   "Technogym Selection Crossover Cables M924",
+   "Gym 80 4004 Crossover Cable Station"
+  ],
+  "low_cable_fly": [
+   "Technogym Selection Crossover Cables M924",
+   "Gym 80 4034 Dual Adjustable Pulley"
+  ],
+  "assisted_dips": [
+   "Technogym Selection Easy Chin/Dip M987",
+   "Hammer Strength Select Assist Dip Chin",
+   "Gym 80 Sygnum 3017 Kneeling Chinning-Dipping"
+  ],
+  "assisted_pullup_m": [
+   "Technogym Selection Easy Chin/Dip M987",
+   "Technogym Selection Vertical Traction M971",
+   "Hammer Strength Select Assist Dip Chin",
+   "Gym 80 Sygnum 3017 Kneeling Chinning-Dipping"
+  ],
+  "weighted_pullup": [
+   "Station de traction (rack Eleiko Prestera ou cage) et Eleiko Dip Belt"
+  ],
+  "shoulder_press_m": [
+   "Technogym Selection Shoulder Press M969",
+   "Gym 80 Sygnum 3032 Shoulder Press"
+  ],
+  "shoulder_press_lev": [
+   "Hammer Strength Iso-Lateral Shoulder Press",
+   "Technogym Pure Strength Shoulder Press MG3500",
+   "Gym 80 Pure Kraft 4320 Shoulder Press Dual"
+  ],
+  "landmine_press": [
+   "Rack Eleiko Prestera avec insert landmine",
+   "Hammer Strength Ground Base Jammer"
+  ],
+  "cable_row": [
+   "Technogym Selection Pulley M914",
+   "Gym 80 4034 Dual Adjustable Pulley"
+  ],
+  "tbar_row": [
+   "Technogym Pure Strength T-Bar Row PG12",
+   "Hammer Strength T-Bar Row",
+   "Gym 80 Pure Kraft 4018 T-Bar Row"
+  ],
+  "low_row_m": [
+   "Hammer Strength Iso-Lateral Low Row",
+   "Technogym Pure Strength Low Row MG2500",
+   "Gym 80 Pure Kraft 4322 Seated Row Dual"
+  ],
+  "iso_row": [
+   "Hammer Strength Iso-Lateral Row",
+   "Technogym Pure Strength Row MG3000",
+   "Gym 80 Pure Kraft 4327 Power Row Dual"
+  ],
+  "chest_sup_row": [
+   "Technogym Selection Low Row M980",
+   "Gym 80 Sygnum 3040 Seated Row",
+   "Panatta Super Low Row"
+  ],
+  "high_row": [
+   "Hammer Strength Iso-Lateral High Row",
+   "Gym 80 Pure Kraft 4340 High Row Dual",
+   "Panatta Super High Row"
+  ],
+  "pullover_m": [
+   "Technogym Pure Strength Pull Over",
+   "Gym 80 Pure Kraft 4350 Pullover",
+   "Panatta Pullover Machine"
+  ],
+  "lat_pulldown": [
+   "Technogym Selection Lat Machine M912",
+   "Gym 80 Sygnum 3020 Lat Pulldown",
+   "Panatta Super Lat Pulldown Circular"
+  ],
+  "lat_pulldown_conv": [
+   "Hammer Strength Iso-Lateral Front Lat Pulldown",
+   "Panatta Super Lat Machine Convergent",
+   "Technogym Pure Strength Pulldown MG2000"
+  ],
+  "neutral_pulldown": [
+   "Technogym Selection Pulldown M949",
+   "Gym 80 Pure Kraft 4311 Lat Pulldown Dual"
+  ],
+  "straight_arm_pd": [
+   "Technogym Selection Cable Jungle M982",
+   "Gym 80 4004 Crossover Cable Station"
+  ],
+  "cable_lateral": [
+   "Gym 80 4034 Dual Adjustable Pulley",
+   "Technogym Selection Cable Jungle M982"
+  ],
+  "lateral_m": [
+   "Technogym Selection Delts Machine M993",
+   "Gym 80 Sygnum 3050 Lateral Raise",
+   "Hammer Strength Lateral Raise"
+  ],
+  "face_pull": [
+   "Technogym Selection Cable Jungle M982",
+   "Gym 80 4034 Dual Adjustable Pulley"
+  ],
+  "reverse_fly_m": [
+   "Technogym Selection Reverse Fly ML31",
+   "Gym 80 Sygnum 3025 Butterfly Reverse",
+   "Panatta Super Peck Back 1FW117"
+  ],
+  "ext_rot_cable": [
+   "Gym 80 4034 Dual Adjustable Pulley",
+   "Technogym Selection Cable Jungle M982"
+  ],
+  "preacher_m": [
+   "Technogym Selection Arm Curl M992",
+   "Gym 80 Sygnum 3010 Biceps",
+   "Panatta Four Angle Biceps Machine 1FW551"
+  ],
+  "preacher_lev": [
+   "Technogym Pure Strength Biceps MG6000",
+   "Gym 80 Pure Kraft 4338 Biceps Curl",
+   "Panatta Alternate Preacher Curl"
+  ],
+  "cable_curl": [
+   "Technogym Selection Ercolina M928",
+   "Gym 80 4004 Crossover Cable Station"
+  ],
+  "rope_hammer": [
+   "Technogym Selection Ercolina M928",
+   "Gym 80 4034 Dual Adjustable Pulley"
+  ],
+  "forearm_m": [
+   "Gym 80 Sygnum 3071 Forearms",
+   "Hammer Strength Gripper"
+  ],
+  "rope_pushdown": [
+   "Technogym Selection Ercolina M928",
+   "Gym 80 4004 Crossover Cable Station"
+  ],
+  "bar_pushdown": [
+   "Technogym Selection Ercolina M928",
+   "Gym 80 4004 Crossover Cable Station"
+  ],
+  "overhead_cable": [
+   "Gym 80 4034 Dual Adjustable Pulley",
+   "Technogym Selection Cable Jungle M982"
+  ],
+  "triceps_m": [
+   "Technogym Selection Arm Extension M945",
+   "Gym 80 Sygnum 3011 Triceps Extension",
+   "Panatta Three Angles Triceps Machine"
+  ],
+  "dip_m": [
+   "Technogym Pure Strength Seated Dip MG5500",
+   "Gym 80 Pure Kraft 4335 Triceps Dip Dual",
+   "Panatta Dips Press"
+  ],
+  "cable_crunch": [
+   "Technogym Selection Cable Jungle M982",
+   "Gym 80 4004 Crossover Cable Station"
+  ],
+  "ab_m": [
+   "Technogym Selection Abdominal Crunch M957",
+   "Gym 80 Sygnum 3008 Abdominal",
+   "Gym 80 Pure Kraft 4342N Rotating Ab Crunch"
+  ],
+  "shrug_m": [
+   "Hammer Strength Seated Shrug",
+   "Panatta Super Shrug"
+  ],
+  "rower": [
+   "Technogym Skillrow"
+  ],
+  "bike": [
+   "Technogym Skillbike",
+   "Technogym Excite Bike"
+  ],
+  "sled": [
+   "Technogym Skillrun (mode Sled) ou traîneau zone Hyrox (Gerland)"
+  ],
+  "back_squat": [
+   "Rack Eleiko Prestera, barre Eleiko Performance Bar 20 kg"
+  ],
+  "front_squat": [
+   "Rack Eleiko Prestera, barre Eleiko Performance Bar 20 kg"
+  ],
+  "deadlift": [
+   "Plateforme Eleiko, barre Eleiko Performance Bar ou IPF Training Bar"
+  ],
+  "trap_bar_dl": [
+   "Eleiko Öppen Bar (barre hexagonale)"
+  ],
+  "rdl": [
+   "Barre Eleiko Performance Bar, plateforme Eleiko"
+  ],
+  "bench": [
+   "Banc olympique Hammer Strength ou Eleiko, barre Eleiko Performance Bar"
+  ],
+  "incline_bench": [
+   "Banc incliné olympique Hammer Strength, barre Eleiko Performance Bar"
+  ],
+  "ohp": [
+   "Rack Eleiko Prestera, barre Eleiko Performance Bar"
+  ],
+  "bb_row": [
+   "Barre Eleiko Performance Bar, plateforme"
+  ],
+  "bss": [
+   "Glutebuilder Bench ou banc plat, haltères (zone charges libres)"
+  ],
+  "farmer": [
+   "Eleiko Vulcano ou haltères lourds, zone Hyrox (Gerland)"
+  ],
+  "kb_swing": [
+   "Kettlebells zone hybrid (Gerland, Jean Macé, Saxe Gambetta, Cordeliers)"
+  ],
+  "trx_row": [
+   "TRX zone hybrid (Gerland, Jean Macé, Saxe Gambetta, Cordeliers)"
+  ],
+  "shadow_box": [
+   "Sac Venum Flex Standing ou Origins, zone boxe / MMA (Gerland, Saxe Gambetta)"
+  ],
+  "jump_rope": [
+   "Corde Venum Competitor Weighted Jump Rope"
+  ]
+ }
+}

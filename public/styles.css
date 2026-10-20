@@ -1341,3 +1341,11 @@ details.notes textarea{margin-top:10px;min-height:70px}
 .prom>div:first-child{flex:0 1 auto;max-width:58%}
 .prom small{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .prow .nm .star{color:var(--accent);font-size:12px;margin-left:4px;vertical-align:2px}
+/* ---------- progression depuis le début ---------- */
+.prog3{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:0 0 12px}
+.pt{background:var(--surface);border-radius:16px;padding:12px 10px 10px;text-align:left;box-shadow:var(--shadow);min-width:0}
+.pt .l{display:block;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+.pt b{display:flex;align-items:center;gap:4px;font-family:var(--disp);font-size:19px;letter-spacing:-.02em;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;margin:2px 0}
+.pt small{display:block;font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.arr{font-style:normal;font-weight:800;font-size:15px}.arr.up{color:var(--ok)}.arr.down{color:var(--accent)}.arr.flat{color:var(--muted)}
+.card.since .prog3{margin-top:8px}.card.since .pt{background:var(--surface2);box-shadow:none}

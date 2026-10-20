@@ -1,1 +1,6 @@
-{ "indexes": [], "fieldOverrides": [] }
+{
+  "indexes": [
+    { "collectionGroup": "active", "queryScope": "COLLECTION", "fields": [ { "fieldPath": "hasProgram", "order": "ASCENDING" }, { "fieldPath": "lastActiveAt", "order": "ASCENDING" } ] }
+  ],
+  "fieldOverrides": []
+}

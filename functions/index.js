@@ -4,6 +4,7 @@
    et "chat" (question libre). L'utilisateur doit être authentifié. */
 const { onCall, onRequest, HttpsError } = require('firebase-functions/v2/https');
 const { onSchedule } = require('firebase-functions/v2/scheduler');
+const { onDocumentWritten } = require('firebase-functions/v2/firestore');
 const { defineSecret, defineString } = require('firebase-functions/params');
 const admin = require('firebase-admin');
 
@@ -178,7 +179,10 @@ async function claudeJSON(apiKey, model, system, messages, schema, maxTokens = 2
 const DEMO_IDS = require('./demo-ids.json'); const DEMO_SET = new Set(DEMO_IDS);
 const DEMO_SCHEMA = { type: 'object', required: ['map'], properties: { map: { type: 'array', items: { type: 'object', required: ['exId', 'demoId'], properties: { exId: { type: 'string' }, demoId: { type: 'string', description: 'Identifiant exact pris dans la liste fournie, ou "" si aucune fiche ne montre un mouvement proche.' } } } } } };
 const ILLUS_IDS = require('./illus.json'); const ILLUS_FR = require('./illus-labels.json');
-const LIB = require('./library.js'); // fiches dessinées avec leur libellé français (type de machine, marque indifférente) // fiches dessinées (personnage unique) : à privilégier quand le geste et le matériel sont identiques
+const LIB = require('./library.js');
+const ENFORCE_APP_CHECK = process.env.ENFORCE_APP_CHECK === 'true'; // functions/.env : ENFORCE_APP_CHECK=true une fois App Check activé côté client
+const PARCS = require('./parcs.json'); // machines exactes par enseigne (marque + modèle), affichées quand l'athlète a nommé son enseigne
+// fiches dessinées avec leur libellé français (type de machine, marque indifférente) // fiches dessinées (personnage unique) : à privilégier quand le geste et le matériel sont identiques
 async function mapDemos(apiKey, model, exercises) {
   const list = exercises.filter(e => e && e.id && e.name).map(e => `${e.id} | ${e.name} | ${e.machine || ''} | ${e.target || ''}`);
   if (!list.length) return {};
@@ -305,7 +309,7 @@ async function checkQuota(uid, mode, plan, force) { // force : on compte l'usage
 }
 
 // Tableau de bord administrateur : comptes, programmes, séances et erreurs des 7 derniers jours, coût IA du mois.
-exports.adminStats = onCall({ region: 'europe-west1' }, async (req) => {
+exports.adminStats = onCall({ region: 'europe-west1', enforceAppCheck: ENFORCE_APP_CHECK }, async (req) => {
   if (!req.auth || !ADMIN_EMAILS.includes(String(req.auth.token && req.auth.token.email || '').toLowerCase())) throw new HttpsError('permission-denied', 'Réservé à l\'administrateur.');
   const since = isoDaysAgo(7); const sinceMs = Date.now() - 7 * 86400000; const month = parisISO().slice(0, 7);
   const users = await db.collection('users').listDocuments();
@@ -332,7 +336,7 @@ exports.adminStats = onCall({ region: 'europe-west1' }, async (req) => {
 });
 
 // Forfait posé à la main par l'administrateur (Premium offert pour N mois, ou retiré). Un abonnement payant repasse par le webhook.
-exports.adminSetPlan = onCall({ region: 'europe-west1' }, async (req) => {
+exports.adminSetPlan = onCall({ region: 'europe-west1', enforceAppCheck: ENFORCE_APP_CHECK }, async (req) => {
   if (!req.auth || !ADMIN_EMAILS.includes(String(req.auth.token && req.auth.token.email || '').toLowerCase())) throw new HttpsError('permission-denied', 'Réservé à l\'administrateur.');
   const uid = String((req.data || {}).uid || ''); const plan = (req.data || {}).plan === 'premium' ? 'premium' : 'free'; const months = Math.max(0, Math.min(36, parseInt((req.data || {}).months) || 0));
   if (!uid) throw new HttpsError('invalid-argument', 'uid manquant');
@@ -358,7 +362,7 @@ const BENCH_PROFILES = [
   { name: 'Amel', sex: 'f', age: 52, height: 158, weight: 75, level: 'debutant', goals: ['perte', 'sante'], days: 3, minutes: 30, gear: ['elastiques', 'corps'], constraints: 'reprise après 10 ans sans sport' },
   { name: 'Hugo', sex: 'm', age: 35, height: 180, weight: 72, level: 'confirme', goals: ['tractions', 'endurance', 'puissance'], days: 6, minutes: 60, gear: ['salle', 'traction'], constraints: '', sports: 'pompier, gardes de 24 h' }
 ];
-exports.adminEval = onCall({ region: 'europe-west1', secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 540, memory: '512MiB' }, async (req) => {
+exports.adminEval = onCall({ region: 'europe-west1', enforceAppCheck: ENFORCE_APP_CHECK, secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 540, memory: '512MiB' }, async (req) => {
   if (!req.auth || !ADMIN_EMAILS.includes(String(req.auth.token && req.auth.token.email || '').toLowerCase())) throw new HttpsError('permission-denied', 'Réservé à l\'administrateur.');
   const apiKey = String(ANTHROPIC_API_KEY.value() || '').replace(/[^\x21-\x7E]/g, '').replace(/^["']+|["']+$/g, '');
   const model = await resolveModel(apiKey, MODEL.value());
@@ -380,12 +384,15 @@ exports.adminEval = onCall({ region: 'europe-west1', secrets: [ANTHROPIC_API_KEY
   await db.collection('system').doc('bench').set({ summary, results });
   return { summary, results };
 });
-exports.adminAction = onCall({ region: 'europe-west1' }, async (req) => {
+exports.adminAction = onCall({ region: 'europe-west1', enforceAppCheck: ENFORCE_APP_CHECK }, async (req) => {
   if (!req.auth || !ADMIN_EMAILS.includes(String(req.auth.token && req.auth.token.email || '').toLowerCase())) throw new HttpsError('permission-denied', 'Réservé à l\'administrateur.');
   const { uid, action, text } = req.data || {};
   if (action === 'purgeGeneric') { // tous les comptes : un programme sans date de génération est une copie du programme de base, il est retiré ; l'app propose alors la génération
     let n = 0; for (const u of await db.collection('users').listDocuments()) { try { const au = await admin.auth().getUser(u.id); if (ADMIN_EMAILS.includes(String(au.email || '').toLowerCase())) continue; } catch (e) {} const pg = await u.collection('meta').doc('program').get(); if (pg.exists && pg.data().sessions && !pg.data().generatedAt) { await u.collection('meta').doc('program').delete(); n++; } }
     return { ok: true, purged: n }; }
+  if (action === 'reindexActive') { // construit l'index des comptes actifs à partir des programmes et des dernières séances
+    let n = 0; for (const u of await db.collection('users').listDocuments()) { const pg = await u.collection('meta').doc('program').get(); if (!pg.exists || !pg.data().sessions) continue; const lg = await u.collection('logs').orderBy('date', 'desc').limit(1).get(); const lastDate = lg.empty ? null : lg.docs[0].data().date; const lastActiveAt = Math.max(pg.data().generatedAt || 0, lastDate ? Date.parse(lastDate + 'T12:00:00Z') : 0) || Date.now(); await touchActive(u.id, { hasProgram: true, pending: pg.data().degraded === 'coach', lastActiveAt }); n++; }
+    return { ok: true, indexed: n }; }
   if (!uid || !action) throw new HttpsError('invalid-argument', 'uid et action requis');
   const base = db.collection('users').doc(String(uid));
   if (action === 'resetQuota') { await base.collection('meta').doc('usage').set({ month: parisISO().slice(0, 7), program: 0, analyse: 0, chat: 0, substitute: 0, demo: 0, updatedAt: Date.now() }, { merge: true }); await base.collection('meta').doc('genstate').delete().catch(() => {}); return { ok: true }; }
@@ -421,7 +428,7 @@ exports.revenuecatWebhook = onRequest({ region: 'europe-west1', secrets: [REVENU
 exports._applyBillingEvent = applyBillingEvent;
 exports._computeFacts = computeFacts;
 
-exports.deleteAccount = onCall({ region: 'europe-west1' }, async (req) => {
+exports.deleteAccount = onCall({ region: 'europe-west1', enforceAppCheck: ENFORCE_APP_CHECK }, async (req) => {
   if (!req.auth) throw new HttpsError('unauthenticated', 'Connexion requise.');
   const uid = req.auth.uid;
   await db.recursiveDelete(db.collection('users').doc(uid));
@@ -429,7 +436,7 @@ exports.deleteAccount = onCall({ region: 'europe-west1' }, async (req) => {
   return { ok: true };
 });
 
-exports.coach = onCall({ region: 'europe-west1', secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 540, memory: '1GiB' }, async (req) => {
+exports.coach = onCall({ region: 'europe-west1', enforceAppCheck: ENFORCE_APP_CHECK, secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 540, memory: '1GiB' }, async (req) => {
   // Journal lisible dans `firebase functions:log` (texte brut) : mode, durée, résultat ou erreur.
   const t0 = Date.now(); const mode0 = (req.data || {}).mode; const uid0 = req.auth ? req.auth.uid.slice(0, 6) : 'anon';
   try {
@@ -453,7 +460,7 @@ function checkProgram(prog, profile) {
   const p = profile || {}; const gear = p.gear || []; const errors = [], warnings = [];
   if (!prog.sessions.length) errors.push('Aucune séance.');
   const wantDays = (p.spec && Array.isArray(p.spec.daysList) && p.spec.daysList.length) ? p.spec.daysList.length : Number(p.days);
-  if (wantDays && prog.sessions.length !== wantDays) errors.push(`${prog.sessions.length} séance(s) pour ${wantDays} jour(s) demandé(s).`);
+  if (wantDays && prog.sessions.length !== wantDays && !(prog.engine && prog.engine.daysAdjusted === prog.sessions.length)) errors.push(`${prog.sessions.length} séance(s) pour ${wantDays} jour(s) demandé(s).`);
   if (gear.length && !gear.includes('salle')) {
     const bad = prog.sessions.flatMap(s => s.exercises).filter(isMachineEx).map(e => e.name);
     if (bad.length) errors.push('Machine ou poulie sans salle : ' + [...new Set(bad)].slice(0, 6).join(', ') + '.');
@@ -464,7 +471,7 @@ function checkProgram(prog, profile) {
     const want = sp.daysList.map(k => (k + 1) % 7).sort().join(','); const got = prog.sessions.map(s => s.day).sort().join(',');
     if (want !== got) { const order = sp.daysList.slice().sort((a, b) => a - b); prog.sessions.sort((a, b) => ((a.day + 6) % 7) - ((b.day + 6) % 7)).forEach((s, i) => { s.day = (order[i] + 1) % 7; s.dayName = DAY_FR[order[i]]; }); warnings.push('Jours replacés sur ceux de la fiche.'); }
   }
-  (sp.zones || []).forEach(z => { const m = CONSTRAINT_MAP.find(([cre]) => cre.test(ZONE_FR[z.zone] || z.zone)); if (!m) return; const hit = prog.sessions.flatMap(s => s.exercises).filter(e => e.exId && LIB.BY_ID[e.exId] ? (LIB.BY_ID[e.exId].zones || []).includes(z.zone) : m[1].test(e.name)).map(e => e.name); if (!hit.length) return; const msg = `${ZONE_FR[z.zone] || z.zone} (${z.sev}) : ${[...new Set(hit)].slice(0, 4).join(', ')}.`; if (z.sev === 'opere' || z.sev === 'douleur') errors.push('Zone à ménager sollicitée, ' + msg); else warnings.push('Zone fragile, vérifier ' + msg); });
+  (sp.zones || []).forEach(z => { const m = CONSTRAINT_MAP.find(([cre]) => cre.test(ZONE_FR[z.zone] || z.zone)); if (!m) return; const hit = prog.sessions.flatMap(s => s.exercises).filter(e => e.exId && LIB.BY_ID[e.exId] ? ((LIB.BY_ID[e.exId].zones || []).includes(z.zone) && !LIB.rehabOk(LIB.BY_ID[e.exId], sp.zones)) : m[1].test(e.name)).map(e => e.name); if (!hit.length) return; const msg = `${ZONE_FR[z.zone] || z.zone} (${z.sev}) : ${[...new Set(hit)].slice(0, 4).join(', ')}.`; if (z.sev === 'opere' || z.sev === 'douleur') errors.push('Zone à ménager sollicitée, ' + msg); else warnings.push('Zone fragile, vérifier ' + msg); });
   if ((sp.refuse || []).includes('nomachine')) { const bad = prog.sessions.flatMap(s => s.exercises).filter(isMachineEx).map(e => e.name); if (bad.length) errors.push('Refus des machines non respecté : ' + [...new Set(bad)].slice(0, 5).join(', ') + '.'); }
   if ((sp.refuse || []).includes('nobar')) { const bad = prog.sessions.flatMap(s => s.exercises).filter(e => e.exId && LIB.BY_ID[e.exId] ? (LIB.BY_ID[e.exId].tags || []).includes('barre') : (/\bbarre\b|barbell|olympique/i.test(e.name + ' ' + e.machine) && !/traction|pull|dip/i.test(e.name))).map(e => e.name); if (bad.length) errors.push('Refus de la barre non respecté : ' + [...new Set(bad)].slice(0, 5).join(', ') + '.'); }
   const c = String(p.constraints || '');
@@ -534,11 +541,15 @@ function dose(goal, role, level) {
 function planStructure(profile, adjust) {
   const adj = adjust || {}; const p = profile || {}; const s = p.spec || {}; const gear = p.gear || []; const gym = gear.includes('salle'); const bodyOnly = !gym && (gear.length === 0 || gear.every(g => g === 'corps' || g === 'cardio'));
   const goal = s.goalMain || ({ force: 'force', masse: 'masse', perte: 'perte', seche: 'perte', sante: 'sante', perf: 'perf', tractions: 'corps', puissance: 'perf', endurance: 'perf', cardio: 'perte', fessiers: 'masse', silhouette: 'masse', bras: 'masse', jambes: 'force' }[(p.goals || [])[0]] || 'masse');
-  const days = (Array.isArray(s.daysList) && s.daysList.length) ? s.daysList.slice().sort((a, b) => a - b) : [[0, 2], [0, 2, 4], [0, 2, 4, 5], [0, 1, 3, 4, 5], [0, 1, 2, 3, 4, 5]][Math.max(2, Math.min(6, Number(p.days) || 3)) - 2];
+  let days = (Array.isArray(s.daysList) && s.daysList.length) ? s.daysList.slice().sort((a, b) => a - b) : [[0, 2], [0, 2, 4], [0, 2, 4, 5], [0, 1, 3, 4, 5], [0, 1, 2, 3, 4, 5]][Math.max(2, Math.min(6, Number(p.days) || 3)) - 2];
+  if (adj.days && adj.days >= 2 && adj.days < days.length) { const drop = adj.dropDays || []; days = days.filter(d => !drop.includes(d)); while (days.length > adj.days) days.pop(); } // assiduité insuffisante : un jour de moins, en retirant d'abord le jour le plus manqué
   const n = days.length; const minutes = Number(p.minutes) || 60; const level = adj.level || p.level || 'intermediaire';
   const caps = LEVEL_CAPS[level] || LEVEL_CAPS.intermediaire;
   const banned = new Set(); const soft = new Set();
-  (s.zones || []).concat(adj.zones || []).forEach(z => (ZONE_RULES[z.zone] || []).forEach(pt => { if (z.sev === 'opere' || z.sev === 'douleur') banned.add(pt); else soft.add(pt); }));
+  (s.zones || []).concat(adj.zones || []).forEach(z => (ZONE_RULES[z.zone] || []).forEach(pt => {
+    if (z.sev === 'opere') banned.add(pt);
+    else if (z.sev === 'douleur') { const rehab = (LIB.REHAB[z.zone] || []).some(id => LIB.BY_ID[id] && LIB.BY_ID[id].pattern === pt); if (rehab) soft.add(pt); else banned.add(pt); } // douleur : le schéma reste si une fiche compatible existe (isométrie, excentrique, charge modérée)
+    else soft.add(pt); }));
   if (bodyOnly) ['kneeext', 'carry'].forEach(x => banned.add(x));
   const refuse = s.refuse || []; const likes = s.likes || []; const second = s.goalSecond || (p.goals || [])[1] || null;
   const sports = (s.sports || []).map(x => String(x).toLowerCase()); const age = Number(p.age || s.age) || 0; const skills = s.skills || [];
@@ -546,6 +557,8 @@ function planStructure(profile, adjust) {
   // Objectif secondaire : un schéma supplémentaire ou prioritaire là où il ne gêne pas le principal.
   const SECOND = { tractions: { add: 'vpull', where: /Tirage|Haut|Corps/ }, jambes: { add: 'lunge', where: /Jambes|Bas|Corps/ }, bras: { add: 'biceps', add2: 'triceps', where: /Poussée|Tirage|Haut|Corps/ }, fessiers: { add: 'hinge', where: /Jambes|Bas|Corps/ }, seche: { add: 'cond', where: /./ }, cardio: { add: 'cond', where: /./ }, endurance: { add: 'cond', where: /./ }, puissance: { add: 'carry', where: /Jambes|Bas|Corps/ }, silhouette: { add: 'latdelt', where: /Poussée|Haut|Corps/ } }[second] || null;
   // Autres pratiques : on protège ce que le sport fatigue déjà.
+  const operational = /pompier|sapeur|militaire|gendarme|police|secours|garde|infirmi|urgenc|ambulanc/i.test(String(s.sportsNote || '') + ' ' + String(s.jobNote || '') + ' ' + String(p.sports || '') + ' ' + String(p.constraints || '') + ' ' + sports.join(' '));
+  const physicalJob = s.activity === 'physique';
   const runner = sports.some(x => /course|trail|running|marathon/.test(x)); const climber = sports.some(x => /escalade|climb/.test(x)); const swimmer = sports.some(x => /natation|swim/.test(x)); const contact = sports.some(x => /rugby|sport co|football|arts martiaux|mma|judo/.test(x)); const cyclist = sports.some(x => /vélo|velo|cyclisme/.test(x));
   if (climber) soft.add('vpull'); // les avant-bras et les coudes sont déjà chargés par la grimpe
   if (swimmer) soft.add('vpush'); // épaules très sollicitées en natation
@@ -561,6 +574,7 @@ function planStructure(profile, adjust) {
   const wantIds = (s.wantEx || []).filter(id => LIB.BY_ID[id]); const wantPats = wantIds.map(id => LIB.BY_ID[id].pattern);
   const LOWER_PAT = new Set(['squat', 'hinge', 'lunge', 'kneeflex', 'kneeext', 'calf', 'plyo']);
   const UPPER_PAT = new Set(['hpush', 'vpush', 'hpull', 'vpull', 'biceps', 'triceps', 'latdelt', 'reardelt']);
+  let upperCount = 0;
   const sessions = template.map(([name, pats], i) => {
     let list = pats.map(pt => banned.has(pt) ? (ZONE_SUBS[pt] && !banned.has(ZONE_SUBS[pt]) ? ZONE_SUBS[pt] : null) : pt).filter(Boolean);
     { const subbed = pats.map(pt => banned.has(pt)); const kept = list.filter((pt, k) => !subbed[k]); const moved = list.filter((pt, k) => subbed[k]); list = kept.concat(moved); } // un schéma de remplacement ne devient pas l'exercice principal
@@ -576,6 +590,9 @@ function planStructure(profile, adjust) {
       else if (!banned.has(SECOND.add)) { if (list.includes(SECOND.add)) { const k = list.indexOf(SECOND.add); if (k > 1) { list.splice(k, 1); list.splice(1, 0, SECOND.add); } } else list.splice(Math.min(2, list.length), 0, SECOND.add); }
       if (SECOND.add2 && !banned.has(SECOND.add2) && !list.includes(SECOND.add2)) list.push(SECOND.add2);
     }
+    if (operational && !bodyOnly) { // métier opérationnel : port de charge (carry) dans une séance bas du corps, condition physique (cond) dans une séance du haut, chaque semaine
+      const lowerS = pats.some(x => LOWER_PAT.has(x)); if (lowerS && i === template.findIndex(([, pp]) => pp.some(x => LOWER_PAT.has(x))) && !list.includes('carry') && !banned.has('carry')) list.push('carry');
+      if (!lowerS && i === template.findIndex(([, pp]) => !pp.some(x => LOWER_PAT.has(x))) && !list.includes('cond') && !refuse.includes('cardio')) list.push('cond'); }
     if ((runner || cyclist) && goal !== 'force' && goal !== 'masse') { const k = list.indexOf('lunge'); if (k > 0 && list.length > 4) list.splice(k, 1); } // jambes déjà très sollicitées : on retire l'unilatéral de volume
     // exercices voulus : leur schéma doit exister dans une séance de la bonne moitié du corps
     wantPats.forEach((pt, wi) => { if (banned.has(pt) || list.includes(pt)) return; const isLower = LOWER_PAT.has(pt); const sessLower = pats.some(x => LOWER_PAT.has(x)); const sessUpper = pats.some(x => !LOWER_PAT.has(x) && x !== 'core' && x !== 'cond' && x !== 'carry'); if ((isLower && sessLower) || (!isLower && sessUpper) || (!sessLower && !sessUpper)) { if ((wi + i) % 2 === 0 || n === 1) list.splice(Math.min(2, list.length), 0, pt); } });
@@ -591,12 +608,15 @@ function planStructure(profile, adjust) {
       const dup = new Set(['vpull', 'hpull', 'hpush', 'lunge', 'core']); // un second emplacement du même schéma est permis (variante différente)
       for (const extra of fill) { if (list.length >= target) break; if (banned.has(extra)) continue; const c = list.filter(x => x === extra).length; if (c === 0 || (c === 1 && dup.has(extra) && (extra !== 'vpull' || goalPull))) { const k = list.indexOf('core'); if (s.coreEnd && k >= 0 && extra !== 'core') list.splice(k, 0, extra); else if (extra === 'cond') list.push(extra); else { const kc = list.indexOf('cond'); list.splice(kc >= 0 ? kc : list.length, 0, extra); } } }
     }
-    const slots = list.map((pt, k) => { const role = k === 0 ? 'main' : k === 1 ? 'second' : 'acc'; const d = dose(goal, role, level); if (age >= 50) { d.rir = d.rir.map(r => Math.max(r, 2)); d.restSec = Math.round(d.restSec * 1.15); } if (second === 'endurance' && role !== 'main') { d.reps = role === 'second' ? '12-15' : '15-20'; d.restSec = Math.min(d.restSec, 60); } if (adj.volume && adj.volume !== 1) d.sets = Math.max(2, Math.round(d.sets * adj.volume)); if (adj.rir) d.rir = d.rir.map((r, i) => i === d.rir.length - 1 ? r : Math.min(4, Math.max(0, r + adj.rir))); return Object.assign({ pattern: pt, role, star: k < 2, soft: soft.has(pt) }, d); });
+    let upperIdx = -1; if (goalPull && !lowerOnly) { upperIdx = upperCount++; }
+    const slots = list.map((pt, k) => { const role = k === 0 ? 'main' : k === 1 ? 'second' : 'acc'; const d = dose(goal, role, level);
+      let pullMode = null; if (goalPull && pt === 'vpull' && upperIdx >= 0) { const firstPull = list.indexOf('vpull') === k; pullMode = firstPull ? (upperIdx % 2 === 0 ? 'heavy' : 'volume') : (upperIdx % 2 === 0 ? 'volume' : 'heavy'); if (pullMode === 'heavy') { d.sets = Math.max(d.sets, 5); d.reps = '3-5'; d.restSec = Math.max(d.restSec, 150); } else { d.sets = Math.max(3, Math.min(d.sets, 4)); d.reps = level === 'debutant' ? '5-8' : '8-15'; d.rir = d.rir.map(r => Math.max(r, 2)); d.restSec = Math.min(d.restSec, 90); } }
+      if (age >= 50) { d.rir = d.rir.map(r => Math.max(r, 2)); d.restSec = Math.round(d.restSec * 1.15); } if (second === 'endurance' && role !== 'main') { d.reps = role === 'second' ? '12-15' : '15-20'; d.restSec = Math.min(d.restSec, 60); } if (adj.volume && adj.volume !== 1) d.sets = Math.max(2, Math.round(d.sets * adj.volume)); if (adj.rir) d.rir = d.rir.map((r, i) => i === d.rir.length - 1 ? r : Math.min(4, Math.max(0, r + adj.rir))); return Object.assign({ pattern: pt, role, star: k < 2, soft: soft.has(pt), pullMode }, d); });
     // borne de volume par niveau
     let total = slots.reduce((a, x) => a + x.sets, 0); while (total > caps.setsPerSession) { const big = slots.reduce((m, x) => x.sets > m.sets ? x : m, slots[0]); if (big.sets <= 2) break; big.sets--; total--; }
     const dayIdx = days[i]; return { id: 's' + (i + 1), day: (dayIdx + 1) % 7, dayName: DAY_FR[dayIdx], name: goal === 'perte' ? name.replace('force', 'densité') : name, slots };
   });
-  return { goal, second, level, days, minutes, gym, bodyOnly, banned: [...banned], soft: [...soft], sessions, caps, age, skills, sports, flags: { runner, climber, swimmer, contact, cyclist }, favor: (adj.favor || []).concat(wantIds), avoid: adj.avoid || [], want: wantIds, adjust: adj };
+  return { goal, second, level, days, minutes, gym, bodyOnly, banned: [...banned], soft: [...soft], sessions, caps, age, skills, sports, flags: { runner, climber, swimmer, contact, cyclist, operational, physicalJob, sedentary: s.activity === 'sedentaire' }, favor: (adj.favor || []).concat(wantIds), avoid: adj.avoid || [], want: wantIds, adjust: adj, goalPull: goal === 'corps' || second === 'tractions' || likes.includes('tractions') };
 }
 // Rendu du programme déjà construit pour le coach : il rédige, il ne choisit pas. Les exercices viennent de la bibliothèque.
 function skeletonText(plan, profile) {
@@ -619,7 +639,10 @@ function programFromPlan(plan, profile, startISO, weeksN) {
   });
   prog.demos = demos; prog.demosAt = Date.now();
   prog.promise = buildPromise(plan, profile); prog.recovery = buildRecovery(plan, profile); prog.nutritionBase = buildNutrition(plan, profile);
+  // Enseigne connue : chaque exercice reçoit le modèle exact du parc (marque + référence) et ses équivalents, devant la description visuelle.
+  { const brand = String(((profile || {}).spec || {}).brand || '').trim(); const parc = PARCS[brand]; if (parc && plan.gym) { prog.sessions.forEach(se => se.exercises.forEach(e => { const m = parc[e.exId]; if (!m || !m.length) return; e.machineModel = m[0]; e.machineAlts = m.slice(1); e.machine = m[0] + (e.machine ? ' · ' + e.machine : ''); if (m[1] && !e.alt) e.alt = m[1]; e.url = 'https://www.google.com/search?tbm=isch&q=' + encodeURIComponent(m[0]); })); prog.parc = brand; } }
   prog.engine = { v: 2, goal: plan.goal, banned: plan.banned, soft: plan.soft, notes: plan.selectionNotes || [], gear: plan.gearList || [] };
+  if (plan.adjust && plan.adjust.days && plan.adjust.days === plan.sessions.length) prog.engine.daysAdjusted = plan.sessions.length; // un jour retiré par le bilan (assiduité)
   prog.rationale = `Pour ${(profile || {}).name || 'toi'} : ${plan.days.length} séances de ${plan.minutes} minutes, objectif ${({ force: 'force', masse: 'prise de muscle', perte: 'perte de gras en gardant le muscle', sante: 'santé et mobilité', perf: 'performance', corps: 'poids du corps' }[plan.goal] || plan.goal)}, niveau ${plan.level}. La structure, les séries, les répétitions, le RIR et les repos sont réglés par les règles à partir de ta fiche ; chaque exercice est choisi dans la bibliothèque pour ton matériel et tes zones à ménager.`;
   prog.nutrition = prog.nutritionBase.text; prog.warmup = null;
   return applyGuardrails(prog, profile);
@@ -665,17 +688,24 @@ function buildRecovery(plan, profile) {
     items.push(`Sommeil : ${sleep}, heure de coucher stable. C\'est là que le muscle se construit.`);
     days.push({ day: d, dayName: DAY_FR[(d + 6) % 7], after: pm, before: nm, items });
   }
-  return { sleep, rules: ['Deux séances sans sommeil correct : on réduit la séance suivante de 20 % (le coach le fait avec toi).', 'Douleur articulaire qui dure plus de 48 h : tu le dis dans la séance, l\'exercice est remplacé.', 'Massage ou sauna : après les grosses séances, jamais juste avant.'], days };
+  const jobRules = (plan.flags && plan.flags.physicalJob && !(plan.flags && plan.flags.operational)) ? ['Journée physique au travail : la séance du soir compte comme une deuxième charge ; si les jambes ou le dos sont déjà entamés, « Fatigué » dans la séance (une série de moins partout) plutôt que de sauter.'] : (plan.flags && plan.flags.sedentary) ? ['Journées assises : 10 minutes de marche après chaque repas et deux pauses debout par heure font plus pour la récupération que n\'importe quel complément.'] : [];
+  const opRules = jobRules.concat((plan.flags && plan.flags.operational) ? ['Après une garde ou une nuit d\'intervention : pas de séance lourde le jour même ; marche 30 min, mobilité, et la séance prévue est décalée d\'un jour ou allégée (« Fatigué » dans la séance).', 'Deux gardes dans la semaine : la semaine passe en version allégée depuis le point du lundi, sans culpabilité, le cycle est construit pour ça.'] : []);
+  return { sleep, rules: opRules.concat(['Deux séances sans sommeil correct : on réduit la séance suivante de 20 % (le coach le fait avec toi).', 'Douleur articulaire qui dure plus de 48 h : tu le dis dans la séance, l\'exercice est remplacé.', 'Massage ou sauna : après les grosses séances, jamais juste avant.']), days };
 }
 /* Nutrition déterministe (Mifflin-St Jeor × activité, ajustée à l\'objectif) : toujours présente, le coach la personnalise par-dessus. */
 function buildNutrition(plan, profile) {
   const p = profile || {}; const sp = p.spec || {}; const w = Number(p.weight || sp.weight) || 0, h = Number(p.height || sp.height) || 0, a = Number(p.age || sp.age) || 35; const f = (p.sex || sp.sex) === 'f';
   if (!w || !h) return { text: 'Renseigne ton poids et ta taille dans ton profil pour obtenir tes cibles.', kcal: null };
-  const bmr = 10 * w + 6.25 * h - 5 * a + (f ? -161 : 5); const act = 1.35 + 0.05 * plan.days.length; let kcal = Math.round(bmr * act / 10) * 10;
+  const bmr = 10 * w + 6.25 * h - 5 * a + (f ? -161 : 5); const act = ({ sedentaire: 1.25, modere: 1.35, physique: 1.5 })[sp.activity] + 0.05 * plan.days.length || 1.35 + 0.05 * plan.days.length; let kcal = Math.round(bmr * act / 10) * 10;
   const g = plan.goal; const adj = { masse: 250, force: 150, perte: -400, sante: 0, perf: 100, corps: 0 }[g] || 0; if (plan.second === 'seche') kcal -= 200;
   kcal += adj; const prot = Math.round(w * (g === 'perte' ? 2.2 : 1.9)); const fat = Math.round(w * 0.9); const carb = Math.max(100, Math.round((kcal - prot * 4 - fat * 9) / 4));
-  const text = `Cible : ${kcal} kcal par jour (${adj > 0 ? 'léger surplus' : adj < 0 ? 'déficit modéré' : 'maintien'}), ${prot} g de protéines (environ ${Math.round(prot / 4)} g par repas sur 4 repas), ${carb} g de glucides placés autour des séances, ${fat} g de lipides. Pèse-toi une fois par semaine à jeun : si le poids ne bouge pas dans le sens voulu sur deux semaines, ajuste de 150 kcal.`;
-  return { text, kcal, prot, carb, fat };
+  // Deux phases sur 12 semaines : construction (cycles 1 et 2) puis révélation (cycle 3). Pour « perte », l'ordre est inversé : déficit d'abord, maintien ensuite pour fixer.
+  const macros = k => { const c = Math.max(100, Math.round((k - prot * 4 - fat * 9) / 4)); return { kcal: k, prot, fat, carb: c }; };
+  let phases;
+  if (g === 'perte') phases = [{ name: 'Révélation', cycles: 'cycles 1 et 2', why: 'déficit modéré, protéines hautes pour garder le muscle', ...macros(kcal) }, { name: 'Stabilisation', cycles: 'cycle 3', why: 'retour au maintien pour fixer le poids et remonter les charges', ...macros(kcal + 400) }];
+  else phases = [{ name: 'Construction', cycles: 'cycles 1 et 2', why: adj > 0 ? 'léger surplus pour soutenir le volume et la force' : 'maintien, le volume d\'entraînement fait le travail', ...macros(kcal) }, { name: 'Révélation', cycles: 'cycle 3', why: 'déficit léger, protéines hautes : le muscle construit apparaît, les charges se maintiennent', ...macros(kcal - 300) }];
+  const text = `Phase ${phases[0].name.toLowerCase()} (${phases[0].cycles}) : ${phases[0].kcal} kcal par jour, ${phases[0].prot} g de protéines (environ ${Math.round(prot / 4)} g par repas sur 4 repas), ${phases[0].carb} g de glucides placés autour des séances, ${phases[0].fat} g de lipides. Phase ${phases[1].name.toLowerCase()} (${phases[1].cycles}) : ${phases[1].kcal} kcal, ${phases[1].carb} g de glucides, protéines et lipides inchangés. Pèse-toi une fois par semaine à jeun : si le poids ne bouge pas dans le sens voulu sur deux semaines, ajuste de 150 kcal.`;
+  return { text, kcal, prot, carb, fat, phases };
 }
 // Fusion des textes du coach (rationale, nutrition, warmup, notes par exercice) dans le programme construit. Rien d'autre ne bouge.
 function mergeCoachTexts(prog, parsed) {
@@ -723,7 +753,7 @@ function reviewCycle(prev, logs, checkins, profile, extra) {
   const zoneKey = z => Object.keys(ZONE_FR).find(k => (ZONE_FR[k] || '').toLowerCase().startsWith(String(z).toLowerCase().slice(0, 4))) || null;
   const adjust = { volume: 1, rir: 0, favor: [], avoid: [], zones: [], level: null, reasons: [] };
   if (!done) return { adherence, done, planned, progress, readiness, pain, adjust, summary: 'Aucune séance enregistrée sur le cycle précédent : on repart de la fiche, en calibrage.' };
-  if (adherence < 60) { adjust.volume = 0.85; adjust.reasons.push(`assiduité ${adherence} % : volume −15 %, des séances plus courtes que tu feras vraiment`); }
+  if (adherence < 60) { const n = prev.sessions.length; if (n > 2) { const missed = {}; prev.sessions.forEach(se => { const did = L.filter(l => l.session === se.id && (l.done || Object.values(l.sets || {}).flat().some(x => x && x.done))).length; missed[se.id] = weeks.length - did; }); const worst = Object.entries(missed).sort((a, b) => b[1] - a[1])[0]; const se = prev.sessions.find(x => x.id === (worst || [])[0]); adjust.days = n - 1; adjust.dropDays = se ? [(se.day + 6) % 7] : []; adjust.reasons.push(`assiduité ${adherence} % : ${n - 1} séances par semaine au lieu de ${n}${se ? ' (le ' + se.dayName.toLowerCase() + ' saute le plus souvent)' : ''}, des séances pleines que tu feras vraiment`); } else { adjust.volume = 0.85; adjust.reasons.push(`assiduité ${adherence} % : volume −15 %, des séances plus courtes que tu feras vraiment`); } }
   if (readiness != null && readiness < 2.8) { adjust.volume = Math.min(adjust.volume, 0.85); adjust.rir = 1; adjust.reasons.push(`forme moyenne ${readiness}/5 aux points du lundi : volume −15 %, RIR +1`); }
   if (adherence >= 85 && progress != null && progress >= 5 && (readiness == null || readiness >= 3.5)) { adjust.volume = 1.1; adjust.reasons.push(`assiduité ${adherence} %, +${progress} % sur les prioritaires : volume +10 %`); if ((profile || {}).level === 'debutant') { adjust.level = 'intermediaire'; adjust.reasons.push('tu passes au niveau intermédiaire'); } }
   const goalPats = goalPatterns(profile);
@@ -735,6 +765,9 @@ function reviewCycle(prev, logs, checkins, profile, extra) {
   // Exercices sautés trois fois ou plus : la personne ne les fait pas, on les remplace (sauf le geste de l'objectif).
   Object.entries(skipped).forEach(([exId, n]) => { if (n >= 3 && !adjust.avoid.includes(exId) && !goalPats.includes((LIB.BY_ID[exId] || {}).pattern)) { adjust.avoid.push(exId); adjust.reasons.push(`${(LIB.BY_ID[exId] || {}).name || exId} sauté ${n} fois : remplacé`); } });
   if (eased >= Math.max(3, Math.round(done * 0.3))) { adjust.volume = Math.min(adjust.volume, 0.9); adjust.reasons.push(`${eased} séances allégées (fatigue ou temps) : volume −10 %, des séances qui tiennent dans ta vraie semaine`); }
+  // Sans charge : quand les répétitions hautes sont atteintes sur un exercice au poids du corps, on monte d'une variante.
+  const HARDER = { pushup: 'decline_pushup', decline_pushup: 'weighted_pushup', bw_squat: 'bss', glute_bridge: 'sl_bridge', inverted_row: 'pullup', band_pullup: 'pullup', negative_pullup: 'pullup', plank: 'weighted_plank', pike_pushup: 'hspu', bw_calf: 'db_calf', wall_sit: 'spanish_squat', step_up: 'bss' };
+  Object.keys(best).forEach(id => { const ex = prev.sessions.flatMap(se => se.exercises).find(e => e.id === id); if (!ex || !ex.exId || !HARDER[ex.exId]) return; const lib = LIB.BY_ID[ex.exId]; const hard = LIB.BY_ID[HARDER[ex.exId]]; if (!lib || !hard) return; const bw = !(logs || []).some(l => (l.sets || {})[id] && (l.sets[id] || []).some(st => st && st.done && st.w)); const top = parseInt(String(ex.reps || '').split('-').pop()) || 12; if (bw && best[id] >= Math.max(top, 12) && LIB.allowed(hard, profile, (profile || {}).level, LIB.availableGear(profile)) && !adjust.avoid.includes(ex.exId) && !goalPats.includes(lib.pattern)) { adjust.avoid.push(ex.exId); adjust.favor.push(hard.id); adjust.reasons.push(`${lib.name} : ${best[id]} répétitions atteintes, on passe à ${hard.name.toLowerCase()}`); } });
   if (tests && tests.end != null && tests.start) { const d = Math.round(100 * (tests.end - tests.start) / tests.start); if (d >= 5) adjust.reasons.push(`test : ${tests.start} → ${tests.end} répétitions (+${d} %)`); else if (d <= 0) adjust.reasons.push(`test : ${tests.start} → ${tests.end} répétitions, pas de progression sur l'objectif`); }
   Object.entries(pain).forEach(([z, n]) => { const k = zoneKey(z); if (!k) return; const sev = n >= 4 ? 'douleur' : 'fragile'; adjust.zones.push({ zone: k, sev }); adjust.reasons.push(`${z} signalé ${n} fois : zone ${sev === 'douleur' ? 'douloureuse, exercices à risque retirés' : 'fragile, charges modérées'}`); });
   const summary = `Cycle précédent : ${done}/${planned} séances (${adherence} %)${progress != null ? `, ${progress >= 0 ? '+' : ''}${progress} % sur les prioritaires` : ', charges non mesurées'}${readiness != null ? `, forme moyenne ${readiness}/5` : ''}${Object.keys(pain).length ? `, douleurs : ${Object.entries(pain).map(([z, n]) => z + ' ×' + n).join(', ')}` : ''}. ` + (adjust.reasons.length ? 'Réglages : ' + adjust.reasons.join(' ; ') + '.' : 'Réglages : plan reconduit avec progression normale.');
@@ -763,7 +796,8 @@ function cycleDesign(profile, review, cycleN) {
     if (Object.keys(rv.pain || {}).length) { focus = focus === 'realisation' ? 'intensification' : focus; reasons.push('douleurs signalées : pas de bloc de réalisation tant que la zone n\'est pas calme'); }
   }
   if (age >= 50 && weeks > 5) { weeks = 5; reasons.push('après 50 ans, la récupération impose une décharge au plus tard en semaine 5'); }
-  if (/garde|astreinte|24 ?h|nuit/i.test(String(s.sportsNote || p.sports || p.constraints || '')) && weeks > 4) { weeks = 4; reasons.push('gardes et nuits : cycle de 4 semaines, la fatigue de service s\'ajoute à celle de l\'entraînement'); }
+  if (s.activity === 'physique' && weeks > 5) { weeks = 5; reasons.push('journées physiques ou horaires décalés : la récupération est déjà entamée par le travail, décharge au plus tard en semaine 5'); }
+  if (/garde|astreinte|24 ?h|nuit/i.test(String(s.sportsNote || '') + ' ' + String(s.jobNote || '') + ' ' + String(p.sports || p.constraints || '')) && weeks > 4) { weeks = 4; reasons.push('gardes et nuits : cycle de 4 semaines, la fatigue de service s\'ajoute à celle de l\'entraînement'); }
   const FOCUS_FR = { accumulation: 'Accumulation', intensification: 'Intensification', realisation: 'Réalisation' };
   const focusWhy = { accumulation: 'volume en hausse, répétitions moyennes, deux répétitions en réserve : on construit la capacité', intensification: 'moins de séries, plus lourd, une répétition en réserve : on transforme le volume en force', realisation: 'volume réduit, charges maximales propres, test en fin de cycle : on mesure ce que les deux blocs ont construit' }[focus];
   reasons.push(`bloc ${FOCUS_FR[focus].toLowerCase()} (${n > 1 ? 'cycle ' + n : 'premier cycle'}) : ${focusWhy}`);
@@ -776,7 +810,7 @@ function exViolations(e, profile) {
   if (gear.length && !gear.includes('salle') && isMachineEx(e)) out.push('machine sans salle');
   if ((sp.refuse || []).includes('nomachine') && isMachineEx(e)) out.push('refus machines');
   if ((sp.refuse || []).includes('nobar') && /\bbarre\b|barbell|olympique/i.test((e.name || '') + ' ' + (e.machine || '')) && !/traction|pull|dip/i.test(e.name || '')) out.push('refus barre');
-  (sp.zones || []).forEach(z => { if (z.sev !== 'opere' && z.sev !== 'douleur') return; const lib = e.exId && LIB.BY_ID[e.exId]; if (lib) { if ((lib.zones || []).includes(z.zone)) out.push('zone ' + (ZONE_FR[z.zone] || z.zone)); return; } const m = CONSTRAINT_MAP.find(([cre]) => cre.test(ZONE_FR[z.zone] || z.zone)); if (m && m[1].test(e.name || '')) out.push('zone ' + (ZONE_FR[z.zone] || z.zone)); });
+  (sp.zones || []).forEach(z => { if (z.sev !== 'opere' && z.sev !== 'douleur') return; const lib = e.exId && LIB.BY_ID[e.exId]; if (lib) { if ((lib.zones || []).includes(z.zone) && !LIB.rehabOk(lib, sp.zones)) out.push('zone ' + (ZONE_FR[z.zone] || z.zone)); return; } const m = CONSTRAINT_MAP.find(([cre]) => cre.test(ZONE_FR[z.zone] || z.zone)); if (m && m[1].test(e.name || '')) out.push('zone ' + (ZONE_FR[z.zone] || z.zone)); });
   return out;
 }
 function repairProgram(prog, profile, plan) {
@@ -851,6 +885,7 @@ async function generateProgramFor(uid, meta, apiKey, model) {
     try { prog = await buildProgram(meta.profile, apiKey, model, uid, review); if (meta.profile.cycleCount) prog.cycleCount = meta.profile.cycleCount; }
     catch (e) { await refundQuota(uid, 'program'); throw e; } // un échec ne consomme pas une génération
     prog.generatedAt = Date.now(); prog.model = model; prog.profileSnapshot = meta.profile;
+    await touchActive(uid, { hasProgram: true, pending: prog.degraded === 'coach', generatedAt: prog.generatedAt });
     await recordUsage(uid, 'program', model);
     // Le programme est livré d'abord ; les visuels sont associés ensuite et ne peuvent pas bloquer la livraison.
     await db.collection('users').doc(uid).collection('meta').doc('program').set(prog);
@@ -989,7 +1024,22 @@ function parisISO(d) { return (d || new Date()).toLocaleDateString('sv-SE', { ti
 function isoDaysAgo(n) { const d = new Date(); d.setDate(d.getDate() - n); return parisISO(d); }
 // Une séance est considérée faite si elle a été terminée, ou si elle a des séries enregistrées un jour passé (jamais clôturée).
 function isDone(l, today) { if (!l) return false; const hasSet = Object.values(l.sets || {}).some(arr => (arr || []).some(x => x && x.done)); return !!((l.done && hasSet) || (hasSet && l.date < (today || parisISO()))); }
+// Index des comptes actifs : un document par utilisateur, écrit par le serveur seul (génération, appels au coach, séances enregistrées).
+// Les tâches planifiées lisent cet index au lieu de parcourir tous les comptes : coût et durée proportionnels aux actifs, pas aux inscrits.
+async function touchActive(uid, patch) { try { await db.collection('active').doc(uid).set(Object.assign({ uid, lastActiveAt: Date.now() }, patch || {}), { merge: true }); } catch (e) {} }
+exports.onLogWritten = onDocumentWritten({ document: 'users/{uid}/logs/{logId}', region: 'europe-west1' }, async (event) => { const uid = event.params.uid; await touchActive(uid, { lastActiveAt: Date.now() }); });
+async function activeUsersIndexed(days) {
+  const since = Date.now() - (days || 45) * 86400000;
+  const snap = await db.collection('active').where('hasProgram', '==', true).where('lastActiveAt', '>=', since).get();
+  return snap.docs.map(d => d.id);
+}
 async function activeUsers() {
+  // Index présent : on l'utilise. Index vide (déploiement récent, avant réindexation) : parcours complet, comme avant.
+  const probe = await db.collection('active').limit(1).get();
+  if (!probe.empty) return activeUsersIndexed(45);
+  return activeUsersFull();
+}
+async function activeUsersFull() {
   const refs = await db.collection('users').listDocuments();
   const out = [];
   for (const ref of refs) { const pg = await ref.collection('meta').doc('program').get(); if (pg.exists && pg.data().sessions) out.push(ref.id); }
@@ -1014,6 +1064,8 @@ exports.healthCheck = onSchedule({ schedule: '7 * * * *', timeZone: 'Europe/Pari
     else { const r = await fetch(API_BASE + '/v1/models?limit=1', { headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' } }); status = r.status; ok = r.ok; if (!ok) msg = r.status === 401 ? 'clé refusée (401) : révoquée ou invalide' : 'réponse ' + r.status; }
   } catch (e) { msg = String(e && e.message || e); }
   await ref.set({ ok, status, msg, at: Date.now(), since: ok === !!prev.ok ? (prev.since || Date.now()) : Date.now() });
+  // Alerte plantages : plus de 20 erreurs ou plus de 5 comptes touchés dans l'heure → notification à l'administrateur (une fois par 6 h).
+  try { const errs = await db.collection('errors').where('t', '>=', Date.now() - 3600000).limit(500).get(); const users = new Set(errs.docs.map(d => d.data().uid)); if ((errs.size > 20 || users.size > 5) && Date.now() - (prev.errNotifiedAt || 0) > 6 * 3600000) { for (const email of ADMIN_EMAILS) { try { const u = await admin.auth().getUserByEmail(email); await sendPush(u.uid, 'Pic d\'erreurs dans l\'app', `${errs.size} erreurs chez ${users.size} compte(s) sur la dernière heure. Voir Administration.`, { tab: 'reglages' }); } catch (e) {} } await ref.set({ errNotifiedAt: Date.now() }, { merge: true }); } } catch (e) {}
   if (ok !== !!prev.ok || (!ok && Date.now() - (prev.notifiedAt || 0) > 6 * 3600000)) {
     for (const email of ADMIN_EMAILS) { try { const u = await admin.auth().getUserByEmail(email); await sendPush(u.uid, ok ? 'Kai est de retour' : 'Kai est hors service', ok ? 'La clé API répond à nouveau.' : 'Clé API : ' + msg + '. Régénère-la et enregistre-la (functions:secrets:set).', { tab: 'reglages' }); } catch (e) {} }
     await ref.set({ notifiedAt: Date.now() }, { merge: true });
@@ -1021,11 +1073,18 @@ exports.healthCheck = onSchedule({ schedule: '7 * * * *', timeZone: 'Europe/Pari
   console.log(`[health] ${ok ? 'ok' : 'KO'} ${status} ${msg}`);
 });
 
-exports.weeklyReview = onSchedule({ schedule: '0 19 * * 0', timeZone: 'Europe/Paris', region: 'europe-west1', secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 540, memory: '1GiB' }, async () => {
+exports.weeklyReview = onSchedule({ schedule: '0,30 19-22 * * 0', timeZone: 'Europe/Paris', region: 'europe-west1', secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 540, memory: '1GiB' }, async () => {
   const apiKey = String(ANTHROPIC_API_KEY.value() || '').replace(/[^\x21-\x7E]/g, '');
   const model = await resolveModel(apiKey, MODEL.value());
   const since = isoDaysAgo(7); const weekId = 'week-' + parisISO();
-  for (const uid of await activeUsers()) {
+  // Plusieurs passages le dimanche soir : chaque passage reprend là où le précédent s'est arrêté (curseur), s'arrête avant le délai, et ne traite jamais deux fois le même compte dans la semaine.
+  const stRef = db.collection('system').doc('weeklyReview'); const st = (await stRef.get()).data() || {};
+  const all = (await activeUsers()).sort(); const start = st.weekId === weekId && st.cursor ? all.indexOf(st.cursor) + 1 : 0;
+  if (st.weekId === weekId && st.done) return;
+  const t0 = Date.now(); let last = st.weekId === weekId ? st.cursor : null; let n = 0;
+  for (const uid of all.slice(start)) {
+    if (Date.now() - t0 > 420000) break;
+    last = uid; n++;
     try {
       const meta = await loadMeta(uid); const prog = meta.program; if (!prog) continue;
       const coachRef = db.collection('users').doc(uid).collection('coach');
@@ -1049,19 +1108,23 @@ exports.weeklyReview = onSchedule({ schedule: '0 19 * * 0', timeZone: 'Europe/Pa
       await sendPush(uid, cycleEnd ? 'Cycle terminé' : (parsed.title || 'Bilan de la semaine'), String(parsed.verdict || '').slice(0, 140), { tab: 'coach' });
     } catch (e) { console.error('weeklyReview', uid, e.message || e); }
   }
+  const finished = start + n >= all.length;
+  await stRef.set({ weekId, cursor: last || null, done: finished, processed: (st.weekId === weekId ? (st.processed || 0) : 0) + n, total: all.length, at: Date.now() }, { merge: true });
 });
 // File de rattrapage : toutes les 20 minutes, les programmes livrés sans les textes du coach sont complétés. Reprise automatique, bornée.
 exports.coachBacklog = onSchedule({ schedule: '*/20 * * * *', timeZone: 'Europe/Paris', region: 'europe-west1', secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 540, memory: '512MiB' }, async () => {
   const apiKey = String(ANTHROPIC_API_KEY.value() || '').replace(/[^\x21-\x7E]/g, '').replace(/^["']+|["']+$/g, '');
   if (!/^sk-ant-/.test(apiKey)) return;
   const model = await resolveModel(apiKey, MODEL.value()); const t0 = Date.now(); let done = 0, failed = 0;
-  for (const u of await db.collection('users').listDocuments()) {
+  const pend = await db.collection('active').where('pending', '==', true).limit(200).get();
+  const refs = pend.empty ? await db.collection('users').listDocuments() : pend.docs.map(d => db.collection('users').doc(d.id)); // sans index : parcours complet comme avant
+  for (const u of refs) {
     if (Date.now() - t0 > 420000) break;
-    const pg = await u.collection('meta').doc('program').get(); if (!pg.exists) continue;
-    const prog = pg.data(); if (prog.degraded !== 'coach' || !prog.generatedAt) continue;
-    const attempts = (prog.engine && prog.engine.backlogAttempts) || 0; if (attempts >= 6) continue;
+    const pg = await u.collection('meta').doc('program').get(); if (!pg.exists) { await touchActive(u.id, { pending: false }); continue; }
+    const prog = pg.data(); if (prog.degraded !== 'coach' || !prog.generatedAt) { await touchActive(u.id, { pending: false }); continue; }
+    const attempts = (prog.engine && prog.engine.backlogAttempts) || 0; if (attempts >= 6) { await touchActive(u.id, { pending: false }); continue; }
     const pf = await u.collection('meta').doc('profile').get(); if (!pf.exists) continue;
-    try { await completeCoachTexts(u.id, prog, pf.data(), apiKey, model); done++; }
+    try { await completeCoachTexts(u.id, prog, pf.data(), apiKey, model); done++; await touchActive(u.id, { pending: false }); }
     catch (e) { failed++; await u.collection('meta').doc('program').set({ engine: Object.assign({}, prog.engine || {}, { backlogAttempts: attempts + 1, backlogError: String(e && e.message || e).slice(0, 160) }) }, { merge: true }); }
   }
   if (done || failed) await db.collection('system').doc('backlog').set({ at: Date.now(), done, failed }, { merge: true });

@@ -65,7 +65,8 @@ for (const p of profiles) {
       const ex = LIB.BY_ID[e.exId]; if (!ex) { problems.push('exercice inconnu ' + e.exId); return; }
       exCount[ex.id] = (exCount[ex.id] || 0) + 1;
       if (!LIB.hasReq(ex.req, gear)) problems.push(`${ex.name} : matériel absent (${[...gear].join(',')})`);
-      if ((ex.zones || []).some(z => hard.has(z))) problems.push(`${ex.name} : zone à ménager ${[...hard].join(',')}`);
+      if ((ex.zones || []).some(z => hard.has(z)) && !LIB.rehabOk(ex, p.spec.zones)) problems.push(`${ex.name} : zone à ménager ${[...hard].join(',')}`);
+      if ((ex.zones || []).some(z => hard.has(z)) && LIB.rehabOk(ex, p.spec.zones) && !(p.spec.zones || []).some(z => z.sev === 'douleur' && (ex.zones || []).includes(z.zone))) problems.push(`${ex.name} : fiche compatible douleur utilisée sur une zone opérée`);
       if (p.spec.refuse.includes('nomachine') && ex.tags.includes('machine')) problems.push(ex.name + ' : machine refusée');
       if (p.spec.refuse.includes('nobar') && ex.tags.includes('barre')) problems.push(ex.name + ' : barre refusée');
       if (!e.exec || !e.why || !e.target) problems.push(ex.name + ' : texte de fiche manquant');
@@ -92,13 +93,15 @@ for (const p of profiles) {
         const next = programFromPlan(plan2, p, '2026-11-15', design.weeks); next.generatedAt = Date.parse('2026-11-14T12:00:00Z');
         if (next.weeks.length !== design.weeks) problems.push(`cycle ${cyc} (${sname}) : ${next.weeks.length} semaines construites pour ${design.weeks} décidées`);
         const chk = checkProgram(next, p); if (chk.errors.length) problems.push(`cycle ${cyc} (${sname}) : ${chk.errors[0]}`);
+        if (sname === 'absent' && prev.sessions.length > 2 && next.sessions.length !== prev.sessions.length - 1) problems.push(`cycle ${cyc} (absent) : ${next.sessions.length} séances au lieu de ${prev.sessions.length - 1} (un jour de moins attendu)`);
         next.sessions.forEach((se, si) => {
-          if (se.exercises.length < prevN[si]) problems.push(`cycle ${cyc} (${sname}) : ${se.name} passe de ${prevN[si]} à ${se.exercises.length} exercices`);
+          const prevSe = prev.sessions.find(x => x.name === se.name); const pn = prevSe ? prevSe.exercises.length : 0;
+          if (next.sessions.length === prev.sessions.length && se.exercises.length < pn) problems.push(`cycle ${cyc} (${sname}) : ${se.name} passe de ${pn} à ${se.exercises.length} exercices`);
           if (GOAL_PATS.includes('vpull') && canPull && /Poussée|Tirage|Haut|Corps/.test(se.name) && !se.exercises.some(e => (LIB.BY_ID[e.exId] || {}).pattern === 'vpull')) problems.push(`cycle ${cyc} (${sname}) : ${se.name} a perdu les tractions`);
           se.exercises.forEach(e => { if (!rv.adjust.avoid.includes(e.exId)) return; const lib = LIB.BY_ID[e.exId]; const alts = LIB.EXERCISES.filter(x => x.pattern === lib.pattern && x.id !== lib.id && !rv.adjust.avoid.includes(x.id) && !se.exercises.some(y => y.exId === x.id) && LIB.allowed(x, p, p.level, gear)); if (alts.length) problems.push(`cycle ${cyc} (${sname}) : ${lib.name} écarté mais réutilisé (${alts.length} alternative(s))`); });
         });
-        if (sname === 'absent' && rv.adjust.volume >= 1) problems.push(`cycle ${cyc} (absent) : assiduité ${rv.adherence} % sans baisse de volume`);
-        if (sname === 'progresse' && rv.adjust.avoid.length) problems.push(`cycle ${cyc} (progresse) : exercices écartés alors que tout progresse`);
+        if (sname === 'absent' && rv.adjust.volume >= 1 && !rv.adjust.days) problems.push(`cycle ${cyc} (absent) : assiduité ${rv.adherence} % sans baisse de volume ni de jours`);
+        if (sname === 'progresse' && rv.adjust.avoid.some(id => !rv.adjust.favor.some(f => LIB.BY_ID[f] && LIB.BY_ID[id] && LIB.BY_ID[f].pattern === LIB.BY_ID[id].pattern))) problems.push(`cycle ${cyc} (progresse) : exercices écartés alors que tout progresse`); // un passage à la variante plus dure (écarté + favorisé du même schéma) est une progression
         if (sname === 'stagne' && rv.adherence >= 85 && !rv.adjust.avoid.length && Object.keys(LEVEL_CAPS).length) { const stars = prev.sessions.flatMap(se => se.exercises.filter(e => e.star && !isBw(e) && !GOAL_PATS.includes((LIB.BY_ID[e.exId] || {}).pattern))); if (stars.length) problems.push(`cycle ${cyc} (stagne) : rien ne change malgré la stagnation`); }
         if (rv.adjust.avoid.some(id => GOAL_PATS.includes((LIB.BY_ID[id] || {}).pattern))) problems.push(`cycle ${cyc} (${sname}) : le geste de l'objectif a été écarté`);
         prev = next; prevN = next.sessions.map(se => se.exercises.length); cycles++;

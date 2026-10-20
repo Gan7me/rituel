@@ -72,7 +72,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 
   console.log('Onboarding');
   await p.goto(base, { waitUntil: 'networkidle0' }); await sleep(200);
-  assert(await p.$('#ivForm'), 'entretien : écran 1 (identité)');
+  assert(await p.$('#ivForm') && (await p.$$('.ivopt[data-f=activity]')).length === 3, 'entretien : écran 1 (identité, journées en dehors du sport)');
   await p.evaluate(() => { const i = document.querySelector('input[name=name]'); i.value = 'Léo'; }); await p.type('input[name=age]', '19'); await p.type('input[name=height]', '180'); await p.type('input[name=weight]', '72');
   await p.click('#ivNext'); await sleep(120);
   await p.click('#ivNext'); await sleep(120);
@@ -310,8 +310,10 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     await p.click('.tabs button[data-tab="suivi"]'); await sleep(300); await p.screenshot({ path: D + '/suivi.png', fullPage: true });
     await p.click('.tabs button[data-tab="home"]'); await sleep(200); }
   if (process.env.SHOT) { await p.evaluate(() => { S.homeFull = false; renderHome(); }); await sleep(200); await p.screenshot({ path: process.env.SHOT, fullPage: true }); await p.evaluate(() => { S.homeFull = true; renderHome(); }); await sleep(200); }
-  assert(await p.evaluate(() => !!document.querySelector('#homeAvatar .rank') && document.querySelectorAll('#tab-home .tiles3 .tr').length === 3 && !document.querySelector('#bwQuick')), 'accueil : rang, trois chiffres, pas de formulaire');
+  assert(await p.evaluate(() => !!document.querySelector('#homeAvatar .rank') && (document.querySelectorAll('#tab-home .tiles3 .tr').length === 3 || document.querySelectorAll('#tab-home .prog3 .pt').length === 3) && !document.querySelector('#bwQuick')), 'accueil : rang, trois chiffres de progression, pas de formulaire');
+  assert(await p.evaluate(() => { const P = sinceStart(); return !!P && P.sessions >= 1 && !!document.querySelector('#tab-home .prog3 .pt b'); }), 'progression depuis le début calculée et affichée en trois tuiles (force, test, poids)');
   await p.evaluate(() => { SUIVI_VIEW = 'forme'; renderSuivi(); }); await p.click('.tabs button[data-tab="suivi"]'); await sleep(250);
+  assert(await p.evaluate(() => !!document.querySelector('#tab-suivi .card.since .prog3')), 'progrès : carte « Depuis le début » en tête');
   assert(await p.evaluate(() => !!document.querySelector('#tab-suivi .chal') && document.querySelectorAll('#tab-suivi .avcard .badge').length >= 1 ), 'progrès : défis et médailles déplacés ici');
   await p.click('.tabs button[data-tab="home"]'); await sleep(200);
 

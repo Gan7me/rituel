@@ -76,6 +76,10 @@ function score(e, ctx) {
   if (soft.some(z => (e.zones || []).includes(z))) s -= 12; // zone fragile : on préfère un exercice qui ne la charge pas
   if (usedWeek.has(e.id)) s -= role === 'main' ? 6 : 14; // variété dans la semaine, un principal peut revenir, un accessoire ne revient pas trois fois
   if (usedSession.has(e.id)) s -= 100; // jamais deux fois dans la même séance
+  if (ctx.pullMode === 'heavy' && e.pattern === 'vpull' && e.id === 'weighted_pullup') s += 25; // séance « lourd » : tractions lestées
+  if (ctx.pullMode === 'volume' && e.pattern === 'vpull') { if (e.id === 'weighted_pullup') s -= 40; if (['pullup', 'chinup', 'neutral_pullup'].includes(e.id)) s += 18; } // séance « volume » : tractions au poids du corps, séries longues
+  if (ctx.goalPull && e.id === 'upright_row') s -= 60; // épaule déjà très sollicitée par les tractions : pas de tirage menton
+  if (ctx.second === 'fessiers' && ['hip_thrust', 'hip_thrust_m', 'glute_bridge'].includes(e.id) && role !== 'acc') s += 16; // fessiers : le hip thrust prend la tête d'une séance bas du corps
   if ((ctx.want || []).includes(e.id)) s += 60; // demandé explicitement par l'athlète
   if ((ctx.favor || []).includes(e.id)) s += 12; // a progressé au cycle précédent : on garde
   if ((ctx.avoid || []).includes(e.id)) s -= 30; // a stagné en principal : nouveau stimulus
@@ -84,6 +88,18 @@ function score(e, ctx) {
 }
 
 // Règles d'admissibilité d'une fiche pour un profil : matériel, niveau, zones opérées ou douloureuses, refus déclarés.
+// Exercices compatibles avec une zone douloureuse (pas opérée) : isométrie, excentrique contrôlé, amplitude maîtrisée. Autorisés à charge modérée là où le schéma est sinon exclu.
+const REHAB = {
+  genou: ['wall_sit', 'spanish_squat', 'seated_leg_curl', 'lying_leg_curl', 'band_leg_curl', 'step_up', 'sl_bridge', 'glute_bridge', 'bw_calf', 'db_calf', 'seated_calf', 'standing_calf'],
+  epaule: ['landmine_press', 'face_pull', 'ext_rot_cable', 'band_face_pull', 'band_pull_apart', 'ytw', 'neutral_pulldown', 'low_row_m', 'iso_row', 'db_chest_row'],
+  dos: ['plank', 'dead_bug', 'side_plank', 'glute_bridge', 'hip_thrust_m', 'back_ext_m', 'db_chest_row', 'iso_row'],
+  hanche: ['glute_bridge', 'sl_bridge', 'wall_sit', 'seated_leg_curl', 'lying_leg_curl', 'seated_calf'],
+  coude: ['pushup', 'chest_press', 'neutral_pulldown', 'face_pull', 'band_pull_apart', 'towel_curl'],
+  poignet: ['chest_press', 'shoulder_press_m', 'neutral_pulldown', 'low_row_m', 'preacher_m', 'triceps_m'],
+  cheville: ['seated_leg_curl', 'lying_leg_curl', 'wall_sit', 'leg_press', 'hip_thrust'],
+  cou: ['chest_press', 'low_row_m', 'seated_leg_curl', 'leg_press']
+};
+function rehabOk(e, zonesList) { return (zonesList || []).some(z => z.sev === 'douleur' && (REHAB[z.zone] || []).includes(e.id)); }
 function allowed(e, profile, level, gearSet) {
   const p = profile || {}; const sp = p.spec || {}; const gear = gearSet || availableGear(p);
   const lvl = LEVEL_RANK[level || p.level] ?? 1; const refuse = sp.refuse || [];
@@ -91,7 +107,7 @@ function allowed(e, profile, level, gearSet) {
   if (!hasReq(e.req, gear)) return false;
   if ((LEVEL_RANK[e.level] ?? 0) > lvl) return false;
   if (e.maxLevel && lvl > (LEVEL_RANK[e.maxLevel] ?? 3) && !(sp.wantEx || []).includes(e.id)) return false; // variante d'apprentissage, pas pour un athlète confirmé (sauf demande explicite)
-  if ((e.zones || []).some(z => banned.has(z))) return false;
+  if ((e.zones || []).some(z => banned.has(z)) && !rehabOk(e, sp.zones)) return false;
   if ((sp.avoidEx || []).includes(e.id)) return false; // exercice refusé explicitement par l'athlète
   if (refuse.includes('nomachine') && (e.tags || []).includes('machine')) return false;
   if (refuse.includes('nobar') && (e.tags || []).includes('barre')) return false;
@@ -124,13 +140,14 @@ function selectExercises(plan, profile, seedStr) {
         let cands = all.filter(e => e.src !== 'photo' || (plan.want || []).includes(e.id));
         if (!cands.length) cands = all;
         if (!cands.length) continue;
-        const ctx = { role: sl.role, goal: plan.goal, level: plan.level, likes, soft, usedWeek, usedSession, seed, gym, second: plan.second || null, skills: plan.skills || sp.skills || [], age: plan.age || Number(p.age) || 0, flags: plan.flags || {}, favor: plan.favor || [], avoid: plan.avoid || [], want: plan.want || [] };
+        const ctx = { pullMode: sl.pullMode || null, goalPull: !!plan.goalPull, role: sl.role, goal: plan.goal, level: plan.level, likes, soft, usedWeek, usedSession, seed, gym, second: plan.second || null, skills: plan.skills || sp.skills || [], age: plan.age || Number(p.age) || 0, flags: plan.flags || {}, favor: plan.favor || [], avoid: plan.avoid || [], want: plan.want || [] };
         cands.sort((a, b) => score(b, ctx) - score(a, ctx));
         picked = cands[0]; alt = cands.find(c => c.id !== picked.id && !usedSession.has(c.id)) || null; usedPattern = pat; break;
       }
       if (!picked) { const safe = ['plank', 'dead_bug', 'side_plank', 'ytw', 'glute_bridge', 'bw_calf', 'wall_sit', 'shadow_box'].map(id => BY_ID[id]).find(x => x && !usedSession.has(x.id) && hasReq(x.req, gear)); picked = safe || BY_ID.plank; usedPattern = picked.pattern; }
       if (usedPattern !== sl.pattern) notes.push(`${se.name} : « ${sl.pattern} » remplacé par « ${usedPattern} » (matériel ou zone à ménager)`);
       sl.ex = picked; sl.alt = alt; sl.usedPattern = usedPattern;
+      if (rehabOk(picked, sp.zones)) { sl.soft = true; sl.rehab = true; const lo = parseInt(String(sl.reps || '').split('-')[0]) || 0; if (lo < 8) { sl.reps = '8-12'; sl.restSec = Math.min(sl.restSec || 90, 90); } if (Array.isArray(sl.rir)) sl.rir = sl.rir.map((r, i) => i === sl.rir.length - 1 ? r : Math.max(r, 2)); } // compatible douleur : amplitude maîtrisée, charge modérée, jamais près de l'échec
       // un exercice sans charge (pont fessier, pompes, gainage) ne se prescrit pas en 3-5 répétitions : dose en répétitions, sauf tractions et dips qui se lestent
       if ((picked.tags || []).includes('leger') && !(picked.tags || []).includes('tractions') && !/dips|traction|pull/i.test(picked.name) && !picked.timed && sl.reps && /^\d+-\d+$/.test(sl.reps) && Number(sl.reps.split('-')[1]) < 10) { sl.reps = '10-15'; sl.restSec = Math.min(sl.restSec || 90, 90); }
       usedSession.add(picked.id); usedWeek.add(picked.id);
@@ -140,4 +157,4 @@ function selectExercises(plan, profile, seedStr) {
   return plan;
 }
 
-module.exports = { EXERCISES, BY_ID, availableGear, selectExercises, hasReq, allowed };
+module.exports = { EXERCISES, BY_ID, availableGear, selectExercises, hasReq, allowed, REHAB, rehabOk };

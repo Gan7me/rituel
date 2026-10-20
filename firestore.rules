@@ -20,6 +20,9 @@ service cloud.firestore {
       allow create, update: if owner(uid) && request.resource.data.keys().hasOnly(['name','code','weekXp','weekKey','stage','xp','updatedAt']) && request.resource.data.name is string && request.resource.data.name.size() < 40;
       allow delete: if owner(uid);
     }
+    // Index des comptes actifs et état système : serveur seulement.
+    match /active/{uid} { allow read, write: if false; }
+    match /system/{doc} { allow read, write: if false; }
     // Rapports d'erreur envoyés par l'app : création seulement, par l'utilisateur concerné, petits documents.
     match /errors/{id} {
       allow create: if request.auth != null && request.resource.data.uid == request.auth.uid && request.resource.data.msg is string && request.resource.data.msg.size() < 400;

@@ -1,6 +1,6 @@
 /* Service worker — app shell en cache, fonctionnement hors ligne complet.
    Incrémente VERSION à chaque déploiement pour forcer la mise à jour. */
-const VERSION = 'rituel-v3.48.0';
+const VERSION = 'rituel-v3.50.0';
 const SHELL = [
   './',
   './index.html',
@@ -8,6 +8,7 @@ const SHELL = [
   './muscles.js',
   './demo/index.json',
   './app.js',
+  './config.js',
   './manifest.webmanifest',
   './confidentialite.html',
   './icons/icon-192.png',
@@ -47,7 +48,8 @@ const SHELL = [
   'https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js',
   'https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js',
   'https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js',
-  'https://www.gstatic.com/firebasejs/10.14.1/firebase-functions-compat.js'
+  'https://www.gstatic.com/firebasejs/10.14.1/firebase-functions-compat.js',
+  'https://www.gstatic.com/firebasejs/10.14.1/firebase-app-check-compat.js'
 ];
 
 self.addEventListener('install', e => {
