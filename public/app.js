@@ -140,15 +140,16 @@ function initFirebase(){
   }catch(e){ console.warn('firebase init',e); setSync('off','local'); }
 }
 function isStandalone(){ return window.matchMedia('(display-mode: standalone)').matches || navigator.standalone===true; }
-async function signOut(){ unsubs.forEach(u=>u()); unsubs=[]; await fbAuth.signOut(); }
+async function signOut(){ unsubs.forEach(u=>u()); unsubs=[]; LOCAL_BOOT=false; try{ localStorage.removeItem('rituel.meta'); }catch(e){} await fbAuth.signOut(); }
 function col(name){ return fbDb.collection('users').doc(USER.uid).collection(name); }
 
+function bootSplashDone(){ const b=document.getElementById('boot'); if(!b) return; const t0=Number(b.dataset.t0)||Date.now(); const wait=Math.max(0,900-(Date.now()-t0)); setTimeout(()=>{ b.classList.add('out'); setTimeout(()=>b.remove(),450); },wait); }
 function showSplash(){ document.querySelector('.tabs').hidden=true; document.querySelector('.top').hidden=true; document.querySelector('main').innerHTML='<section class="splash"><div class="logo" role="img" aria-label="Rituel"></div></section>'; }
 async function onAuth(){
   unsubs.forEach(u=>u()); unsubs=[];
   try{ localStorage.setItem('rituel.hadUser',USER?'1':'0'); }catch(e){}
   native({type:'ready'});
-  if(!USER){ PROGRAM_LOADED=false; showGate(); syncStatusIdle(); return; }
+  if(!USER){ if(LOCAL_BOOT&&!navigator.onLine&&PROGRAM_LOADED){ setSync('pend','hors ligne'); return; } PROGRAM_LOADED=false; showGate(); syncStatusIdle(); return; }
   restoreShell(); setSync('pend','connexion…'); listenMeta(); savePushToken(); native({type:'user',uid:USER.uid}); healthStatus(); if(S.health&&Date.now()-(S.healthAt||0)>6*3600000) setTimeout(healthSync,3000);
   // 1. pousser le local vers Firestore (fusion par updatedAt, jamais d'écrasement du plus récent)
   await pushLocalToRemote();
@@ -173,7 +174,7 @@ async function pushLocalToRemote(){
   for(const [name,key] of [['logs','logs'],['bw','bw'],['tests','tests'],['chats','chats'],['checkins','checkins'],['loads','loads']]){
     for(const id in S[key]){ const local=S[key][id]; if(!local||!local.updatedAt) continue;
       batchWrites.push(async()=>{ const ref=col(name).doc(id); const snap=await ref.get({source:'server'}).catch(()=>ref.get()); const remote=snap.exists?snap.data():null;
-        if(!remote||(local.updatedAt||0)>(remote.updatedAt||0)) await ref.set(JSON.parse(JSON.stringify(local))); });
+        if(!remote||(local.updatedAt||0)>(remote.updatedAt||0)) ref.set(JSON.parse(JSON.stringify(local))).catch(e=>console.warn('push',e)); });
     }
   }
   for(const w of batchWrites){ try{ await w(); }catch(e){ console.warn('push',e); } }
@@ -877,11 +878,16 @@ function cycleHtml(){
 function renderCycle(){}
 function mdToHtml(md){ return String(md||'').split(/\n{2,}/).map(par=>{ par=par.trim(); if(!par) return ''; if(/^#+\s/.test(par)) return `<h3>${esc(par.replace(/^#+\s*/,''))}</h3>`; if(/^[-*]\s/m.test(par)) return `<ul>${par.split(/\n/).map(l=>`<li>${inline(l.replace(/^[-*]\s*/,''))}</li>`).join('')}</ul>`; return `<p>${inline(par).replace(/\n/g,'<br>')}</p>`; }).join(''); function inline(s){ return esc(s).replace(/\*\*(.+?)\*\*/g,'<b>$1</b>'); } }
 
+/* Copie locale de démarrage : profil, programme, historique. L'app s'ouvre dessus immédiatement, avec ou sans réseau, et Firestore met à jour ensuite. */
+function cacheMeta(prof,prog,hist){ try{ if(prog&&prog.sessions&&prog.sessions.length&&prog.generatedAt) localStorage.setItem('rituel.meta',JSON.stringify({profile:prof||null,program:prog,history:hist||null,at:Date.now()})); }catch(e){} }
+function cachedMeta(){ try{ const m=JSON.parse(localStorage.getItem('rituel.meta')||'null'); return m&&m.program&&m.program.sessions&&m.program.sessions.length?m:null; }catch(e){ return null; } }
+let LOCAL_BOOT=false;
 /* écoute du profil et du programme après connexion */
 function listenMeta(){
   unsubs.push(fbDb.collection('users').doc(USER.uid).collection('meta').onSnapshot(snap=>{
     let prof=null, prog=null; snap.docs.forEach(d=>{ if(d.id==='profile') prof=d.data(); if(d.id==='program') prog=d.data(); if(d.id==='history') HISTORY=d.data(); if(d.id==='usage') USAGE=d.data(); if(d.id==='billing') BILLING.doc=d.data(); if(d.id==='genstate') GEN_STATE=d.data(); });
     PROFILE=prof;
+    cacheMeta(prof,prog,HISTORY);
     const isAdm=!!(USER&&ADMIN_RE.test(USER.email||'')); if(prog&&prog.sessions&&prog.sessions.length&&!prog.generatedAt&&!isAdm) prog=null; // copie d'un programme de base : jamais affichée, on génère le sien
     if(prog&&prog.sessions&&prog.sessions.length){ GENERATING=false; applyProgram(prog); }
     else if(snap.metadata.fromCache&&!snap.docs.length){ /* première ouverture hors ligne : attendre le serveur */ }
@@ -1796,8 +1802,11 @@ async function boot(){
   DEFAULT_PROGRAM=null; DEFAULT_CYCLE_HTML=''; // aucun programme embarqué : chaque compte reçoit uniquement le cycle construit pour lui
   if(!window.firebase){ $('#tab-seance').innerHTML='<p>Connexion au service impossible. Ouvre l\'application avec du réseau une première fois.</p>'; return; }
   let hadUser=false; try{ hadUser=localStorage.getItem('rituel.hadUser')==='1'; }catch(e){}
-  if(hadUser) showSplash(); else showGate();
+  const cm=hadUser?cachedMeta():null;
+  if(cm){ LOCAL_BOOT=true; PROFILE=cm.profile||null; HISTORY=cm.history||null; applyProgram(cm.program); setSync('pend',navigator.onLine?'connexion…':'hors ligne'); document.body.classList.toggle('offline',!navigator.onLine); }
+  else if(hadUser) showSplash(); else showGate();
   initFirebase();
+  bootSplashDone();
   if('serviceWorker' in navigator){
     // Mise à jour automatique : quand un nouveau service worker prend la main, on recharge (sauf chrono en cours, on attend la fin de la séance).
     let refreshing=false;

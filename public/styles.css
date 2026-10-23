@@ -1372,3 +1372,15 @@ details.notes textarea{margin-top:10px;min-height:70px}
 .cyrow b{display:block;font-size:14px}.cyrow span{display:block;font-size:12.5px;color:var(--muted);line-height:1.4}
 .cyrow em{font-style:normal;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);white-space:nowrap;margin-top:2px}
 .cyrow.now em{color:var(--accent)}
+
+/* Écran de démarrage : marque qui se révèle, trait qui se trace, puis fondu vers l'app. Retiré par l'app dès qu'elle est prête (min 0,9 s), au plus tard à 4 s. */
+#boot{position:fixed;inset:0;z-index:9999;pointer-events:none;background:var(--bg);display:grid;place-items:center;padding-top:env(safe-area-inset-top);transition:opacity .4s ease,visibility .4s}
+#boot.out{opacity:0;visibility:hidden}
+#boot .bl{display:grid;justify-items:center;gap:14px;animation:bootIn .7s cubic-bezier(.2,.8,.2,1) both}
+#boot .bm{display:block;width:72px;height:78px;background:var(--ink);-webkit-mask:url(icons/mark-mask.png) center/contain no-repeat;mask:url(icons/mark-mask.png) center/contain no-repeat;animation:bootMark .9s cubic-bezier(.2,.8,.2,1) both}
+#boot b{font-size:22px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink);font-weight:700;animation:bootIn .7s .15s cubic-bezier(.2,.8,.2,1) both}
+#boot .bline{display:block;width:44px;height:3px;border-radius:2px;background:var(--accent);transform-origin:left center;animation:bootLine .6s .35s cubic-bezier(.2,.8,.2,1) both}
+@keyframes bootIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+@keyframes bootMark{from{opacity:0;transform:scale(.82)}60%{opacity:1}to{opacity:1;transform:scale(1)}}
+@keyframes bootLine{from{transform:scaleX(0)}to{transform:scaleX(1)}}
+@media (prefers-reduced-motion: reduce){ #boot .bl,#boot .bm,#boot b,#boot .bline{animation:none} }

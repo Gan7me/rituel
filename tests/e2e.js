@@ -62,7 +62,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   const base = `http://localhost:${PORT}/index.html`;
 
   console.log('Accueil');
-  await p.goto(base + '?noauth=1', { waitUntil: 'networkidle0' });
+  await p.goto(base + '?noauth=1', { waitUntil: 'networkidle0' }); await sleep(1000); // écran de démarrage animé (0,9 s) avant toute interaction
   assert(await p.$('.gate .logo'), 'logo affiché');
   assert(await p.$('input[name=email]') && await p.$('input[name=password]'), 'formulaire de connexion');
   await p.type('input[name=email]', 'a@b.fr'); await p.type('input[name=password]', '12345678'); await p.click('#authForm button[type=submit]'); await sleep(200);
