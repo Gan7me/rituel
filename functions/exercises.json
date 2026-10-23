@@ -25903,5 +25903,1109 @@
 "exec": "Monte les haltères paumes vers le haut jusqu'à la contraction complète, tourne les poignets en haut pour mettre les paumes vers le bas, puis descends lentement en pronation jusqu'aux bras presque tendus et retourne les mains en bas. Les triceps restent collés au pupitre. Ne lâche pas la descente, c'est là que réside la moitié de l'intérêt.",
 "seek": "Biceps qui gonfle à la montée et avant-bras qui brûle sur la descente freinée.",
 "src": "photo"
+},
+{
+"id": "wall_handstand_hold",
+"name": "Poirier dos au mur",
+"pattern": "balance",
+"p": [
+"épaules",
+"gainage"
+],
+"s": [
+"triceps",
+"poignets"
+],
+"req": [
+"corps"
+],
+"zones": [
+"epaule",
+"poignet"
+],
+"level": "debutant",
+"tier": 1,
+"illus": null,
+"machine": "Un mur dégagé",
+"uni": false,
+"tags": [
+"corps",
+"leger",
+"equilibre"
+],
+"reco": "Dos tourné au mur, mains au sol à une main du mur, tu montes les pieds le long du mur jusqu'à être presque vertical.",
+"why": "C'est la position de base de toute la discipline : elle apprend à empiler poignets, épaules et hanches sur une ligne, à pousser le sol et à gainer en inversion. Sans cette tenue propre, le poirier libre est impossible.",
+"target": "Deltoïdes, trapèzes supérieurs, gainage profond, poignets",
+"exec": "Mains largeur d'épaules, doigts écartés, regarde entre tes mains. Pousse le sol pour allonger le corps, serre fessiers et abdos, pointes de pieds. Les talons peuvent effleurer le mur, pas s'y appuyer. Sors avant que les épaules ne lâchent : on construit la tenue, pas l'épuisement.",
+"seek": "Un corps droit comme une barre, les épaules qui poussent activement, les poignets qui chauffent sans douleur.",
+"timed": "20-40 s"
+},
+{
+"id": "chest_wall_handstand",
+"name": "Poirier face au mur",
+"pattern": "balance",
+"p": [
+"épaules",
+"gainage"
+],
+"s": [
+"triceps",
+"poignets"
+],
+"req": [
+"corps"
+],
+"zones": [
+"epaule",
+"poignet"
+],
+"level": "intermediaire",
+"tier": 1,
+"illus": null,
+"machine": "Un mur dégagé",
+"uni": false,
+"tags": [
+"corps",
+"leger",
+"equilibre"
+],
+"reco": "Tu montes dos au mur en marchant les pieds vers le haut, pour finir ventre face au mur, mains à quelques centimètres de celui-ci.",
+"why": "Face au mur, impossible de cambrer : le mur impose la ligne parfaite (hanches ouvertes, côtes rentrées) que le poirier libre exige. C'est la version qui transfère le mieux vers l'équilibre.",
+"target": "Deltoïdes, gainage profond, ouverture d'épaules",
+"exec": "Marche les mains vers le mur jusqu'à ce que seuls les orteils le touchent. Pousse le sol, rentre les côtes, serre les fessiers. Respire court et régulier. Pour redescendre, marche les mains vers l'extérieur en contrôlant.",
+"seek": "Les épaules complètement ouvertes au-dessus des mains, aucune cambrure, une tenue calme.",
+"timed": "20-45 s"
+},
+{
+"id": "handstand_kickup",
+"name": "Montées en poirier contre le mur",
+"pattern": "balance",
+"p": [
+"épaules",
+"gainage"
+],
+"s": [
+"hanches",
+"poignets"
+],
+"req": [
+"corps"
+],
+"zones": [
+"epaule",
+"poignet"
+],
+"level": "intermediaire",
+"tier": 1,
+"illus": null,
+"machine": "Un mur dégagé",
+"uni": false,
+"tags": [
+"corps",
+"leger",
+"equilibre"
+],
+"reco": "Face au mur à une longueur de corps, tu poses les mains et tu lances une jambe pour monter en poirier, l'autre jambe suit.",
+"why": "L'entrée est ce qui bloque le plus souvent : trop fort on bascule, pas assez on retombe. Répéter des montées calibrées apprend à sentir le point d'équilibre à chaque fois.",
+"target": "Deltoïdes, gainage, coordination",
+"exec": "Mains posées en fente, bras verrouillés avant que les pieds ne quittent le sol. Lance la jambe arrière tendue, pousse sur la jambe avant, rejoins les deux jambes en haut. Vise à monter sans que les talons claquent le mur. Redescends en contrôlant, une jambe après l'autre.",
+"seek": "Des montées qui arrivent juste à la verticale, de plus en plus douces, sans impact sur le mur.",
+"timed": "6-10 montées"
+},
+{
+"id": "handstand_shoulder_taps",
+"name": "Poirier, touches d'épaules",
+"pattern": "balance",
+"p": [
+"épaules",
+"gainage"
+],
+"s": [
+"obliques",
+"poignets"
+],
+"req": [
+"corps"
+],
+"zones": [
+"epaule",
+"poignet"
+],
+"level": "confirme",
+"tier": 1,
+"illus": null,
+"machine": "Un mur dégagé",
+"uni": false,
+"tags": [
+"corps",
+"leger",
+"equilibre"
+],
+"reco": "En poirier face au mur ou dos au mur, tu transfères le poids sur une main pour toucher l'épaule opposée avec l'autre.",
+"why": "Le poirier libre se tient en corrigeant avec les doigts et en déplaçant le poids d'une main à l'autre. Les touches d'épaule entraînent exactement ce transfert, avec le mur comme filet.",
+"target": "Deltoïdes, obliques, contrôle du centre de gravité",
+"exec": "Monte en poirier, stabilise 3 s. Pousse fort dans la main d'appui, déplace légèrement les hanches de ce côté, décolle l'autre main et touche l'épaule, repose. Alterne lentement. Les hanches ne tournent pas, le corps reste gainé.",
+"seek": "Un transfert de poids qui devient silencieux et lent, sans à-coups ni rotation du bassin.",
+"timed": "6-10 touches par côté"
+},
+{
+"id": "freestanding_handstand",
+"name": "Poirier libre",
+"pattern": "balance",
+"p": [
+"épaules",
+"gainage"
+],
+"s": [
+"poignets",
+"avant-bras"
+],
+"req": [
+"corps"
+],
+"zones": [
+"epaule",
+"poignet"
+],
+"level": "confirme",
+"tier": 1,
+"illus": null,
+"machine": "",
+"uni": false,
+"tags": [
+"corps",
+"leger",
+"equilibre"
+],
+"reco": "Loin de tout mur, tu montes en poirier et tu tiens le plus longtemps possible en corrigeant avec les doigts.",
+"why": "C'est l'objectif de la discipline : tenir sans appui. On le travaille frais, en début de séance, par tentatives courtes et nombreuses : l'équilibre s'apprend par la répétition des corrections, pas par l'épuisement.",
+"target": "Équilibre, deltoïdes, avant-bras et doigts, gainage",
+"exec": "Même montée que contre le mur. En haut, regarde entre les mains, pousse le sol, serre tout. Si tu bascules vers le dos, appuie dans les doigts ; vers le ventre, appuie dans la base des paumes et ouvre les épaules. Sors par une roue ou en reposant une jambe, jamais en chute.",
+"seek": "Des tentatives de plus en plus longues et des corrections de plus en plus fines ; une tenue de 10 s propre vaut plus que 30 s en lutte.",
+"timed": "5-15 s par tentative"
+},
+{
+"id": "crow_pose",
+"name": "Corbeau",
+"pattern": "balance",
+"p": [
+"épaules",
+"gainage"
+],
+"s": [
+"poignets",
+"triceps"
+],
+"req": [
+"corps"
+],
+"zones": [
+"poignet"
+],
+"level": "debutant",
+"tier": 2,
+"illus": null,
+"machine": "",
+"uni": false,
+"tags": [
+"corps",
+"leger",
+"equilibre"
+],
+"reco": "Accroupi, mains au sol, genoux posés sur l'arrière des bras, tu bascules le poids vers l'avant jusqu'à décoller les pieds.",
+"why": "Première inversion accessible à tous : elle apprend à charger les mains, à trouver le point de bascule et à tenir avec les doigts, exactement les sensations du poirier, sans risque.",
+"target": "Poignets, deltoïdes, gainage profond",
+"exec": "Doigts écartés, regard devant les mains (pas en dessous). Genoux hauts sur les triceps, bascule lentement vers l'avant, décolle un pied puis l'autre, rapproche les talons des fessiers. Tends les bras progressivement au fil des semaines.",
+"seek": "Les mains qui portent tout, les pieds légers, le regard qui ne bouge pas.",
+"timed": "15-30 s"
+},
+{
+"id": "single_leg_balance_reach",
+"name": "Équilibre unipodal avec touches",
+"pattern": "balance",
+"p": [
+"chevilles",
+"fessiers"
+],
+"s": [
+"gainage",
+"proprioception"
+],
+"req": [
+"corps"
+],
+"zones": [
+"cheville"
+],
+"level": "debutant",
+"tier": 3,
+"illus": null,
+"machine": "",
+"uni": true,
+"tags": [
+"corps",
+"leger",
+"equilibre"
+],
+"reco": "Debout sur une jambe, tu vas toucher le sol ou des repères devant, de côté et derrière avec le pied libre sans poser.",
+"why": "L'équilibre ne se limite pas aux mains : la cheville et la hanche d'appui sont la base de tout ce qui se fait debout, en sport comme en intervention. C'est aussi la meilleure prévention des entorses.",
+"target": "Stabilisateurs de cheville, moyen fessier, gainage",
+"exec": "Genou d'appui souple, bassin horizontal, regard fixe au loin. Touche lentement les trois directions avec le pied libre, reviens au centre sans poser. Progression : yeux fermés, puis sur une surface instable.",
+"seek": "Une hanche d'appui qui ne s'effondre pas vers l'intérieur et un pied qui travaille sans trembler.",
+"timed": "30-45 s par côté"
+},
+{
+"id": "hollow_body_hold",
+"name": "Hollow body",
+"pattern": "skill",
+"p": [
+"grand droit",
+"gainage profond"
+],
+"s": [
+"fléchisseurs de hanche",
+"épaules"
+],
+"req": [
+"corps"
+],
+"zones": [],
+"level": "debutant",
+"tier": 1,
+"illus": null,
+"machine": "",
+"uni": false,
+"tags": [
+"corps",
+"leger",
+"calisthenie"
+],
+"reco": "Allongé sur le dos, bras tendus derrière la tête, jambes tendues, tu décolles épaules et jambes en gardant les lombaires collées au sol.",
+"why": "C'est la forme du corps dans toutes les figures de force au poids du corps : poirier, front lever, planche. Un hollow solide, c'est 80 % du gainage dont ces figures ont besoin.",
+"target": "Grand droit, gainage profond, fléchisseurs de hanche",
+"exec": "Lombaires pressées au sol en permanence : c'est la règle absolue. Si elles décollent, plie les genoux ou ramène les bras devant. Respire sans relâcher. Progression : jambes et bras de plus en plus bas.",
+"seek": "Une banane rigide des mains aux pieds, le bas du dos qui ne quitte jamais le sol.",
+"timed": "20-40 s"
+},
+{
+"id": "l_sit",
+"name": "L-sit",
+"pattern": "skill",
+"p": [
+"fléchisseurs de hanche",
+"grand droit"
+],
+"s": [
+"triceps",
+"épaules"
+],
+"req": [
+"corps"
+],
+"zones": [
+"poignet"
+],
+"level": "intermediaire",
+"tier": 1,
+"illus": null,
+"machine": "Parallèles, poignées de pompes, ou deux boxes",
+"uni": false,
+"tags": [
+"corps",
+"leger",
+"calisthenie"
+],
+"reco": "Assis entre deux appuis, mains posées, tu pousses pour décoller les fessiers et tu tends les jambes à l'horizontale.",
+"why": "Le L-sit combine une poussée d'épaules en dépression et une compression des hanches qu'aucun gainage classique ne travaille. C'est la porte d'entrée vers le V-sit et la planche.",
+"target": "Fléchisseurs de hanche, grand droit, triceps, abaisseurs d'épaule",
+"exec": "Bras verrouillés, épaules poussées vers le bas (loin des oreilles), bassin en rétroversion, jambes tendues et pointes de pieds. Si les jambes tombent, commence genoux groupés puis une jambe tendue. Tenues courtes et nombreuses.",
+"seek": "Les cuisses qui brûlent à l'avant, les épaules verrouillées basses, les jambes qui montent de séance en séance.",
+"timed": "10-20 s"
+},
+{
+"id": "tuck_planche_lean",
+"name": "Planche lean et tuck planche",
+"pattern": "skill",
+"p": [
+"épaules",
+"pectoraux"
+],
+"s": [
+"biceps",
+"poignets",
+"gainage"
+],
+"req": [
+"corps"
+],
+"zones": [
+"epaule",
+"poignet",
+"coude"
+],
+"level": "intermediaire",
+"tier": 1,
+"illus": null,
+"machine": "",
+"uni": false,
+"tags": [
+"corps",
+"leger",
+"calisthenie"
+],
+"reco": "En position de pompe, bras tendus, tu avances les épaules très loin devant les mains (lean), puis tu groupes les genoux vers la poitrine pour décoller les pieds (tuck).",
+"why": "La planche est la figure de poussée la plus exigeante. Le lean prépare les tendons des coudes et des épaules à supporter le poids en avant ; le tuck est la première tenue sans appui des pieds.",
+"target": "Deltoïdes antérieurs, pectoraux, biceps en isométrie, poignets",
+"exec": "Mains tournées légèrement vers l'extérieur, coudes verrouillés, épaules protractées (dos arrondi en haut), bassin en rétroversion. Avance jusqu'à sentir les poignets et les épaules sans douleur. Le tuck : genoux serrés contre la poitrine, hanches à hauteur d'épaules.",
+"seek": "Les épaules poussées loin devant les mains, les bras qui ne plient jamais, une tension immense dans les deltoïdes avant.",
+"timed": "10-20 s"
+},
+{
+"id": "tuck_front_lever",
+"name": "Front lever groupé",
+"pattern": "skill",
+"p": [
+"grand dorsal",
+"gainage"
+],
+"s": [
+"biceps",
+"deltoïdes postérieurs"
+],
+"req": [
+"traction"
+],
+"zones": [
+"epaule",
+"coude"
+],
+"level": "intermediaire",
+"tier": 1,
+"illus": null,
+"machine": "Barre de traction",
+"uni": false,
+"tags": [
+"corps",
+"leger",
+"calisthenie"
+],
+"reco": "Suspendu bras tendus, tu bascules le corps en arrière, genoux groupés, jusqu'à mettre le dos à l'horizontale sous la barre.",
+"why": "Le front lever est la force de tirage pure en isométrie : il construit le dorsal et le gainage postérieur comme aucune traction, et il protège les épaules par un travail de rétraction. Pour un athlète à 30 tractions et plus, c'est la suite logique.",
+"target": "Grand dorsal, deltoïdes postérieurs, gainage profond, biceps en isométrie",
+"exec": "Prise pronation, bras verrouillés. Tire les épaules vers le bas et l'arrière, bascule en gardant les genoux serrés contre la poitrine, hanches à hauteur d'épaules. Tenue sans respiration bloquée. Progression : genoux plus ouverts (advanced tuck), puis une jambe tendue.",
+"seek": "Le dos horizontal sous la barre, les bras tendus, le dorsal qui tire fort vers le bas.",
+"timed": "8-15 s"
+},
+{
+"id": "adv_tuck_front_lever",
+"name": "Front lever une jambe",
+"pattern": "skill",
+"p": [
+"grand dorsal",
+"gainage"
+],
+"s": [
+"biceps",
+"deltoïdes postérieurs"
+],
+"req": [
+"traction"
+],
+"zones": [
+"epaule",
+"coude"
+],
+"level": "confirme",
+"tier": 1,
+"illus": null,
+"machine": "Barre de traction",
+"uni": true,
+"tags": [
+"corps",
+"leger",
+"calisthenie"
+],
+"reco": "Même position que le front lever groupé, une jambe tendue à l'horizontale, l'autre groupée.",
+"why": "Étape intermédiaire entre le groupé et le lever complet : le levier s'allonge, le dorsal et le gainage doivent tenir beaucoup plus. On alterne les jambes pour équilibrer.",
+"target": "Grand dorsal, gainage profond, fessier de la jambe tendue",
+"exec": "Monte d'abord en groupé, stabilise, puis tends une jambe sans laisser les hanches descendre. Si le bassin tombe, reviens en groupé. Change de jambe à chaque série.",
+"seek": "Hanches et épaules sur la même ligne, la jambe tendue à l'horizontale sans que le dos s'arrondisse.",
+"timed": "6-12 s"
+},
+{
+"id": "pistol_squat_full",
+"name": "Pistol squat complet",
+"pattern": "skill",
+"p": [
+"quadriceps",
+"fessiers"
+],
+"s": [
+"ischio-jambiers",
+"chevilles",
+"gainage"
+],
+"req": [
+"corps"
+],
+"zones": [
+"genou",
+"hanche"
+],
+"level": "confirme",
+"tier": 1,
+"illus": null,
+"machine": "",
+"uni": true,
+"tags": [
+"corps",
+"leger",
+"calisthenie",
+"jambes"
+],
+"reco": "Debout sur une jambe, l'autre tendue devant, tu descends jusqu'au bout en gardant l'équilibre, puis tu remontes.",
+"why": "Force, mobilité de cheville et équilibre dans un seul geste : c'est le squat de la force au poids du corps. Pour rattraper des jambes faibles sans barre, il n'y a pas mieux ; lesté, il devient un exercice de force à part entière.",
+"target": "Quadriceps, fessiers, mobilité de cheville, équilibre",
+"exec": "Bras devant en contrepoids, jambe libre tendue. Descends en contrôle, genou qui suit la pointe de pied, talon au sol en permanence. Remonte sans élan. Si le talon décolle, mets une cale sous le talon ou tiens une petite charge devant toi pour le contrepoids.",
+"seek": "Une descente lente jusqu'en bas, le talon collé, la remontée sans vaciller."
+},
+{
+"id": "archer_pullup",
+"name": "Traction archer",
+"pattern": "skill",
+"p": [
+"grand dorsal",
+"biceps"
+],
+"s": [
+"deltoïdes postérieurs",
+"avant-bras"
+],
+"req": [
+"traction"
+],
+"zones": [
+"epaule",
+"coude"
+],
+"level": "confirme",
+"tier": 1,
+"illus": null,
+"machine": "Barre de traction",
+"uni": true,
+"tags": [
+"corps",
+"leger",
+"calisthenie",
+"tractions"
+],
+"reco": "Prise très large, tu tires vers une main en tendant l'autre bras sur le côté, comme un archer qui bande son arc.",
+"why": "C'est le pont entre la traction à deux bras et la traction à un bras : chaque côté porte 70 à 80 % du poids. Pour quelqu'un qui enchaîne 30 tractions, c'est la surcharge qu'il lui manque sans ajouter de lest.",
+"target": "Grand dorsal et biceps du côté qui tire, stabilisateurs de l'épaule",
+"exec": "Prise plus large que les épaules. Tire le menton vers la main de travail, l'autre bras se tend jusqu'à être presque droit sur la barre. Descends en contrôle, change de côté. Pas de balancier, les hanches restent sous la barre.",
+"seek": "Le bras tendu qui ne fait que guider, le bras de travail qui fait tout."
+},
+{
+"id": "muscle_up_negative",
+"name": "Muscle-up négatif",
+"pattern": "skill",
+"p": [
+"grand dorsal",
+"pectoraux"
+],
+"s": [
+"triceps",
+"biceps",
+"avant-bras"
+],
+"req": [
+"traction"
+],
+"zones": [
+"epaule",
+"coude",
+"poignet"
+],
+"level": "confirme",
+"tier": 1,
+"illus": null,
+"machine": "Barre de traction",
+"uni": false,
+"tags": [
+"corps",
+"leger",
+"calisthenie",
+"tractions"
+],
+"reco": "Tu te places au-dessus de la barre (saut ou box), puis tu descends très lentement : dips négatif, transition, puis descente de traction.",
+"why": "La transition entre la traction et le dips est ce qui bloque le muscle-up ; la descendre lentement, c'est l'apprendre en force et en trajectoire, sans élan. Quatre semaines de négatives débloquent souvent le premier muscle-up strict.",
+"target": "Grand dorsal, pectoraux, triceps, prise fausse",
+"exec": "Prise fausse (poignets sur la barre) si tu peux. Depuis le haut : descends le dips en 3 s, passe la poitrine sous la barre en gardant les coudes serrés, puis descends la traction en 3 s. Pose les pieds, recommence. 3 à 5 répétitions, repos complet.",
+"seek": "Une transition continue, sans chute, les coudes qui restent près du corps."
+},
+{
+"id": "straight_bar_dip",
+"name": "Dips sur barre droite",
+"pattern": "skill",
+"p": [
+"pectoraux",
+"triceps"
+],
+"s": [
+"deltoïdes antérieurs",
+"gainage"
+],
+"req": [
+"traction"
+],
+"zones": [
+"epaule",
+"poignet"
+],
+"level": "confirme",
+"tier": 2,
+"illus": null,
+"machine": "Barre de traction ou barre fixe à hauteur de poitrine",
+"uni": false,
+"tags": [
+"corps",
+"leger",
+"calisthenie"
+],
+"reco": "En appui tendu au-dessus d'une barre droite, tu descends jusqu'à ce que la barre touche le bas de la poitrine, puis tu repousses.",
+"why": "C'est la deuxième moitié du muscle-up : la poussée au-dessus de la barre, avec le corps incliné en avant. Il renforce la transition et la sortie du muscle-up, que les dips classiques ne travaillent pas.",
+"target": "Pectoraux, triceps, deltoïdes antérieurs",
+"exec": "Corps légèrement penché en avant, jambes devant la barre, épaules basses. Descends en contrôle jusqu'à la poitrine, coudes vers l'arrière, remonte jusqu'au verrouillage. Pas de balancement des jambes.",
+"seek": "La poitrine qui touche la barre à chaque répétition, le verrouillage net en haut."
+},
+{
+"id": "skin_the_cat",
+"name": "Skin the cat",
+"pattern": "skill",
+"p": [
+"épaules",
+"grand dorsal"
+],
+"s": [
+"gainage",
+"avant-bras"
+],
+"req": [
+"traction"
+],
+"zones": [
+"epaule",
+"coude"
+],
+"level": "intermediaire",
+"tier": 2,
+"illus": null,
+"machine": "Barre de traction ou anneaux",
+"uni": false,
+"tags": [
+"corps",
+"leger",
+"calisthenie",
+"mobilite"
+],
+"reco": "Suspendu, tu groupes les genoux, tu passes les jambes entre les bras et tu continues la rotation jusqu'à l'extension des épaules derrière toi, puis tu reviens.",
+"why": "Mobilité et force d'épaule en même temps : la position finale (german hang) ouvre les épaules en extension complète, sous charge. Indispensable pour protéger les épaules avec un gros volume de traction et pour préparer le front lever et le back lever.",
+"target": "Extension d'épaule, grand dorsal, gainage, coudes",
+"exec": "Bras tendus en permanence. Groupe, passe lentement les jambes entre les mains, continue jusqu'à sentir l'étirement des épaules, tiens 2 à 3 s, reviens par le même chemin. Jamais en lâchant : tout est contrôlé.",
+"seek": "Une rotation lente et symétrique, les épaules qui s'ouvrent un peu plus à chaque semaine."
+},
+{
+"id": "dragon_flag",
+"name": "Dragon flag",
+"pattern": "skill",
+"p": [
+"grand droit",
+"gainage profond"
+],
+"s": [
+"fléchisseurs de hanche",
+"grand dorsal"
+],
+"req": [
+"banc"
+],
+"zones": [
+"dos"
+],
+"level": "confirme",
+"tier": 2,
+"illus": null,
+"machine": "Banc plat ou sol avec un point d'accroche derrière la tête",
+"uni": false,
+"tags": [
+"corps",
+"leger",
+"calisthenie"
+],
+"reco": "Allongé sur un banc, mains accrochées derrière la tête, tu lèves le corps entier tendu en appui sur les omoplates, puis tu le descends sans que le bassin ne casse.",
+"why": "Le gainage le plus dur qui existe en répétitions : tout le corps est un levier. Il construit le grand droit et le gainage dont le front lever et la planche ont besoin.",
+"target": "Grand droit, gainage profond, fléchisseurs de hanche, dorsal",
+"exec": "Monte jambes tendues jusqu'à l'appui sur les omoplates. Descends en 3 à 4 s, corps rigide, hanches qui ne cassent jamais, arrête-toi avant que les lombaires cambrent. Progression : genoux groupés, puis une jambe, puis complet.",
+"seek": "Une ligne droite des épaules aux pieds pendant toute la descente, le bas du dos qui ne se creuse pas."
+},
+{
+"id": "deep_squat_hold",
+"name": "Squat profond tenu",
+"pattern": "flex",
+"p": [
+"hanches",
+"chevilles"
+],
+"s": [
+"adducteurs",
+"dos"
+],
+"req": [
+"corps"
+],
+"zones": [
+"genou",
+"hanche"
+],
+"level": "debutant",
+"tier": 1,
+"illus": null,
+"machine": "",
+"uni": false,
+"tags": [
+"corps",
+"leger",
+"souplesse",
+"mobilite"
+],
+"reco": "Accroupi au plus bas, talons au sol, pieds légèrement ouverts, coudes qui poussent les genoux vers l'extérieur.",
+"why": "La position accroupie complète est le test de mobilité le plus simple : chevilles, hanches et dos en même temps. Tenue régulièrement, elle rend la profondeur du squat et soulage le bas du dos.",
+"target": "Chevilles (dorsiflexion), hanches, adducteurs",
+"exec": "Talons au sol obligatoirement (cale sous les talons si besoin). Dos aussi droit que possible, poitrine ouverte, coudes contre les genoux. Respire profondément et laisse descendre un peu plus à chaque expiration. Bouge doucement d'un côté à l'autre.",
+"seek": "Les talons qui restent au sol, les hanches qui descendent sous les genoux, le dos qui se redresse au fil des semaines.",
+"timed": "60-90 s"
+},
+{
+"id": "couch_stretch",
+"name": "Étirement des fléchisseurs de hanche (couch stretch)",
+"pattern": "flex",
+"p": [
+"fléchisseurs de hanche",
+"quadriceps"
+],
+"s": [
+"fessiers"
+],
+"req": [
+"corps"
+],
+"zones": [
+"genou"
+],
+"level": "debutant",
+"tier": 1,
+"illus": null,
+"machine": "Un mur ou un banc",
+"uni": true,
+"tags": [
+"corps",
+"leger",
+"souplesse",
+"mobilite"
+],
+"reco": "Genou au sol contre un mur, tibia vertical le long du mur, l'autre pied devant en fente, buste droit.",
+"why": "Les fléchisseurs de hanche raccourcis par la position assise et par le squat limitent l'extension de hanche, donc la foulée, le soulevé de terre et la cambrure du poirier. C'est l'étirement qui rapporte le plus pour un sportif.",
+"target": "Psoas, droit fémoral, quadriceps",
+"exec": "Genou arrière contre le mur, pied le long du mur. Serre le fessier du côté étiré, bascule le bassin vers l'arrière (rétroversion), redresse le buste progressivement. Intensité 6/10, respiration lente. Jamais de douleur au genou.",
+"seek": "L'étirement à l'avant de la hanche et de la cuisse, le bassin qui reste basculé, le buste qui se redresse un peu plus chaque semaine.",
+"timed": "60 s par côté"
+},
+{
+"id": "pancake_fold",
+"name": "Pancake",
+"pattern": "flex",
+"p": [
+"adducteurs",
+"ischio-jambiers"
+],
+"s": [
+"dos"
+],
+"req": [
+"corps"
+],
+"zones": [
+"hanche"
+],
+"level": "intermediaire",
+"tier": 1,
+"illus": null,
+"machine": "",
+"uni": false,
+"tags": [
+"corps",
+"leger",
+"souplesse"
+],
+"reco": "Assis jambes écartées et tendues, tu avances le buste vers le sol, dos plat, mains devant.",
+"why": "Le pancake ouvre les hanches en flexion et en abduction à la fois : c'est la base du grand écart facial et de toutes les compressions (L-sit, V-sit). Il demande de la patience : on gagne par le relâchement, pas en forçant.",
+"target": "Adducteurs, ischio-jambiers, bascule du bassin",
+"exec": "Assis sur le bord d'un coussin ou d'une cale pour basculer le bassin vers l'avant. Pieds flex, genoux vers le plafond. Avance le buste dos plat en menant par la poitrine, pas par la tête. Respire et descends à l'expiration. Alterne tenue passive et contractions légères des jambes contre le sol (5 s) pour gagner.",
+"seek": "Le bassin qui bascule, le dos qui reste plat, la poitrine qui se rapproche du sol au fil des semaines.",
+"timed": "60-90 s"
+},
+{
+"id": "front_split_prog",
+"name": "Grand écart avant progressif",
+"pattern": "flex",
+"p": [
+"ischio-jambiers",
+"fléchisseurs de hanche"
+],
+"s": [
+"fessiers",
+"mollets"
+],
+"req": [
+"corps"
+],
+"zones": [
+"hanche",
+"genou"
+],
+"level": "intermediaire",
+"tier": 1,
+"illus": null,
+"machine": "Deux blocs de yoga ou des cales",
+"uni": true,
+"tags": [
+"corps",
+"leger",
+"souplesse"
+],
+"reco": "En fente, genou arrière au sol, tu glisses le pied avant vers l'avant jusqu'à ta limite, mains sur des blocs de chaque côté.",
+"why": "Le grand écart avant est la combinaison de l'extension d'une hanche et de la flexion de l'autre : exactement ce que la foulée de course et le soulevé de terre demandent. On le construit progressivement, en gardant les hanches carrées.",
+"target": "Ischio-jambiers de la jambe avant, fléchisseurs de la jambe arrière",
+"exec": "Hanches face à l'avant, bassin carré. Descends en appuyant les mains sur les blocs pour doser. Jambe avant tendue, pied flex. Tiens, respire, puis contracte les deux jambes contre le sol 5 s et relâche pour descendre un peu plus. Ne force jamais le genou arrière.",
+"seek": "Les hanches qui restent carrées, la descente millimétrique d'une semaine à l'autre.",
+"timed": "45-60 s par côté"
+},
+{
+"id": "middle_split_prog",
+"name": "Écart facial progressif",
+"pattern": "flex",
+"p": [
+"adducteurs"
+],
+"s": [
+"ischio-jambiers",
+"hanches"
+],
+"req": [
+"corps"
+],
+"zones": [
+"hanche",
+"genou"
+],
+"level": "intermediaire",
+"tier": 1,
+"illus": null,
+"machine": "",
+"uni": false,
+"tags": [
+"corps",
+"leger",
+"souplesse"
+],
+"reco": "Debout ou mains au sol, tu écartes les jambes latéralement le plus possible, pieds parallèles ou légèrement ouverts.",
+"why": "L'abduction de hanche est rarement travaillée par la musculation ; l'écart facial libère les adducteurs, protège l'aine et ouvre le squat large et le pistol.",
+"target": "Adducteurs, hanches en abduction",
+"exec": "Mains au sol devant toi pour contrôler. Écarte lentement, bassin neutre, genoux tendus et orientés vers le haut (pas vers l'avant). Tiens, puis serre les jambes comme pour les rapprocher (sans bouger) 5 s et relâche pour gagner. Jamais de douleur à l'intérieur du genou.",
+"seek": "Les genoux qui regardent le plafond, les hanches qui descendent sans que le dos s'arrondisse.",
+"timed": "45-60 s"
+},
+{
+"id": "pike_fold",
+"name": "Pike, flexion avant jambes tendues",
+"pattern": "flex",
+"p": [
+"ischio-jambiers"
+],
+"s": [
+"mollets",
+"dos"
+],
+"req": [
+"corps"
+],
+"zones": [],
+"level": "debutant",
+"tier": 1,
+"illus": null,
+"machine": "",
+"uni": false,
+"tags": [
+"corps",
+"leger",
+"souplesse"
+],
+"reco": "Assis jambes tendues et serrées devant toi, tu amènes le buste vers les cuisses, dos le plus plat possible.",
+"why": "Le pike est la compression de base : il conditionne le L-sit, le poirier en pike, les levées de jambes, et il soulage les lombaires raides. La souplesse des ischio-jambiers se gagne par des tenues régulières, pas par des à-coups.",
+"target": "Ischio-jambiers, mollets, bascule du bassin",
+"exec": "Pieds flex, genoux tendus, bassin basculé vers l'avant. Mène par la poitrine, pas par la tête. Respire lentement, descends à chaque expiration. Progression : contractions des jambes contre le sol 5 s puis relâchement, et pike debout.",
+"seek": "Le ventre qui se rapproche des cuisses avec un dos plat, les pieds qui restent flex.",
+"timed": "60 s"
+},
+{
+"id": "bridge_hold",
+"name": "Pont tenu",
+"pattern": "flex",
+"p": [
+"épaules",
+"dos"
+],
+"s": [
+"fléchisseurs de hanche",
+"quadriceps",
+"poignets"
+],
+"req": [
+"corps"
+],
+"zones": [
+"dos",
+"epaule",
+"poignet"
+],
+"level": "intermediaire",
+"tier": 1,
+"illus": null,
+"machine": "",
+"uni": false,
+"tags": [
+"corps",
+"leger",
+"souplesse",
+"mobilite"
+],
+"reco": "Allongé sur le dos, mains au sol près des oreilles, tu pousses pour tendre les bras et les jambes et former une arche.",
+"why": "Le pont ouvre les épaules en flexion et la colonne en extension : c'est la mobilité que le poirier, le développé militaire et la position de rack exigent. C'est aussi la contrepartie de toutes les flexions avant.",
+"target": "Flexion d'épaule, extension thoracique, fléchisseurs de hanche",
+"exec": "Pieds à largeur de hanches, mains doigts vers les pieds. Pousse pour monter, cherche à tendre les bras et à amener les épaules au-dessus des mains. L'arche doit se faire dans le haut du dos et les hanches, pas seulement dans les lombaires. Redescends en contrôle. Progression : pieds qui se rapprochent des mains.",
+"seek": "Les épaules au-dessus des poignets, les bras tendus, l'arche répartie sur toute la colonne.",
+"timed": "20-30 s"
+},
+{
+"id": "shoulder_flexion_stretch",
+"name": "Ouverture d'épaules au mur ou au banc",
+"pattern": "flex",
+"p": [
+"épaules",
+"grand dorsal"
+],
+"s": [
+"pectoraux",
+"triceps"
+],
+"req": [
+"corps"
+],
+"zones": [
+"epaule"
+],
+"level": "debutant",
+"tier": 2,
+"illus": null,
+"machine": "Un banc, une barre ou un mur",
+"uni": false,
+"tags": [
+"corps",
+"leger",
+"souplesse",
+"mobilite"
+],
+"reco": "À genoux, coudes posés sur un banc, mains jointes derrière la nuque, tu laisses la poitrine descendre vers le sol.",
+"why": "Sans flexion d'épaule complète, le poirier se fait avec une cambrure et le développé au-dessus de la tête charge les lombaires. Cet étirement ouvre le dorsal et les épaules sans risque.",
+"target": "Grand dorsal, deltoïdes, petit pectoral, extension thoracique",
+"exec": "Coudes largeur d'épaules sur le banc, mains jointes derrière la tête, hanches au-dessus des genoux. Laisse la poitrine couler vers le sol, côtes rentrées (pas de cambrure lombaire). Respire. Variante : bâton tenu à deux mains, bras tendus, en poussant vers le haut dos au mur.",
+"seek": "L'étirement sous les aisselles et dans le haut du dos, pas dans les lombaires.",
+"timed": "45-60 s"
+},
+{
+"id": "thoracic_rotation",
+"name": "Rotation thoracique au sol",
+"pattern": "flex",
+"p": [
+"dos"
+],
+"s": [
+"épaules",
+"pectoraux"
+],
+"req": [
+"corps"
+],
+"zones": [],
+"level": "debutant",
+"tier": 2,
+"illus": null,
+"machine": "",
+"uni": true,
+"tags": [
+"corps",
+"leger",
+"souplesse",
+"mobilite"
+],
+"reco": "Allongé sur le côté, genoux pliés à 90°, bras tendus devant toi l'un sur l'autre, tu ouvres le bras du dessus vers l'arrière en suivant la main du regard.",
+"why": "Le haut du dos raide reporte les rotations sur les lombaires et bloque les épaules au-dessus de la tête. Dix rotations par côté avant une séance du haut changent la qualité de tous les mouvements d'épaule.",
+"target": "Rotation thoracique, ouverture pectorale",
+"exec": "Genoux collés au sol (une main dessus si besoin). Ouvre le bras lentement en expirant, laisse la tête suivre, tiens 2 s en fin de course, reviens. Les genoux ne décollent jamais : si ça tire, c'est que la rotation vient des lombaires.",
+"seek": "L'épaule du dessus qui se rapproche du sol derrière toi, genoux immobiles.",
+"timed": "8-10 par côté"
+},
+{
+"id": "hip_90_90",
+"name": "90/90 hanches",
+"pattern": "flex",
+"p": [
+"hanches"
+],
+"s": [
+"fessiers",
+"adducteurs"
+],
+"req": [
+"corps"
+],
+"zones": [
+"hanche",
+"genou"
+],
+"level": "debutant",
+"tier": 2,
+"illus": null,
+"machine": "",
+"uni": true,
+"tags": [
+"corps",
+"leger",
+"souplesse",
+"mobilite"
+],
+"reco": "Assis au sol, une jambe pliée à 90° devant toi, l'autre pliée à 90° sur le côté, tu penches le buste droit au-dessus de la jambe avant, puis tu fais pivoter les genoux de l'autre côté.",
+"why": "Rotation interne et externe de hanche dans le même exercice : c'est ce qui manque le plus souvent aux squatteurs et aux coureurs, et ce qui pince devant la hanche en squat profond.",
+"target": "Rotateurs de hanche, fessiers, capsule de hanche",
+"exec": "Dos droit, bassin au sol. Penche le buste au-dessus du tibia avant, tiens 20 s, puis bascule les genoux de l'autre côté sans utiliser les mains si possible. Alterne les côtés. Respire, pas de douleur dans l'aine.",
+"seek": "Les deux fessiers qui restent au sol, la bascule d'un côté à l'autre de plus en plus fluide.",
+"timed": "45 s par côté"
+},
+{
+"id": "pigeon_pose",
+"name": "Pigeon",
+"pattern": "flex",
+"p": [
+"fessiers",
+"rotateurs de hanche"
+],
+"s": [
+"fléchisseurs de hanche"
+],
+"req": [
+"corps"
+],
+"zones": [
+"hanche",
+"genou"
+],
+"level": "debutant",
+"tier": 2,
+"illus": null,
+"machine": "",
+"uni": true,
+"tags": [
+"corps",
+"leger",
+"souplesse"
+],
+"reco": "Une jambe pliée devant toi, tibia posé au sol en travers, l'autre jambe tendue derrière, buste penché vers l'avant.",
+"why": "Le pigeon étire le piriforme et les fessiers profonds, qui se raidissent avec le volume de squat et de soulevé de terre, et qui compriment le nerf sciatique chez les gens assis toute la journée.",
+"target": "Fessiers profonds, rotateurs externes de hanche, fléchisseurs de la jambe arrière",
+"exec": "Hanches carrées et horizontales (coussin sous la fesse du côté plié si elle décolle). Jambe arrière tendue, dessus du pied au sol. Descends le buste à l'expiration, avant-bras au sol si possible. Pas de douleur au genou avant : rapproche le pied du bassin.",
+"seek": "L'étirement profond dans la fesse de la jambe pliée, le bassin qui ne bascule pas sur le côté.",
+"timed": "60 s par côté"
+},
+{
+"id": "jefferson_curl",
+"name": "Jefferson curl",
+"pattern": "flex",
+"p": [
+"ischio-jambiers",
+"érecteurs du rachis"
+],
+"s": [
+"fessiers",
+"mollets"
+],
+"req": [
+"halteres"
+],
+"zones": [
+"dos"
+],
+"level": "intermediaire",
+"tier": 1,
+"illus": null,
+"machine": "Un haltère ou une kettlebell légère, une box",
+"uni": false,
+"tags": [
+"corps",
+"leger",
+"souplesse",
+"mobilite"
+],
+"reco": "Debout sur une box, un haltère léger dans les mains, tu enroules la colonne vertèbre par vertèbre jusqu'en bas, puis tu te déroules.",
+"why": "La souplesse sous charge légère : c'est la méthode la plus efficace pour gagner en flexion avant durablement et rendre le dos robuste en position arrondie, celle des portés et des relevés au sol. Charges très légères, progression lente : c'est un exercice de souplesse, pas de force.",
+"target": "Ischio-jambiers, chaîne postérieure, mobilité de toute la colonne",
+"exec": "Jambes tendues, menton rentré. Enroule depuis la nuque, vertèbre après vertèbre, l'haltère descend le long des jambes jusqu'au-delà des pieds. Tiens 2 s en bas, déroule depuis le bassin. Tempo très lent (5 s de descente). Commence à 5 kg et n'ajoute que 1 kg par cycle.",
+"seek": "Un enroulement progressif et régulier, l'étirement derrière les cuisses, jamais de douleur vive dans le dos."
+},
+{
+"id": "cossack_squat",
+"name": "Squat cosaque",
+"pattern": "flex",
+"p": [
+"adducteurs",
+"hanches"
+],
+"s": [
+"quadriceps",
+"fessiers"
+],
+"req": [
+"corps"
+],
+"zones": [
+"genou",
+"hanche"
+],
+"level": "debutant",
+"tier": 1,
+"illus": null,
+"machine": "",
+"uni": true,
+"tags": [
+"corps",
+"leger",
+"souplesse",
+"mobilite",
+"jambes"
+],
+"reco": "Jambes très écartées, tu descends tout le poids sur une jambe en pliant le genou, l'autre jambe restant tendue sur le côté, pied pointé vers le haut.",
+"why": "Mobilité d'adducteurs et force unilatérale dans le même geste : il prépare l'écart facial et renforce le genou dans les positions latérales, celles que le sport impose et que la salle ignore.",
+"target": "Adducteurs de la jambe tendue, quadriceps et fessier de la jambe pliée, cheville",
+"exec": "Pieds parallèles, très écartés. Descends sur une jambe en gardant le talon au sol et le dos droit, l'autre jambe tendue, orteils vers le plafond. Remonte et passe de l'autre côté sans te relever complètement. Tiens une petite charge devant toi pour l'équilibre si besoin.",
+"seek": "Le talon d'appui qui reste au sol, la descente de plus en plus basse, l'étirement à l'intérieur de la jambe tendue."
 }
 ]

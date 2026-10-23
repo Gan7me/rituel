@@ -57,7 +57,8 @@ function score(e, ctx) {
   if (goal === 'force' && tags.includes('barre')) s += 6;
   if (goal === 'masse' && tags.includes('machine') && role !== 'main') s += 6;
   if (goal === 'masse' && e.uni && role === 'acc') s += 2;
-  if (goal === 'corps' && tags.includes('corps')) s += 14;
+  const lowerPat = ['squat', 'hinge', 'lunge', 'kneeflex', 'kneeext', 'calf'].includes(e.pattern);
+  if (goal === 'corps' && tags.includes('corps') && !lowerPat) s += 14; // objectif poids du corps : le biais ne concerne que le haut du corps, les jambes exploitent le parc
   if (goal === 'sante' && (tags.includes('machine') || e.tier === 3)) s += 6;
   if (goal === 'sante' && tags.includes('lourd')) s -= 8;
   if (goal === 'perf' && (tags.includes('explosif') || tags.includes('lourd'))) s += 6;
@@ -66,7 +67,7 @@ function score(e, ctx) {
   if (likes.includes('tractions') && tags.includes('tractions')) s += 8;
   if (likes.includes('explosif') && tags.includes('explosif')) s += 6;
   if (likes.includes('bras') && (e.pattern === 'biceps' || e.pattern === 'triceps') && e.tier === 3) s += 2;
-  if (gym && tags.includes('leger') && goal !== 'corps') s -= role === 'acc' ? 14 : 22; // en salle, un exercice sans matériel n'exploite pas le parc
+  if (gym && tags.includes('leger') && (goal !== 'corps' || lowerPat)) s -= role === 'acc' ? 14 : 22; // en salle, un exercice sans matériel n'exploite pas le parc
   if (tags.includes('niche')) s -= 10; // utile en complément, jamais par défaut
   if (e.src === 'photo') s -= 6; // fiche issue de la base étendue : les fiches éditoriales restent prioritaires à qualité égale
   if (!gym && goal !== 'corps' && tags.includes('leger') && role !== 'acc') s -= 4;
@@ -74,9 +75,11 @@ function score(e, ctx) {
   if (level === 'debutant' && tags.includes('barre')) s -= 6;
   if ((level === 'confirme' || level === 'avance') && e.tier === 1 && role === 'main') s += 4;
   if (soft.some(z => (e.zones || []).includes(z))) s -= 12; // zone fragile : on préfère un exercice qui ne la charge pas
-  if (usedWeek.has(e.id)) s -= role === 'main' ? 6 : 14; // variété dans la semaine, un principal peut revenir, un accessoire ne revient pas trois fois
+  if (usedWeek.has(e.id)) s -= ['balance', 'skill', 'flex'].includes(e.pattern) ? 40 : role === 'main' ? 6 : 14; // une discipline tourne sur ses variantes dans la semaine // variété dans la semaine, un principal peut revenir, un accessoire ne revient pas trois fois
   if (usedSession.has(e.id)) s -= 100; // jamais deux fois dans la même séance
+  if (['balance', 'skill', 'flex'].includes(e.pattern)) { const L = ['debutant', 'intermediaire', 'confirme', 'avance']; const d = Math.abs(L.indexOf(e.level || 'debutant') - Math.min(2, L.indexOf(level || 'intermediaire'))); s += d === 0 ? 20 : d === 1 ? 6 : -10; } // discipline : la progression du niveau de l'athlète, ni trop facile ni hors de portée
   if (ctx.pullMode === 'heavy' && e.pattern === 'vpull' && e.id === 'weighted_pullup') s += 25; // séance « lourd » : tractions lestées
+  if (ctx.pullMode === 'heavy' && e.pattern === 'vpull' && (ctx.pullMax || 0) >= 12) { if (e.id === 'weighted_pullup') s += 40; else if (['pullup', 'chinup'].includes(e.id)) s -= 30; } // à 12 tractions et plus, 3-5 répétitions au poids du corps ne servent à rien : lest obligatoire
   if (ctx.pullMode === 'volume' && e.pattern === 'vpull') { if (e.id === 'weighted_pullup') s -= 40; if (['pullup', 'chinup', 'neutral_pullup'].includes(e.id)) s += 18; } // séance « volume » : tractions au poids du corps, séries longues
   if (ctx.goalPull && e.id === 'upright_row') s -= 60; // épaule déjà très sollicitée par les tractions : pas de tirage menton
   if (ctx.second === 'fessiers' && ['hip_thrust', 'hip_thrust_m', 'glute_bridge'].includes(e.id) && role !== 'acc') s += 16; // fessiers : le hip thrust prend la tête d'une séance bas du corps
@@ -140,7 +143,7 @@ function selectExercises(plan, profile, seedStr) {
         let cands = all.filter(e => e.src !== 'photo' || (plan.want || []).includes(e.id));
         if (!cands.length) cands = all;
         if (!cands.length) continue;
-        const ctx = { pullMode: sl.pullMode || null, goalPull: !!plan.goalPull, role: sl.role, goal: plan.goal, level: plan.level, likes, soft, usedWeek, usedSession, seed, gym, second: plan.second || null, skills: plan.skills || sp.skills || [], age: plan.age || Number(p.age) || 0, flags: plan.flags || {}, favor: plan.favor || [], avoid: plan.avoid || [], want: plan.want || [] };
+        const ctx = { pullMode: sl.pullMode || null, pullMax: plan.pullMax || 0, goalPull: !!plan.goalPull, role: sl.role, goal: plan.goal, level: plan.level, likes, soft, usedWeek, usedSession, seed, gym, second: plan.second || null, skills: plan.skills || sp.skills || [], age: plan.age || Number(p.age) || 0, flags: plan.flags || {}, favor: plan.favor || [], avoid: plan.avoid || [], want: plan.want || [] };
         cands.sort((a, b) => score(b, ctx) - score(a, ctx));
         picked = cands[0]; alt = cands.find(c => c.id !== picked.id && !usedSession.has(c.id)) || null; usedPattern = pat; break;
       }
@@ -149,7 +152,7 @@ function selectExercises(plan, profile, seedStr) {
       sl.ex = picked; sl.alt = alt; sl.usedPattern = usedPattern;
       if (rehabOk(picked, sp.zones)) { sl.soft = true; sl.rehab = true; const lo = parseInt(String(sl.reps || '').split('-')[0]) || 0; if (lo < 8) { sl.reps = '8-12'; sl.restSec = Math.min(sl.restSec || 90, 90); } if (Array.isArray(sl.rir)) sl.rir = sl.rir.map((r, i) => i === sl.rir.length - 1 ? r : Math.max(r, 2)); } // compatible douleur : amplitude maîtrisée, charge modérée, jamais près de l'échec
       // un exercice sans charge (pont fessier, pompes, gainage) ne se prescrit pas en 3-5 répétitions : dose en répétitions, sauf tractions et dips qui se lestent
-      if ((picked.tags || []).includes('leger') && !(picked.tags || []).includes('tractions') && !/dips|traction|pull/i.test(picked.name) && !picked.timed && sl.reps && /^\d+-\d+$/.test(sl.reps) && Number(sl.reps.split('-')[1]) < 10) { sl.reps = '10-15'; sl.restSec = Math.min(sl.restSec || 90, 90); }
+      if ((picked.tags || []).includes('leger') && !(picked.tags || []).includes('tractions') && !(picked.tags || []).includes('calisthenie') && !/dips|traction|pull/i.test(picked.name) && !picked.timed && sl.reps && /^\d+-\d+$/.test(sl.reps) && Number(sl.reps.split('-')[1]) < 10) { sl.reps = '10-15'; sl.restSec = Math.min(sl.restSec || 90, 90); }
       usedSession.add(picked.id); usedWeek.add(picked.id);
     });
   });

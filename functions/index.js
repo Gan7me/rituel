@@ -49,7 +49,7 @@ function specLines(p) {
 }
 function systemFor(profile, program) {
   const p = profile || {};
-  const GOAL_LABELS = { force: 'force maximale', masse: 'prise de muscle', seche: 'sécher et se dessiner', endurance: 'endurance musculaire', puissance: 'puissance et vitesse', tractions: 'nombre de tractions', jambes: 'rattraper les jambes', bras: 'bras et pectoraux', sante: 'santé, mobilité, dos', perf: 'performance sportive ou opérationnelle', perte: 'perdre du poids (gras) en gardant le muscle', fessiers: 'fessiers et bas du corps (galbe, force)', silhouette: 'tonifier, silhouette harmonieuse', cardio: 'souffle et condition physique' };
+  const GOAL_LABELS = { force: 'force maximale', masse: 'prise de muscle', seche: 'sécher et se dessiner', endurance: 'endurance musculaire', puissance: 'puissance et vitesse', tractions: 'nombre de tractions', jambes: 'rattraper les jambes', bras: 'bras et pectoraux', sante: 'santé, mobilité, dos', perf: 'performance sportive ou opérationnelle', perte: 'perdre du poids (gras) en gardant le muscle', fessiers: 'fessiers et bas du corps (galbe, force)', silhouette: 'tonifier, silhouette harmonieuse', cardio: 'souffle et condition physique', equilibre: 'équilibre et poirier (handstand)', calisthenie: 'figures de force au poids du corps (levers, L-sit, muscle-up)', souplesse: 'souplesse et étirements' };
   const goals = (p.goals || []).map(g => GOAL_LABELS[g] || g).join(', ');
   const goalRules = { perte: 'Objectif perte de poids : le programme reste un entraînement de force (le muscle protège le métabolisme), avec des circuits ou finishers métaboliques courts, des pas quotidiens et un déficit calorique modéré expliqué dans le cycle ; tu suis la tendance du poids sur 2 à 4 semaines, jamais une pesée isolée, et tu ne fais jamais de remarque sur l\'apparence.', fessiers: 'Objectif fessiers : hip thrust, fentes, soulevé de terre roumain, abduction, et volume hebdomadaire élevé sur les fessiers (12 à 20 séries), le reste du corps en entretien équilibré.', silhouette: 'Objectif silhouette : corps entier équilibré, hypertrophie modérée, amplitude complète, pas de spécialisation extrême.', cardio: 'Objectif souffle : deux blocs cardio par semaine (intervalles courts et zone 2) intégrés au plan, en plus de la force.', sante: 'Objectif santé : amplitudes contrôlées, pas de charge maximale, travail postural et mobilité intégrés, progression lente.' };
   const rules = (p.goals || []).map(g => goalRules[g]).filter(Boolean).join(' ');
@@ -508,11 +508,15 @@ const PATTERNS = {
   olympic: { label: 'haltérophilie (clean, snatch, jerk, push press)', muscle: 'corps entier, puissance', gym: 'hang clean, push press, power snatch', home: 'clean haltères, push press haltères', body: 'burpee sauté' },
   plyo: { label: 'pliométrie (sauts, bonds)', muscle: 'puissance des jambes', gym: 'box jump, saut en longueur', home: 'squat sauté, fentes sautées', body: 'squat sauté, bonds' },
   mobility: { label: 'mobilité et étirement', muscle: 'amplitude articulaire', gym: 'étirements ciblés', home: 'étirements ciblés', body: 'étirements ciblés' },
-  neck: { label: 'cou', muscle: 'fléchisseurs et extenseurs du cou', gym: 'machine à cou, harnais', home: 'isométrie contre la main', body: 'isométrie contre la main' }
+  neck: { label: 'cou', muscle: 'fléchisseurs et extenseurs du cou', gym: 'machine à cou, harnais', home: 'isométrie contre la main', body: 'isométrie contre la main' },
+  // disciplines (objectif secondaire) : équilibre, force au poids du corps, souplesse. Placées frais (équilibre, figures) ou en fin de séance (souplesse).
+  balance: { label: 'équilibre et poirier (handstand)', muscle: 'épaules, gainage, proprioception', gym: 'poirier au mur, montées, corbeau', home: 'poirier au mur, corbeau', body: 'poirier au mur, corbeau, unipodal' },
+  skill: { label: 'figure de force au poids du corps (levers, L-sit, muscle-up, pistol)', muscle: 'force relative, gainage', gym: 'front lever, L-sit, archer, muscle-up négatif', home: 'hollow, L-sit, tuck planche', body: 'hollow, L-sit, pistol' },
+  flex: { label: 'souplesse et étirements (postures tenues)', muscle: 'amplitude articulaire', gym: 'pancake, écarts, pont, squat profond', home: 'pancake, écarts, pont', body: 'pancake, écarts, pont, pigeon' }
 };
 // Exclusions par zone à ménager : opéré ou douloureux → le schéma est retiré et remplacé ; fragile → charge et amplitude réduites (consigne).
 const ZONE_RULES = { genou: ['squat', 'lunge', 'kneeext', 'plyo'], epaule: ['vpush', 'vpull', 'latdelt', 'olympic'], dos: ['hinge', 'olympic'], coude: ['biceps', 'triceps'], poignet: ['hpush', 'olympic'], hanche: ['lunge'], cheville: ['calf', 'lunge', 'plyo'], cou: ['vpush', 'neck'] };
-const ZONE_SUBS = { squat: 'hinge', lunge: 'kneeflex', kneeext: 'kneeflex', vpush: 'hpush', vpull: 'hpull', latdelt: 'reardelt', hinge: 'squat', biceps: 'hpull', triceps: 'hpush', hpush: 'hpull', calf: 'core', olympic: 'hinge', plyo: 'squat', neck: 'core', mobility: 'core' };
+const ZONE_SUBS = { balance: 'core', skill: 'core', flex: 'mobility', squat: 'hinge', lunge: 'kneeflex', kneeext: 'kneeflex', vpush: 'hpush', vpull: 'hpull', latdelt: 'reardelt', hinge: 'squat', biceps: 'hpull', triceps: 'hpush', hpush: 'hpull', calf: 'core', olympic: 'hinge', plyo: 'squat', neck: 'core', mobility: 'core' };
 // Modèles de séance par nombre de jours : liste de schémas, le premier est l'exercice principal (★).
 const SPLITS = {
   2: [['Corps entier A', ['squat', 'hpush', 'hpull', 'hinge', 'core']], ['Corps entier B', ['hinge', 'vpull', 'vpush', 'lunge', 'core']]],
@@ -553,9 +557,12 @@ function planStructure(profile, adjust) {
   if (bodyOnly) ['kneeext', 'carry'].forEach(x => banned.add(x));
   const refuse = s.refuse || []; const likes = s.likes || []; const second = s.goalSecond || (p.goals || [])[1] || null;
   const sports = (s.sports || []).map(x => String(x).toLowerCase()); const age = Number(p.age || s.age) || 0; const skills = s.skills || [];
+  const pullMax = Math.max(Number(adj.pullMax) || 0, Number((s.perf || {}).pullups) || 0);
   const maxEx = Math.max(4, Math.min(caps.exPerSession, Math.round(minutes / 10)));
   // Objectif secondaire : un schéma supplémentaire ou prioritaire là où il ne gêne pas le principal.
-  const SECOND = { tractions: { add: 'vpull', where: /Tirage|Haut|Corps/ }, jambes: { add: 'lunge', where: /Jambes|Bas|Corps/ }, bras: { add: 'biceps', add2: 'triceps', where: /Poussée|Tirage|Haut|Corps/ }, fessiers: { add: 'hinge', where: /Jambes|Bas|Corps/ }, seche: { add: 'cond', where: /./ }, cardio: { add: 'cond', where: /./ }, endurance: { add: 'cond', where: /./ }, puissance: { add: 'carry', where: /Jambes|Bas|Corps/ }, silhouette: { add: 'latdelt', where: /Poussée|Haut|Corps/ } }[second] || null;
+  const SECOND = { tractions: { add: 'vpull', where: /Tirage|Haut|Corps/ }, jambes: { add: 'lunge', where: /Jambes|Bas|Corps/ }, bras: { add: 'biceps', add2: 'triceps', where: /Poussée|Tirage|Haut|Corps/ }, fessiers: { add: 'hinge', where: /Jambes|Bas|Corps/ }, seche: { add: 'cond', where: /./ }, cardio: { add: 'cond', where: /./ }, endurance: { add: 'cond', where: /./ }, puissance: { add: 'carry', where: /Jambes|Bas|Corps/ }, silhouette: { add: 'latdelt', where: /Poussée|Haut|Corps/ },
+    equilibre: { add: 'balance', where: /./, first: true }, calisthenie: { add: 'skill', where: /Tirage|Haut|Corps|Poussée/, add2: 'vpull' }, souplesse: { add: 'flex', where: /./, last: true } }[second] || null;
+  const DISC = new Set(['balance', 'skill', 'flex']);
   // Autres pratiques : on protège ce que le sport fatigue déjà.
   const operational = /pompier|sapeur|militaire|gendarme|police|secours|garde|infirmi|urgenc|ambulanc/i.test(String(s.sportsNote || '') + ' ' + String(s.jobNote || '') + ' ' + String(p.sports || '') + ' ' + String(p.constraints || '') + ' ' + sports.join(' '));
   const physicalJob = s.activity === 'physique';
@@ -587,6 +594,7 @@ function planStructure(profile, adjust) {
     if (goalPull && !lowerOnly && !list.includes('vpull')) list.splice(name.includes('Poussée') ? 1 : 0, 0, 'vpull'); // objectif tractions : tirage vertical à chaque séance du haut, en tête des séances de tirage
     if (SECOND && SECOND.where.test(name)) {
       if (SECOND.add === 'cond') { if (!refuse.includes('cardio') && !list.includes('cond')) list.push('cond'); }
+      else if (DISC.has(SECOND.add)) { if (!list.includes(SECOND.add)) { if (SECOND.first) list.unshift(SECOND.add); else list.push(SECOND.add); } } // équilibre et figures : frais, en ouverture ; souplesse : en clôture
       else if (!banned.has(SECOND.add)) { if (list.includes(SECOND.add)) { const k = list.indexOf(SECOND.add); if (k > 1) { list.splice(k, 1); list.splice(1, 0, SECOND.add); } } else list.splice(Math.min(2, list.length), 0, SECOND.add); }
       if (SECOND.add2 && !banned.has(SECOND.add2) && !list.includes(SECOND.add2)) list.push(SECOND.add2);
     }
@@ -595,9 +603,9 @@ function planStructure(profile, adjust) {
       if (!lowerS && i === template.findIndex(([, pp]) => !pp.some(x => LOWER_PAT.has(x))) && !list.includes('cond') && !refuse.includes('cardio')) list.push('cond'); }
     if ((runner || cyclist) && goal !== 'force' && goal !== 'masse') { const k = list.indexOf('lunge'); if (k > 0 && list.length > 4) list.splice(k, 1); } // jambes déjà très sollicitées : on retire l'unilatéral de volume
     // exercices voulus : leur schéma doit exister dans une séance de la bonne moitié du corps
-    wantPats.forEach((pt, wi) => { if (banned.has(pt) || list.includes(pt)) return; const isLower = LOWER_PAT.has(pt); const sessLower = pats.some(x => LOWER_PAT.has(x)); const sessUpper = pats.some(x => !LOWER_PAT.has(x) && x !== 'core' && x !== 'cond' && x !== 'carry'); if ((isLower && sessLower) || (!isLower && sessUpper) || (!sessLower && !sessUpper)) { if ((wi + i) % 2 === 0 || n === 1) list.splice(Math.min(2, list.length), 0, pt); } });
+    wantPats.forEach((pt, wi) => { if (banned.has(pt) || list.includes(pt)) return; const isLower = LOWER_PAT.has(pt); const sessLower = pats.some(x => LOWER_PAT.has(x)); const sessUpper = pats.some(x => !LOWER_PAT.has(x) && x !== 'core' && x !== 'cond' && x !== 'carry' && !DISC.has(x)); if ((isLower && sessLower) || (!isLower && sessUpper) || (!sessLower && !sessUpper)) { if ((wi + i) % 2 === 0 || n === 1) list.splice(Math.min(2, list.length), 0, pt); } });
     if (s.coreEnd) { const k = list.indexOf('core'); if (k >= 0) list.splice(k, 1); list.push('core'); }
-    if (list.length > maxEx) { const keepCond = list.includes('cond'), keepCore = s.coreEnd && list.includes('core'); list = list.filter(x => x !== 'cond' && !(keepCore && x === 'core')).slice(0, maxEx - (keepCond ? 1 : 0) - (keepCore ? 1 : 0)); if (keepCore) list.push('core'); if (keepCond) list.push('cond'); }
+    if (list.length > maxEx) { const keepCond = list.includes('cond'), keepCore = s.coreEnd && list.includes('core'); const disc = list.filter(x => DISC.has(x)); list = list.filter(x => x !== 'cond' && !DISC.has(x) && !(keepCore && x === 'core')).slice(0, maxEx - (keepCond ? 1 : 0) - (keepCore ? 1 : 0) - disc.length); disc.forEach(x => { if (x === 'flex') list.push(x); else list.unshift(x); }); if (keepCore) list.push('core'); if (keepCond) list.push('cond'); } // la discipline demandée n'est jamais sacrifiée au nombre d'exercices
     // jamais moins de 4 emplacements : on complète avec des schémas sûrs non exclus
     for (const extra of ['core', 'kneeflex', 'hinge', 'hpull', 'calf', 'carry', 'reardelt']) { if (list.length >= 4) break; if (!list.includes(extra) && !banned.has(extra)) list.push(extra); }
     // séance remplie au niveau de l'athlète et à son temps : un confirmé à 75 min ne fait pas 5 exercices
@@ -609,14 +617,17 @@ function planStructure(profile, adjust) {
       for (const extra of fill) { if (list.length >= target) break; if (banned.has(extra)) continue; const c = list.filter(x => x === extra).length; if (c === 0 || (c === 1 && dup.has(extra) && (extra !== 'vpull' || goalPull))) { const k = list.indexOf('core'); if (s.coreEnd && k >= 0 && extra !== 'core') list.splice(k, 0, extra); else if (extra === 'cond') list.push(extra); else { const kc = list.indexOf('cond'); list.splice(kc >= 0 ? kc : list.length, 0, extra); } } }
     }
     let upperIdx = -1; if (goalPull && !lowerOnly) { upperIdx = upperCount++; }
-    const slots = list.map((pt, k) => { const role = k === 0 ? 'main' : k === 1 ? 'second' : 'acc'; const d = dose(goal, role, level);
-      let pullMode = null; if (goalPull && pt === 'vpull' && upperIdx >= 0) { const firstPull = list.indexOf('vpull') === k; pullMode = firstPull ? (upperIdx % 2 === 0 ? 'heavy' : 'volume') : (upperIdx % 2 === 0 ? 'volume' : 'heavy'); if (pullMode === 'heavy') { d.sets = Math.max(d.sets, 5); d.reps = '3-5'; d.restSec = Math.max(d.restSec, 150); } else { d.sets = Math.max(3, Math.min(d.sets, 4)); d.reps = level === 'debutant' ? '5-8' : '8-15'; d.rir = d.rir.map(r => Math.max(r, 2)); d.restSec = Math.min(d.restSec, 90); } }
-      if (age >= 50) { d.rir = d.rir.map(r => Math.max(r, 2)); d.restSec = Math.round(d.restSec * 1.15); } if (second === 'endurance' && role !== 'main') { d.reps = role === 'second' ? '12-15' : '15-20'; d.restSec = Math.min(d.restSec, 60); } if (adj.volume && adj.volume !== 1) d.sets = Math.max(2, Math.round(d.sets * adj.volume)); if (adj.rir) d.rir = d.rir.map((r, i) => i === d.rir.length - 1 ? r : Math.min(4, Math.max(0, r + adj.rir))); return Object.assign({ pattern: pt, role, star: k < 2, soft: soft.has(pt), pullMode }, d); });
+    const slots = list.map((pt, k) => { const kk = list.slice(0, k).filter(x => !DISC.has(x)).length; const role = DISC.has(pt) ? 'acc' : kk === 0 ? 'main' : kk === 1 ? 'second' : 'acc'; const d = dose(goal, role, level);
+      if (DISC.has(pt)) { const D = { balance: [4, '6-10', 90, 'frais, en ouverture : l\'équilibre s\'apprend sans fatigue, par tentatives courtes et nombreuses'], skill: [4, '3-6', 120, 'figure : tenues ou répétitions courtes, loin de l\'échec, la qualité de position avant la durée'], flex: [2, '6-8', 30, 'souplesse : tenue longue, respiration lente, intensité 6/10, on gagne par le relâchement'] }[pt]; d.sets = D[0]; d.reps = D[1]; d.restSec = D[2]; d.tempo = ''; d.rir = pt === 'flex' ? [3, 3, 3, 4] : [2, 2, 2, 3]; d.rule = D[3]; }
+      let pullMode = null; if (goalPull && pt === 'vpull' && upperIdx >= 0) { const firstPull = list.indexOf('vpull') === k; pullMode = firstPull ? (upperIdx % 2 === 0 ? 'heavy' : 'volume') : (upperIdx % 2 === 0 ? 'volume' : 'heavy'); if (pullMode === 'heavy') { d.sets = Math.max(d.sets, 5); d.reps = '3-5'; d.restSec = Math.max(d.restSec, 150); } else { d.sets = Math.max(3, Math.min(d.sets, 4)); d.reps = level === 'debutant' ? '5-8' : '8-15'; d.rir = d.rir.map(r => Math.max(r, 2)); d.restSec = Math.min(d.restSec, 90);
+          // volume réglé sur le maximum mesuré (test ou entretien) : séries à 40-60 % du max, jamais une fourchette en dessous du niveau réel
+          if (pullMax >= 8) { d.reps = `${Math.max(5, Math.round(pullMax * 0.4))}-${Math.max(8, Math.round(pullMax * 0.6))}`; d.sets = pullMax >= 20 ? 4 : d.sets; } } }
+      if (age >= 50) { d.rir = d.rir.map(r => Math.max(r, 2)); d.restSec = Math.round(d.restSec * 1.15); } if (second === 'endurance' && role !== 'main') { d.reps = role === 'second' ? '12-15' : '15-20'; d.restSec = Math.min(d.restSec, 60); } if (adj.volume && adj.volume !== 1) d.sets = Math.max(2, Math.round(d.sets * adj.volume)); if (adj.rir) d.rir = d.rir.map((r, i) => i === d.rir.length - 1 ? r : Math.min(4, Math.max(0, r + adj.rir))); return Object.assign({ pattern: pt, role, star: kk < 2 && !DISC.has(pt), soft: soft.has(pt), pullMode }, d); });
     // borne de volume par niveau
     let total = slots.reduce((a, x) => a + x.sets, 0); while (total > caps.setsPerSession) { const big = slots.reduce((m, x) => x.sets > m.sets ? x : m, slots[0]); if (big.sets <= 2) break; big.sets--; total--; }
     const dayIdx = days[i]; return { id: 's' + (i + 1), day: (dayIdx + 1) % 7, dayName: DAY_FR[dayIdx], name: goal === 'perte' ? name.replace('force', 'densité') : name, slots };
   });
-  return { goal, second, level, days, minutes, gym, bodyOnly, banned: [...banned], soft: [...soft], sessions, caps, age, skills, sports, flags: { runner, climber, swimmer, contact, cyclist, operational, physicalJob, sedentary: s.activity === 'sedentaire' }, favor: (adj.favor || []).concat(wantIds), avoid: adj.avoid || [], want: wantIds, adjust: adj, goalPull: goal === 'corps' || second === 'tractions' || likes.includes('tractions') };
+  return { goal, second, level, days, minutes, gym, bodyOnly, banned: [...banned], soft: [...soft], sessions, caps, age, skills, sports, pullMax, flags: { runner, climber, swimmer, contact, cyclist, operational, physicalJob, sedentary: s.activity === 'sedentaire' }, favor: (adj.favor || []).concat(wantIds), avoid: adj.avoid || [], want: wantIds, adjust: adj, goalPull: goal === 'corps' || second === 'tractions' || likes.includes('tractions') };
 }
 // Rendu du programme déjà construit pour le coach : il rédige, il ne choisit pas. Les exercices viennent de la bibliothèque.
 function skeletonText(plan, profile) {
@@ -665,6 +676,9 @@ function buildPromise(plan, profile) {
   if (second === 'jambes') out.secondary = { metric: 'e1rm_legs', label: 'Charges jambes', target: '+12 %', measure: 'charges sur le squat, la presse ou le soulevé de terre' };
   if (second === 'bras') out.secondary = { metric: 'arm', label: 'Bras', target: '+1 cm de tour de bras', measure: 'tour de bras contracté, même endroit, chaque fin de cycle' };
   if (second === 'seche') out.secondary = { metric: 'bw', label: 'Sécher', target: '−2 %', measure: 'poids hebdomadaire à jeun' };
+  if (second === 'equilibre') out.secondary = { metric: 'hold', label: 'Poirier', target: 'tenue au mur ×2, premières secondes en libre', measure: 'la meilleure tenue notée à chaque séance (secondes)' };
+  if (second === 'calisthenie') out.secondary = { metric: 'hold', label: 'Figures au poids du corps', target: 'un palier de plus par figure', measure: 'les tenues et répétitions notées sur les figures' };
+  if (second === 'souplesse') out.secondary = { metric: 'rom', label: 'Souplesse', target: 'postures tenues plus bas, sans douleur', measure: 'une photo ou une mesure (distance au sol) à chaque fin de cycle' };
   if (second === 'endurance' || second === 'cardio') out.secondary = { metric: 'cond', label: 'Souffle', target: 'finisher complété à chaque séance', measure: 'temps ou tours du finisher noté dans la séance' };
   out.baselineRule = 'Semaine 1 = calibrage : tout noter, ce sont tes valeurs de départ. Le coach compare à chaque fin de cycle et ajuste le cycle suivant.';
   return out;
@@ -726,7 +740,7 @@ const COACH_TEXT_SCHEMA = `Réponds UNIQUEMENT avec un objet JSON valide (pas de
 function goalPatterns(profile) {
   const p = profile || {}; const s = p.spec || {}; const g = s.goalMain || (p.goals || [])[0] || ''; const g2 = s.goalSecond || (p.goals || [])[1] || ''; const likes = s.likes || [];
   const out = new Set();
-  [g, g2].forEach(x => { if (x === 'corps' || x === 'tractions') out.add('vpull'); if (x === 'jambes') { out.add('squat'); out.add('hinge'); } if (x === 'bras') { out.add('biceps'); out.add('triceps'); } if (x === 'fessiers') out.add('hinge'); });
+  [g, g2].forEach(x => { if (x === 'corps' || x === 'tractions') out.add('vpull'); if (x === 'jambes') { out.add('squat'); out.add('hinge'); } if (x === 'bras') { out.add('biceps'); out.add('triceps'); } if (x === 'fessiers') out.add('hinge'); if (x === 'equilibre') out.add('balance'); if (x === 'calisthenie') out.add('skill'); if (x === 'souplesse') out.add('flex'); });
   if (likes.includes('tractions')) out.add('vpull');
   return [...out];
 }
@@ -772,6 +786,31 @@ function reviewCycle(prev, logs, checkins, profile, extra) {
   Object.entries(pain).forEach(([z, n]) => { const k = zoneKey(z); if (!k) return; const sev = n >= 4 ? 'douleur' : 'fragile'; adjust.zones.push({ zone: k, sev }); adjust.reasons.push(`${z} signalé ${n} fois : zone ${sev === 'douleur' ? 'douloureuse, exercices à risque retirés' : 'fragile, charges modérées'}`); });
   const summary = `Cycle précédent : ${done}/${planned} séances (${adherence} %)${progress != null ? `, ${progress >= 0 ? '+' : ''}${progress} % sur les prioritaires` : ', charges non mesurées'}${readiness != null ? `, forme moyenne ${readiness}/5` : ''}${Object.keys(pain).length ? `, douleurs : ${Object.entries(pain).map(([z, n]) => z + ' ×' + n).join(', ')}` : ''}. ` + (adjust.reasons.length ? 'Réglages : ' + adjust.reasons.join(' ; ') + '.' : 'Réglages : plan reconduit avec progression normale.');
   return { adherence, done, planned, progress, readiness, pain, prs: Object.values(prById).reduce((a, b) => a + b, 0), rirAvg, failShare, setsRated: rirs.length, skipped, eased, tests, weight, adjust, summary };
+}
+/* Références de départ du cycle suivant : pour chaque fiche (exId) déjà travaillée, la meilleure série récente hors semaine de décharge.
+   C'est ce qui fait qu'un nouveau cycle repart de ce qui a été fait, et non de zéro. Charge : meilleure estimation du maximum (e1RM) ; sans charge : meilleure série en répétitions. */
+function buildRefs(prev, logs, historyCycles) {
+  const idTo = {}; const deloadWeeks = {};
+  const add = (cyc, from, to, weeks) => { Object.entries(cyc || {}).forEach(([id, m]) => { if (m && m.exId) idTo[id] = (idTo[id] || []).concat([{ exId: m.exId, from, to }]); }); if (from && weeks) deloadWeeks[from] = { from, to, weeks }; };
+  (historyCycles || []).forEach(c => add(c.exMap, c.from, c.to, c.weeks));
+  if (prev) { const m = {}; (prev.sessions || []).forEach(se => (se.exercises || []).forEach(e => { m[e.id] = { exId: e.exId }; })); add(m, prev.weeks && prev.weeks[0] ? prev.weeks[0].from : null, prev.weeks && prev.weeks.length ? prev.weeks[prev.weeks.length - 1].to : null, (prev.weeks || []).length); }
+  const e1 = (w, r) => r === 1 ? w : w * (1 + r / 30);
+  const refs = {};
+  const cutoff = new Date(Date.now() - 120 * 86400000).toISOString().slice(0, 10);
+  (logs || []).forEach(l => {
+    if (!l || !l.date || l.date < cutoff) return;
+    // décharge : dernière semaine d'un cycle, on ne repart pas de ces charges réduites
+    const cyc = Object.values(deloadWeeks).find(c => c.from && c.to && l.date >= c.from && l.date <= c.to); const isDeload = cyc && Number(l.week) === cyc.weeks;
+    Object.entries(l.sets || {}).forEach(([id, arr]) => {
+      const exId = (l.exIds && l.exIds[id]) || ((idTo[id] || []).find(x => (!x.from || l.date >= x.from) && (!x.to || l.date <= x.to)) || {}).exId; if (!exId) return;
+      (arr || []).forEach(st => { if (!st || !st.done || !st.r) return; const w = Number(st.w) || 0; const v = w ? e1(w, Number(st.r)) : Number(st.r);
+        const cur = refs[exId]; const cand = { w, r: Number(st.r), e1: w ? Math.round(v * 10) / 10 : null, reps: w ? null : Number(st.r), date: l.date, deload: !!isDeload };
+        // la référence = la dernière séance faite hors décharge, meilleure série de cette séance
+        if (!cur || (cur.deload && !isDeload) || (cur.deload === !!isDeload && (l.date > cur.date || (l.date === cur.date && v > cur.v)))) refs[exId] = Object.assign(cand, { v }); });
+    });
+  });
+  Object.values(refs).forEach(r => { delete r.v; });
+  return refs;
 }
 // Conception du cycle : durée (3 à 6 semaines) et orientation (accumulation, intensification, réalisation), décidées par le profil et par ce qui vient d'être vécu, avec les raisons écrites.
 function cycleDesign(profile, review, cycleN) {
@@ -828,18 +867,44 @@ function repairProgram(prog, profile, plan) {
   if (notes.length) { prog.engine = prog.engine || {}; prog.engine.repairs = notes; }
   return prog;
 }
+/* Continuité entre cycles : chaque exercice déjà travaillé reçoit sa référence de départ (dernière séance hors décharge) ;
+   sans charge, la fourchette de répétitions repart de ce qui a été atteint ; la semaine 1 devient une reprise, pas un recalibrage. */
+function applyRefs(prog, refs, cycleN) {
+  const R = refs || {}; let carried = 0;
+  prog.sessions.forEach(se => se.exercises.forEach(e => {
+    const r = e.exId && R[e.exId]; if (!r || e.timed || e.pattern === 'cond') return;
+    e.ref = { w: r.w || 0, r: r.r, e1: r.e1 || null, reps: r.reps || null, date: r.date };
+    const d = r.date ? new Date(r.date + 'T12:00:00').toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' }) : '';
+    if (r.w) e.startNote = `Repart de ${r.w} kg × ${r.r}${d ? ' (' + d + ')' : ''} : même charge en semaine 1, puis progression.`;
+    else if (r.reps && /^\d+-\d+$/.test(String(e.reps))) {
+      const [lo, hi] = String(e.reps).split('-').map(Number);
+      if (r.reps >= hi && hi >= 8 && !/lest/i.test(e.name)) { const nlo = Math.max(lo, r.reps - 4), nhi = r.reps + 2; e.reps = `${nlo}-${nhi}`; e.setsText = `${e.sets} × ${e.reps}`; }
+      e.startNote = `Dernière fois : ${r.reps} répétitions${d ? ' (' + d + ')' : ''}. La fourchette repart de là.`;
+    }
+    carried++;
+  }));
+  prog.refsCarried = carried;
+  if (cycleN > 1 && prog.weeks && prog.weeks[0]) {
+    prog.weeks[0].label = 'S1 reprise'; prog.weeks[0].rirNote = 'RIR 2 · tu repars de tes dernières références, pas de recalibrage' + (carried ? ` (${carried} exercices repris avec leur charge)` : '');
+    if (prog.promise) prog.promise.baselineRule = 'Semaine 1 = reprise : tu repars des charges et répétitions du cycle précédent, la progression continue sans recalibrage.';
+  }
+  return prog;
+}
 async function buildProgram(profile, apiKey, model, seed, review) {
   // 1. Le moteur construit le programme complet, instantanément, sans dépendance : structure, exercices de la bibliothèque, textes de fiche, illustrations.
   const cycleN = review && review.done ? ((profile || {}).cycleCount || 2) : 1;
   const design = cycleDesign(profile, review, cycleN);
   const adj = Object.assign({ volume: 1, rir: 0, favor: [], avoid: [], zones: [], level: null, reasons: [] }, review && review.adjust ? review.adjust : {});
   adj.volume = Math.round(100 * (adj.volume || 1) * design.adjust.volume) / 100; adj.rir = (adj.rir || 0) + design.adjust.rir;
+  if (review && review.pullMax) adj.pullMax = review.pullMax;
   const plan = LIB.selectExercises(planStructure(profile, adj), profile, seed);
   const start = nextMonday();
   let prog = programFromPlan(plan, profile, start, design.weeks);
+  applyRefs(prog, review && review.refs, cycleN);
   prog.cycleDesign = { weeks: design.weeks, focus: design.focus, focusLabel: design.focusLabel, reasons: design.reasons, testAtEnd: !!design.adjust.test };
   prog.cycleName = String(prog.cycleName || 'Mésocycle').replace(/ · ([^·]+) · /, ' · $1 · ' + design.focusLabel + ' · ');
   prog.cycleReason = (review && review.done ? review.summary + ' ' : '') + 'Ce cycle : ' + design.reasons.join(' ; ') + '.';
+  if (prog.refsCarried) prog.cycleReason += ` Continuité : ${prog.refsCarried} exercices repartent de ta dernière séance (charges et répétitions), la semaine 1 est une reprise, pas un recalibrage.`;
   if (review) prog.cycleReview = review;
   const numberCycle = pg => { if (cycleN > 1) pg.cycleName = String(pg.cycleName || 'Mésocycle').replace(/^Mésocycle[^·]*/, 'Mésocycle ' + cycleN + ' ').replace(/\s+·/, ' ·').trim(); return pg; };
   numberCycle(prog);
@@ -880,7 +945,10 @@ async function generateProgramFor(uid, meta, apiKey, model) {
     let review = null;
     try {
       const prev = meta.program && meta.program.generatedAt ? meta.program : null;
-      if (prev) { const from = '2000-01-01'; const ls = await db.collection('users').doc(uid).collection('logs').where('date', '>=', from).get(); const cs = await db.collection('users').doc(uid).collection('checkins').get().catch(() => ({ docs: [] })); const ts = await db.collection('users').doc(uid).collection('tests').get().catch(() => ({ docs: [] })); const bs = await db.collection('users').doc(uid).collection('bw').get().catch(() => ({ docs: [] })); review = reviewCycle(prev, ls.docs.map(d => d.data()), cs.docs.map(d => d.data()), meta.profile, { tests: ts.docs.map(d => d.data()), bw: bs.docs.map(d => d.data()) }); if (review && review.done) meta.profile.cycleCount = (prev.cycleCount || 1) + 1; }
+      if (prev) { const from = '2000-01-01'; const ls = await db.collection('users').doc(uid).collection('logs').where('date', '>=', from).get(); const cs = await db.collection('users').doc(uid).collection('checkins').get().catch(() => ({ docs: [] })); const ts = await db.collection('users').doc(uid).collection('tests').get().catch(() => ({ docs: [] })); const bs = await db.collection('users').doc(uid).collection('bw').get().catch(() => ({ docs: [] })); const tests = ts.docs.map(d => d.data()); review = reviewCycle(prev, ls.docs.map(d => d.data()), cs.docs.map(d => d.data()), meta.profile, { tests, bw: bs.docs.map(d => d.data()) }); if (review && review.done) meta.profile.cycleCount = (prev.cycleCount || 1) + 1;
+        // continuité : références par fiche (dernière séance hors décharge) et meilleur test de tractions, transmis au cycle suivant
+        const hist = (await db.collection('users').doc(uid).collection('meta').doc('history').get().catch(() => null)); const hc = hist && hist.exists ? (hist.data().cycles || []) : [];
+        if (review) { review.refs = buildRefs(prev, ls.docs.map(d => d.data()), hc); const tm = tests.filter(t => t && t.reps).sort((a, b) => a.date < b.date ? 1 : -1); if (tm.length) review.pullMax = Math.max(Number(tm[0].reps) || 0, tm.length > 1 ? Number(tm[1].reps) || 0 : 0); } }
     } catch (e) { review = null; if (process.env.RITUEL_TEST === '1') console.error('review error', e); }
     try { prog = await buildProgram(meta.profile, apiKey, model, uid, review); if (meta.profile.cycleCount) prog.cycleCount = meta.profile.cycleCount; }
     catch (e) { await refundQuota(uid, 'program'); throw e; } // un échec ne consomme pas une génération
@@ -1160,4 +1228,4 @@ exports.dailyNudge = onSchedule({ schedule: '0 18 * * *', timeZone: 'Europe/Pari
 });
 
 // Banc d'essai local uniquement (jamais exposé en production) : accès au moteur pur pour tester des milliers de profils sans appel réseau.
-if (process.env.RITUEL_TEST === '1') exports._engine = { planStructure, programFromPlan, checkProgram, repairProgram, reviewCycle, goalPatterns, cycleDesign, LIB, LEVEL_CAPS };
+if (process.env.RITUEL_TEST === '1') exports._engine = { planStructure, programFromPlan, checkProgram, repairProgram, reviewCycle, goalPatterns, cycleDesign, buildRefs, applyRefs, LIB, LEVEL_CAPS };

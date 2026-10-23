@@ -18,7 +18,7 @@ function humanErr(e){ const c=(e&&e.code)||''; const m=(e&&e.message)||String(e|
   if(/network|Failed to fetch|internet/i.test(m)||!navigator.onLine) return 'Pas de réseau. Le coach a besoin d\'une connexion ; tes séries sont enregistrées et partiront toutes seules.';
   if(/invalid-argument/.test(c)) return 'Le serveur n\'a pas compris la demande (version de l\'app en retard ?). Recharge l\'application depuis Réglages.';
   return m; }
-const APP_VERSION='3.51.0';
+const APP_VERSION='3.52.0';
 const ADMIN_RE=/^(ganeme\.asloune@nexisafe\.com|gads@live\.fr)$/i;
 let PROGRAM={sessions:[]};
 let WEEKS = [
@@ -93,10 +93,19 @@ function touch(log){ log.updatedAt=Date.now(); if(log.date===todayISO()) log.wee
 
 
 // history of an exercise: [{date,week,sets:[{w,r,rir}]}] newest first
+// L'historique suit la fiche (exId), pas l'emplacement : la même traction, le même hack squat gardent leur passé d'un cycle à l'autre, même si l'identifiant de séance change.
+let _EPS=null,_EPS_AT=0; function epsCached(){ if(!_EPS||Date.now()-_EPS_AT>2000){ _EPS=programEpochs(); _EPS_AT=Date.now(); } return _EPS; }
 function history(exId){
-  return Object.values(S.logs).filter(l=>l.sets[exId]&&l.sets[exId].some(s=>s&&s.done)).map(l=>({date:l.date,week:l.week,sets:l.sets[exId].filter(s=>s&&s.done)})).sort((a,b)=>a.date<b.date?1:-1);
+  const ex=findEx(exId); const key=ex&&ex.exId?ex.exId:null; const eps=key?epsCached():null;
+  const out=[];
+  Object.values(S.logs).forEach(l=>{ const ep=eps?epochOf(eps,l.date):null; const isDeload=!!(ep&&ep.weeks&&Number(l.week)===ep.weeks&&ep.weeks>1);
+    Object.entries(l.sets||{}).forEach(([id,arr])=>{ const done=(arr||[]).filter(s=>s&&s.done); if(!done.length) return;
+      let same=id===exId; if(!same&&key){ const k=(l.exIds&&l.exIds[id])||(ep&&ep.exMap&&ep.exMap[id]&&ep.exMap[id].exId)||null; same=k===key; }
+      if(same) out.push({date:l.date,week:l.week,sets:done,deload:isDeload}); }); });
+  return out.sort((a,b)=>a.date<b.date?1:-1);
 }
-function lastRef(exId, date){ const h=history(exId).find(h=>h.date<date); if(h) return h; const ex=findEx(exId); const key=ex&&ex.exId?ex.exId:exId; const l=(S.loads||{})[key]; return l&&l.kg?{date:'',week:0,sets:[{w:l.kg,r:null,rir:null}],declared:true}:null; }
+// Référence de départ : la dernière séance faite hors décharge ; sinon ce que le programme a transmis du cycle précédent ; sinon la charge habituelle déclarée.
+function lastRef(exId, date){ const H=history(exId).filter(h=>h.date<date); const h=H.find(h=>!h.deload)||H[0]; if(h) return h; const ex=findEx(exId); if(ex&&ex.ref&&(ex.ref.w||ex.ref.reps)) return {date:ex.ref.date||'',week:0,sets:[{w:ex.ref.w||0,r:ex.ref.r||ex.ref.reps||null,rir:null}],carried:true}; const key=ex&&ex.exId?ex.exId:exId; const l=(S.loads||{})[key]; return l&&l.kg?{date:'',week:0,sets:[{w:l.kg,r:null,rir:null}],declared:true}:null; }
 function e1rm(w,r){ if(!w||!r) return 0; return r===1?w:w*(1+r/30); }
 function fmtSetsNice(sets){ return sets.map(s=>(s.w?s.w+'×':'')+(s.r??'?')+(s.rir!=null?' '+rirLabel(s.rir):'')).join(' · '); }
 function fmtSets(sets){ return sets.map(s=>(s.w?s.w+'×':'')+(s.r??'?')+(s.rir!=null?'@'+s.rir:'')).join(' · '); }
@@ -585,7 +594,7 @@ let GENERATING=false, ONB_STEP=null;
    (name, age, sex, height, weight, level, goals, days, minutes, gear, equipment, sports, constraints, experience)
    et une fiche structurée `spec` qui pilote les règles de construction et la consigne du coach. */
 const IV_GOALS=[['force','Être plus fort','Charges, barres, machines lourdes','🏋️'],['masse','Prendre du muscle','Volume, dessin, bras, pecs','💪'],['perte','Perdre du gras','En gardant le muscle','🔥'],['sante','Santé, dos, mobilité','Bouger mieux, sans douleur','🧘'],['perf','Performance sportive','Pour un sport ou un métier','🏃'],['corps','Poids du corps','Tractions, dips, gainage','🤸']];
-const IV_GOAL2=[['tractions','Plus de tractions'],['jambes','Rattraper les jambes'],['bras','Bras et pectoraux'],['fessiers','Fessiers'],['seche','Sécher, me dessiner'],['endurance','Endurance musculaire'],['puissance','Puissance, vitesse'],['cardio','Souffle'],['silhouette','Silhouette harmonieuse']];
+const IV_GOAL2=[['tractions','Plus de tractions'],['jambes','Rattraper les jambes'],['bras','Bras et pectoraux'],['fessiers','Fessiers'],['seche','Sécher, me dessiner'],['endurance','Endurance musculaire'],['puissance','Puissance, vitesse'],['cardio','Souffle'],['silhouette','Silhouette harmonieuse'],['equilibre','Équilibre, poirier'],['calisthenie','Figures au poids du corps'],['souplesse','Souplesse, étirements']];
 const IV_YEARS=[['0','Jamais'],['1','Moins d\'un an'],['2','1 à 3 ans'],['3','Plus de 3 ans']];
 const IV_SKILLS=[['pull10','10 tractions strictes'],['squat','Squat barre propre'],['dl','Soulevé de terre > mon poids'],['none','Aucun des trois']];
 const IV_PLACES=[['salle','Salle','🏢'],['maison','Maison','🏠'],['deux','Les deux','🔁']];
@@ -1386,7 +1395,7 @@ function renderSeance(){
     h+=`<div class="rx3"><div><b>${p.sets} × ${esc(p.reps)}</b><span>${ex.per?esc(ex.per):'séries'}</span></div>${p.rir!=null?`<div data-lex="rir"><b>RIR ${p.rir}</b><span>réserve</span></div>`:ex.mode==='emom'?`<div data-lex="emom"><b>EMOM</b><span>chaque minute</span></div>`:''}<div><b>${esc(p.restText)}</b><span>repos</span></div></div>`;
     if(o) h+=`<p class="coachline"><b>Coach</b> ${esc(o.change)}</p>`;
     let tgtW=null;
-    if(ref){ const top=ref.sets.find(s=>s.w)||ref.sets[0]; let tgt=''; if(top&&top.w&&wk>1&&wk<WEEKS.length){ const hi=parseInt(String(p.reps).split('-').pop()); const allHi=ref.sets.every(s=>s.r>=hi); const lowRir=ref.sets.some(s=>s.rir!=null&&s.rir<Math.max(0,(p.rir??1)-1)); if(allHi&&!lowRir){ tgtW=Math.round(top.w*1.025*2)/2; tgt=` → <span class="tgt">${tgtW} kg</span> <span class="why">+2,5 % : haut de fourchette atteint partout</span>`; } else if(lowRir){ tgt=` → <span class="tgt">même charge</span> <span class="why">RIR plus bas que prévu la dernière fois</span>`; } else tgt=` → <span class="tgt">+1 rep</span> <span class="why">fourchette pas encore atteinte</span>`; } if(wk>=WEEKS.length&&top&&top.w){ tgtW=Math.round(top.w*0.9*2)/2; tgt=` → <span class="tgt">décharge ${tgtW} kg</span> <span class="why">−10 %, on récupère</span>`; } const topS=ref.sets.find(x=>x.w)||ref.sets[0]; if(ref.declared) tgt=''; h+=`<p class="ref">${ref.declared?'Charge habituelle':'Dernier'} : <b>${ref.declared?topS.w+' kg':topS&&topS.w?topS.w+' kg × '+(topS.r??'?'):esc(fmtSets(ref.sets.slice(0,1)))}</b>${ref.sets.length>1?' <span class="muted">· '+ref.sets.length+' séries</span>':''}${tgt}</p>`; }
+    if(ref){ const top=ref.sets.find(s=>s.w)||ref.sets[0]; let tgt=''; if(top&&top.w&&wk>1&&wk<WEEKS.length){ const hi=parseInt(String(p.reps).split('-').pop()); const allHi=ref.sets.every(s=>s.r>=hi); const lowRir=ref.sets.some(s=>s.rir!=null&&s.rir<Math.max(0,(p.rir??1)-1)); if(allHi&&!lowRir){ tgtW=Math.round(top.w*1.025*2)/2; tgt=` → <span class="tgt">${tgtW} kg</span> <span class="why">+2,5 % : haut de fourchette atteint partout</span>`; } else if(lowRir){ tgt=` → <span class="tgt">même charge</span> <span class="why">RIR plus bas que prévu la dernière fois</span>`; } else tgt=` → <span class="tgt">+1 rep</span> <span class="why">fourchette pas encore atteinte</span>`; } if(wk>=WEEKS.length&&top&&top.w){ tgtW=Math.round(top.w*0.9*2)/2; tgt=` → <span class="tgt">décharge ${tgtW} kg</span> <span class="why">−10 %, on récupère</span>`; } const topS=ref.sets.find(x=>x.w)||ref.sets[0]; if(ref.declared) tgt=''; h+=`<p class="ref">${ref.declared?'Charge habituelle':ref.carried?'Cycle précédent':'Dernier'} : <b>${ref.declared?topS.w+' kg':topS&&topS.w?topS.w+' kg × '+(topS.r??'?'):esc(fmtSets(ref.sets.slice(0,1)))}</b>${ref.sets.length>1?' <span class="muted">· '+ref.sets.length+' séries</span>':''}${tgt}</p>`; }
     const coachW=o&&typeof o.load==='number'?o.load:null;
     const wLabel=/lest/i.test(ex.name)?'lest kg':ex.mode==='emom'?'—':ex.mode==='max'?'assist kg':'kg';
     h+=`<div class="sets"><span class="hd"></span><span class="hd">${wLabel}</span><span class="hd">reps</span><button class="hd" data-lex="ressenti">ressenti</button><span class="hd"></span>`;

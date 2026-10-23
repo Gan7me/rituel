@@ -35,7 +35,7 @@ GOALS.forEach(goal => GEARS.forEach(gear => DAYS.forEach(days => {
   const zoneSets = [[]].concat(ZONES.map(z => [{ zone: z, sev: SEVS[i++ % 3] }]));
   zoneSets.forEach(zones => {
     const lv = LEVELS[i++ % LEVELS.length]; const refuse = REFUSES[i++ % REFUSES.length]; const minutes = MIN[i++ % MIN.length];
-    const SECONDS = [null, 'tractions', 'jambes', 'bras', 'fessiers', 'seche', 'endurance', 'puissance', 'cardio', 'silhouette']; const SPORTS = [[], ['Course'], ['Escalade'], ['Natation'], ['Rugby'], ['Vélo']];
+    const SECONDS = [null, 'tractions', 'jambes', 'bras', 'fessiers', 'seche', 'endurance', 'puissance', 'cardio', 'silhouette', 'equilibre', 'calisthenie', 'souplesse']; const SPORTS = [[], ['Course'], ['Escalade'], ['Natation'], ['Rugby'], ['Vélo']];
     const spec = Object.assign({ goalMain: goal, goalSecond: SECONDS[i % SECONDS.length], sports: SPORTS[i % SPORTS.length], age: 20 + (i % 5) * 10, years: lv[0], skills: lv[1], daysList: days, minutes, zones, refuse, likes: i % 5 === 0 ? ['tractions', 'lourd'] : [], place: gear.place, gymGear: gear.gymGear || [], homeGear: gear.homeGear || [] });
     profiles.push({ name: 'P' + profiles.length, age: spec.age, level: ivLevel(lv[0], lv[1]), goals: [goal], days: days.length, minutes, gear: ivGear(spec), spec });
   });
