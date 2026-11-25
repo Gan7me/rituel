@@ -26,14 +26,14 @@ function serve() {
 // Firebase simulé : auth, Firestore (meta, coach, logs…), fonctions.
 function stub() {
   let metaCb = null, coachCb = null;
-  window.__setMeta = (docs) => metaCb && metaCb({ docs: docs.map(d => ({ id: d.id, data: () => d.data })), metadata: { fromCache: false } });
+  window.__setMeta = (docs) => metaCb && metaCb({ docs: docs.map(d => ({ id: d.id, data: () => d.data })), docChanges: () => docs.map(d => ({ type: 'modified', doc: { id: d.id, data: () => d.data } })), metadata: { fromCache: false } });
   window.__setCoach = (docs) => coachCb && coachCb({ docs: docs.map(d => ({ id: d.id, data: () => d.data })) });
   window.__writes = [];
   // Écho Firestore : chaque écriture dans une collection écoutée revient par le listener, comme en vrai (copie, pas la même référence).
   const listeners = {}; let echo = false; window.__echo = (on) => { echo = on; };
   window.__pushDoc = (name, id, data) => { const cb = listeners[name]; if (cb) cb({ docChanges: () => [{ type: 'modified', doc: { id, data: () => JSON.parse(JSON.stringify(data)) } }], docs: [], metadata: {} }); };
   const docObj = (name, id) => ({ get: async () => ({ exists: false }), set: async (d) => { window.__writes.push({ name, id, d }); if (echo) setTimeout(() => window.__pushDoc(name, id, d), 10); }, delete: async () => {}, collection: (n) => colObj(n) });
-  const colObj = (n) => ({ onSnapshot: (cb) => { if (n === 'coach') coachCb = cb; if (n === 'meta') { metaCb = cb; cb({ docs: [], metadata: { fromCache: false } }); return () => {}; } listeners[n] = cb; cb({ docChanges: () => [], docs: [], metadata: {} }); return () => {}; }, orderBy() { return this; }, limit() { return this; }, where() { return this; }, doc: (id) => docObj(n, id) });
+  const colObj = (n) => ({ onSnapshot: (a, b) => { const cb = typeof a === 'function' ? a : b; /* onSnapshot(options, cb) comme le vrai Firestore */ if (n === 'coach') coachCb = cb; if (n === 'meta') { metaCb = cb; cb({ docs: [], docChanges: () => [], metadata: { fromCache: false } }); return () => {}; } listeners[n] = cb; cb({ docChanges: () => [], docs: [], metadata: {} }); return () => {}; }, orderBy() { return this; }, limit() { return this; }, where() { return this; }, doc: (id) => docObj(n, id) });
   window.firebase = {
     initializeApp: () => ({}),
     auth: Object.assign(() => ({ useDeviceLanguage() {}, getRedirectResult: () => Promise.resolve(), onAuthStateChanged: (cb) => { window.__auth = cb; setTimeout(() => cb(location.search.includes('noauth') ? null : { uid: 'u1', displayName: 'Test', email: 'test@nexisafe.com', emailVerified: true, providerData: [{ providerId: 'password' }] }), 30); }, signOut: async () => {}, signInWithEmailAndPassword: async () => { throw { code: 'auth/invalid-credential' }; }, createUserWithEmailAndPassword: async () => ({ user: { updateProfile: async () => {}, sendEmailVerification: async () => {} } }), sendPasswordResetEmail: async () => {} }), {}),

@@ -887,7 +887,12 @@ function cachedMeta(){ try{ const m=JSON.parse(localStorage.getItem('rituel.meta
 let LOCAL_BOOT=false;
 /* écoute du profil et du programme après connexion */
 function listenMeta(){
-  unsubs.push(fbDb.collection('users').doc(USER.uid).collection('meta').onSnapshot(snap=>{
+  // includeMetadataChanges : un compte neuf reçoit d'abord un instantané vide « depuis le cache » ; sans cette option, la confirmation du serveur (toujours vide) n'arrive jamais et l'écran reste vide.
+  let settled=false; const settle=()=>{ settled=true; };
+  setTimeout(()=>{ if(!settled&&USER&&!PROGRAM_LOADED&&!ONB_STEP&&!GENERATING){ showOnboarding(PROFILE?'program':'profile'); } },7000); // filet : jamais un écran vide, même si le serveur ne répond pas
+  unsubs.push(fbDb.collection('users').doc(USER.uid).collection('meta').onSnapshot({includeMetadataChanges:true},snap=>{
+    if(!(snap.metadata.fromCache&&!snap.docs.length)) settle();
+    if(!snap.docChanges().length&&snap.docs.length&&PROGRAM_LOADED) return; // changement de métadonnées seulement (écriture en attente confirmée) : rien à redessiner
     let prof=null, prog=null; snap.docs.forEach(d=>{ if(d.id==='profile') prof=d.data(); if(d.id==='program') prog=d.data(); if(d.id==='history') HISTORY=d.data(); if(d.id==='usage') USAGE=d.data(); if(d.id==='billing') BILLING.doc=d.data(); if(d.id==='genstate') GEN_STATE=d.data(); });
     PROFILE=prof;
     cacheMeta(prof,prog,HISTORY);
@@ -1177,7 +1182,7 @@ function renderHome(){
   const el=$('#tab-home'); if(!el||!PROGRAM.sessions.length) return;
   const date=todayISO(), wk=curWeek(), W=WEEKS[wk-1]; const ses=curSession(); const log=S.logs[logKey(date,ses.id)];
   const subDoc=((S.overrides||{})[ses.id]||{}).substitute; const sub=subDoc&&subDoc.date===date?subDoc:null;
-  const exs=sub?sub.exercises:ses.exercises; const nSets=log?Object.values(log.sets||{}).flat().filter(x=>x&&x.done).length:0; const started=nSets>0&&!(log&&log.done); const done=!!(log&&log.done);
+  const exs=sub?sub.exercises:applySwaps(ses,date).exercises; const nSets=log?Object.values(log.sets||{}).flat().filter(x=>x&&x.done).length:0; const started=nSets>0&&!(log&&log.done); const done=!!(log&&log.done);
   const nDone=exs.filter(ex=>{ const p=rx(ex,wk); const d=(log&&log.sets[ex.id]||[]).filter(x=>x&&x.done).length; const f=(log&&log.flags||{})[ex.id]||{}; return d>=p.sets||f.skip; }).length;
   const hour=new Date().getHours(); const hello=hour<5?'Bonne nuit':hour<12?'Bonjour':hour<18?'Bon après-midi':'Bonsoir';
   const name=(PROFILE&&PROFILE.name)||(USER&&USER.displayName&&USER.displayName.split(' ')[0])||'';
@@ -1239,7 +1244,7 @@ const DEMO={base:window.__DEMO_BASE||'demo/img/',index:null,loading:null,asked:f
 // Résolution du visuel : choix de l'utilisateur → fiche de la bibliothèque (par identifiant, sinon par nom) → association du programme si illustrée → geste du même schéma → photo.
 const norm=t=>String(t||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9 ]+/g,' ').split(/\s+/).filter(w=>w.length>2&&!['the','une','des','les','avec','sur','par','pour'].includes(w));
 function libMatch(ex){ if(!EXMIN||!EXMIN.length||!ex) return null; if(ex.exId){ const e=EXMIN.find(x=>x.id===ex.exId); if(e) return e; } const a=norm(ex.name); if(!a.length) return null; const flat=a.join(' '); let best=null,bs=0; EXMIN.forEach(e=>{ const cands=[e.n].concat(e.a||[]); cands.forEach(nm=>{ const b=norm(nm); if(!b.length) return; const bf=b.join(' '); let sc; if(flat===bf) sc=1.01; else if(flat.includes(bf)) sc=0.9+b.length/100; else { const hit=b.filter(w=>a.includes(w)).length; sc=hit/Math.max(a.length,b.length); } if(sc>bs){ bs=sc; best=e; } }); }); return bs>=0.6?best:null; }
-function demoId(ex){ if(!ex) return null; const u=(PROGRAM.demosUser||{})[ex.id]; if(u) return u==='none'?null:u; const lib=libMatch(ex); if(lib&&lib.i&&ILLUS.has(lib.i)) return lib.i; if(ex.demo&&ILLUS.has(ex.demo)) return ex.demo; const m=(PROGRAM.demos||{})[ex.id]; if(m&&ILLUS.has(m)) return m; const g=patternDemo(ex); if(g&&ILLUS.has(g)) return g; if(ex.demo) return ex.demo; if(m) return m; return g||null; }
+function demoId(ex){ if(!ex) return null; if(ex.swapped){ const lib=libMatch(ex); if(lib&&lib.i&&ILLUS.has(lib.i)) return lib.i; if(ex.demo&&ILLUS.has(ex.demo)) return ex.demo; const g=patternDemo(ex); return g&&ILLUS.has(g)?g:(ex.demo||null); } const u=(PROGRAM.demosUser||{})[ex.id]; if(u) return u==='none'?null:u; const lib=libMatch(ex); if(lib&&lib.i&&ILLUS.has(lib.i)) return lib.i; if(ex.demo&&ILLUS.has(ex.demo)) return ex.demo; const m=(PROGRAM.demos||{})[ex.id]; if(m&&ILLUS.has(m)) return m; const g=patternDemo(ex); if(g&&ILLUS.has(g)) return g; if(ex.demo) return ex.demo; if(m) return m; return g||null; }
 // Repli universel : l'illustration du schéma de mouvement (squat, charnière, tirage…), toujours étiquetée « geste proche » dans l'app, jamais présentée comme la machine exacte.
 const PATTERN_DEMO={squat:'Barbell_Full_Squat',hinge:'Romanian_Deadlift',lunge:'Dumbbell_Lunges',kneeflex:'Seated_Leg_Curl',kneeext:'Leg_Extensions',calf:'Standing_Calf_Raises',hpush:'Barbell_Bench_Press_-_Medium_Grip',vpush:'Dumbbell_Shoulder_Press',hpull:'Seated_Cable_Rows',vpull:'Pullups',latdelt:'Seated_Side_Lateral_Raise',reardelt:'Seated_Bent-Over_Rear_Delt_Raise',biceps:'Dumbbell_Bicep_Curl',triceps:'Triceps_Pushdown_-_Rope_Attachment',core:'Plank',carry:'Farmers_Walk',cond:'One-Arm_Kettlebell_Swings',olympic:'Trap_Bar_Deadlift',plyo:'Goblet_Squat',mobility:'Plank',neck:'Plank'};
 const PATTERN_GUESS=[[/traction|pull[- ]?up|chin|tirage.*(vertical|haut)|lat ?pull/i,'vpull'],[/rowing|row\b|tirage|face ?pull/i,'hpull'],[/d[ée]velopp[ée].*(militaire|[ée]paule|overhead)|shoulder|press.*[ée]paule/i,'vpush'],[/d[ée]velopp[ée]|bench|pompes?|push[- ]?up|dips?\b|presse.*(pec|inclin|convergent)|[ée]cart[ée]|fly|crossover/i,'hpush'],[/hack|pendulum|squat|presse|leg press|belt/i,'squat'],[/soulev[ée]|deadlift|rdl|roumain|good ?morning|hip thrust|reverse hyper|hyperext|nordic/i,'hinge'],[/fente|lunge|split|step[- ]?up/i,'lunge'],[/leg curl|ischio/i,'kneeflex'],[/leg ext|extension.*(jambe|quad)/i,'kneeext'],[/mollet|calf|tibial/i,'calf'],[/[ée]l[ée]vation.*lat|lateral raise/i,'latdelt'],[/oiseau|rear delt|reverse fly|rotation ext/i,'reardelt'],[/curl.*(poignet|avant)|avant[- ]bras|wrist|grip/i,'carry'],[/curl/i,'biceps'],[/triceps|pushdown|skull|kick ?back|french/i,'triceps'],[/gainage|planche|plank|crunch|abdo|relev[ée]|hollow/i,'core'],[/farmer|port[ée]/i,'carry'],[/swing|rameur|v[ée]lo|circuit|finisher|cardio|saut|jump|burpee/i,'cond']];
@@ -1260,7 +1265,25 @@ async function ensureDemos(){ if(DEMO.asked||!USER||!navigator.onLine||!PROGRAM_
 function demoHero(ex){ const id=demoId(ex); if(!id) return ''; const ap=!demoExact(ex); return `<button class="dhero" data-demo="${esc(ex.id)}" aria-label="Voir le mouvement"><img src="${demoImg(id,0)}" alt="" loading="lazy">${ap?'<span>Geste proche</span>':''}</button>`; }
 function demoStrip(ex,cls){ const id=demoId(ex); if(!id) return ''; const ap=!demoExact(ex); return `<button class="demo ${cls||''}" data-demo="${esc(ex.id)}" aria-label="Voir le mouvement"><img src="${demoImg(id,0)}" alt="" loading="lazy"><i class="arr">›</i><img src="${demoImg(id,1)}" alt="" loading="lazy"><span>${ap?'Geste proche':'Voir le mouvement'}</span></button>`; }
 function demoThumb(ex){ const id=demoId(ex); if(!id) return ''; return `<button class="dthumb" data-demo="${esc(ex.id)}" aria-label="Voir le mouvement"><img src="${demoImg(id,1)}" alt="" loading="lazy"></button>`; }
-function findEx(exId){ for(const s of PROGRAM.sessions){ const e=s.exercises.find(x=>x.id===exId); if(e) return e; const sub=((S.overrides||{})[s.id]||{}).substitute; if(sub){ const e2=(sub.exercises||[]).find(x=>x.id===exId); if(e2) return e2; } } return null; }
+/* Remplacements choisis par l'athlète (machine prise ou absente, préférence) : overrides/{session}.swaps[idExercice] = {exId, name, machine, scope:'day'|'cycle', date}.
+   L'emplacement garde son identifiant (séries, RIR, repos, journal inchangés) ; l'historique suit la nouvelle fiche par exId. */
+function applySwaps(ses,date){ const sw=((S.overrides||{})[ses.id]||{}).swaps; if(!sw||!Object.keys(sw).length) return ses;
+  const exercises=ses.exercises.map(ex=>{ const w=sw[ex.id]; if(!w||!w.exId||(w.scope==='day'&&w.date!==date)) return ex;
+    return Object.assign({},ex,{exId:w.exId,name:w.name||ex.name,machine:w.machine||'',machineModel:'',machineAlts:[],alt:'',altId:'',url:'https://www.google.com/search?tbm=isch&q='+encodeURIComponent(w.machine||w.name||''),swapped:true,replaces:ex.name,swapScope:w.scope,reco:'',why:'',target:w.target||ex.target||'',exec:'',seek:'',note:'',tech:ex.tech,demo:w.illus||null}); });
+  return Object.assign({},ses,{exercises}); }
+function setSwap(sid,exId,w){ S.overrides=S.overrides||{}; const o=S.overrides[sid]=S.overrides[sid]||{}; o.swaps=o.swaps||{}; if(w) o.swaps[exId]=w; else delete o.swaps[exId]; o.updatedAt=Date.now(); save();
+  if(USER&&fbDb){ const doc={swaps:Object.assign({},o.swaps),updatedAt:o.updatedAt}; if(!w) doc.swaps[exId]=firebase.firestore.FieldValue.delete(); col('overrides').doc(sid).set(doc,{merge:true}).catch(e=>logErr('swap',e)); } }
+function swapChooser(ses,ex,date){ loadExMin().then(list=>{ const pat=(libMatch(ex)||{}).p||''; let scope='day', q='';
+  const row=x=>`<button class="exrow" data-pick="${esc(x.id)}"><span class="nm">${esc(x.n)}</span><span class="muted small">${esc((x.m||'').split(/[(,·]/)[0].slice(0,34))}</span></button>`;
+  const render=()=>{ const ql=q.toLowerCase(); const same=list.filter(x=>x.p===pat&&x.id!==ex.exId&&(!ql||(x.n+' '+(x.a||[]).join(' ')).toLowerCase().includes(ql))); const other=ql?list.filter(x=>x.p!==pat&&x.id!==ex.exId&&(x.n+' '+(x.a||[]).join(' ')).toLowerCase().includes(ql)).slice(0,20):[];
+    return `<h3>Remplacer ${esc(ex.name)}</h3><div class="ivchips"><button type="button" class="ivchip ${scope==='day'?'on':''}" data-scope="day">Aujourd'hui seulement</button><button type="button" class="ivchip ${scope==='cycle'?'on':''}" data-scope="cycle">Pour tout le cycle</button></div><input type="search" id="swapQ" placeholder="Chercher un exercice ou une machine" value="${esc(q)}" autocomplete="off"><p class="small muted">${same.length?'Même schéma de mouvement : mêmes séries, répétitions et repos.':'Aucun exercice du même schéma ne correspond.'}</p><div class="exl">${same.slice(0,40).map(row).join('')}</div>${other.length?`<p class="small muted">Autres schémas</p><div class="exl">${other.map(row).join('')}</div>`:''}${ex.swapped?`<button class="btn" id="swapUndo">Rétablir ${esc(ex.replaces||'l\'exercice prévu')}</button>`:''}<button class="btn" onclick="hideSheet()">Fermer</button>`; };
+  const sheet=showSheet(render());
+  const bind=()=>{ sheet.querySelectorAll('[data-scope]').forEach(b=>b.onclick=()=>{ scope=b.dataset.scope; sheet.innerHTML=render(); bind(); });
+    const inp=sheet.querySelector('#swapQ'); if(inp){ inp.oninput=()=>{ q=inp.value; const pos=inp.selectionStart; sheet.innerHTML=render(); bind(); const i2=sheet.querySelector('#swapQ'); i2.focus(); try{ i2.setSelectionRange(pos,pos); }catch(e){} }; }
+    sheet.querySelectorAll('[data-pick]').forEach(b=>b.onclick=()=>{ const x=list.find(y=>y.id===b.dataset.pick); if(!x) return; setSwap(ses.id,ex.id,{exId:x.id,name:x.n,machine:x.m||'',illus:x.i||null,scope,date,at:Date.now()}); hideSheet(); toast(scope==='cycle'?x.n+' remplace '+ex.name+' pour le cycle':x.n+' aujourd\'hui','ok'); renderSeance(); renderHome(); });
+    const u=sheet.querySelector('#swapUndo'); if(u) u.onclick=()=>{ setSwap(ses.id,ex.id,null); hideSheet(); toast('Exercice prévu rétabli','ok'); renderSeance(); renderHome(); }; };
+  bind(); }); }
+function findEx(exId){ for(const s0 of PROGRAM.sessions){ const s=applySwaps(s0,todayISO()); const e=s.exercises.find(x=>x.id===exId); if(e) return e; const sub=((S.overrides||{})[s.id]||{}).substitute; if(sub){ const e2=(sub.exercises||[]).find(x=>x.id===exId); if(e2) return e2; } } return null; }
 // Mauvaise photo : l'utilisateur choisit lui-même la fiche (recherche par nom, filtre par muscle). Enregistré dans son programme.
 async function pickDemo(ex){
   const idx=await loadDemoIndex(); const all=Object.values(idx); const MUS={quadriceps:'Quadriceps',hamstrings:'Ischios',glutes:'Fessiers',calves:'Mollets',chest:'Pectoraux',lats:'Dos',"middle back":'Dos',"lower back":'Lombaires',shoulders:'Épaules',traps:'Trapèzes',biceps:'Biceps',triceps:'Triceps',forearms:'Avant-bras',abdominals:'Abdos',abductors:'Abducteurs',adductors:'Adducteurs',neck:'Cou'};
@@ -1367,7 +1390,7 @@ function renderSeance(){
   if(!$('#tab-seance')||!PROGRAM.sessions.length) return;
   const wk=curWeek(), W=WEEKS[wk-1], date=todayISO(); let ses=curSession(); const log=getLog(date,ses.id);
   const subDoc=((S.overrides||{})[ses.id]||{}).substitute; const sub=subDoc&&subDoc.date===date?subDoc:null;
-  if(sub) ses=Object.assign({},ses,{name:sub.name,sub:'sans salle · '+(sub.gear||[]).join(', '),exercises:sub.exercises,gtg:false,note:''});
+  if(sub) ses=Object.assign({},ses,{name:sub.name,sub:'sans salle · '+(sub.gear||[]).join(', '),exercises:sub.exercises,gtg:false,note:''}); else ses=applySwaps(ses,date);
   const el=$('#tab-seance'); let h='';
   const dow=(new Date(date+'T12:00:00').getDay()+6)%7; const monday=addDays(date,-dow), sunday=addDays(monday,6);
   h+=`<div class="days">`+PROGRAM.sessions.map(s=>{ const done=Object.values(S.logs).some(l=>l.session===s.id&&l.done&&l.date>=monday&&l.date<=sunday); return `<button data-s="${s.id}" aria-pressed="${s.id===ses.id}" class="${done?'done':''}"><b>${esc(s.dayName.slice(0,3))}</b><span>${esc(shortName(s.name))}</span></button>`; }).join('')+`<button data-s="rest" aria-pressed="false"><b>Dim</b><span>Repos</span></button></div>`;
@@ -1470,11 +1493,12 @@ function renderSeance(){
         <div class="menu">
           <button data-act="explain">Voir le mouvement, pourquoi cet exercice, exécution</button>
           ${ex.url?`<a href="${esc(ex.url)}" target="_blank" rel="noopener" data-ext>Voir la machine ↗</a>`:''}
-          <button data-act="alt">${flags.alt?'✓ Alternative utilisée (annuler)':'Machine absente, j\'utilise l\'alternative'}</button>
+          <button data-act="swap">${ex.swapped?'Changer encore ou rétablir '+esc(ex.replaces||'')+'…':'Remplacer par un autre exercice (machine prise, absente, ou préférence)…'}</button>
+          ${ex.alt&&!ex.swapped?`<button data-act="alt">${flags.alt?'✓ Alternative utilisée (annuler)':'Machine absente, j\'utilise l\'alternative : '+esc(ex.alt)}</button>`:''}
           <button data-act="skip">${flags.skip?'✓ Exercice sauté (annuler)':'Sauter cet exercice aujourd\'hui'}</button>
           <div class="row2"><span class="small muted">Chrono</span><button class="btn sm" data-rest="60">1:00</button><button class="btn sm" data-rest="120">2:00</button><button class="btn sm" data-rest="180">3:00</button></div>
         </div>`);
-      sheet.querySelectorAll('[data-act]').forEach(x=>x.onclick=()=>{ const act=x.dataset.act; if(act==='explain'){ showDemo(ex); return; }
+      sheet.querySelectorAll('[data-act]').forEach(x=>x.onclick=()=>{ const act=x.dataset.act; if(act==='explain'){ showDemo(ex); return; } if(act==='swap'){ hideSheet(); swapChooser(ses,ex,date); return; }
         log.flags=log.flags||{}; const f=log.flags[exId]||(log.flags[exId]={}); f[act]=!f[act]; touch(log); hideSheet(); if(act==='skip'&&f.skip) S.openEx=null; save(); renderSeance(); });
       sheet.querySelectorAll('[data-rest]').forEach(x=>x.onclick=()=>{ startTimer(+x.dataset.rest,`Repos · ${ex.name}`,''); hideSheet(); });
     };
