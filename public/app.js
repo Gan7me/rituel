@@ -18,7 +18,7 @@ function humanErr(e){ const c=(e&&e.code)||''; const m=(e&&e.message)||String(e|
   if(/network|Failed to fetch|internet/i.test(m)||!navigator.onLine) return 'Pas de réseau. Le coach a besoin d\'une connexion ; tes séries sont enregistrées et partiront toutes seules.';
   if(/invalid-argument/.test(c)) return 'Le serveur n\'a pas compris la demande (version de l\'app en retard ?). Recharge l\'application depuis Réglages.';
   return m; }
-const APP_VERSION='3.52.0';
+const APP_VERSION='3.53.0';
 const ADMIN_RE=/^(ganeme\.asloune@nexisafe\.com|gads@live\.fr)$/i;
 let PROGRAM={sessions:[]};
 let WEEKS = [
@@ -188,6 +188,9 @@ function markDirty(){ save(); }
 function mergeInto(local, remote){ let changed=false; for(const c of ['logs','bw','tests','chats','checkins','loads']){ const L=local[c]||(local[c]={}), R=(remote&&remote[c])||{}; for(const k in R){ if(!L[k]||(R[k].updatedAt||0)>(L[k].updatedAt||0)){ L[k]=R[k]; changed=true; writeDoc(c,k,R[k]); } } } return changed; }
 function snapshot(){ return {version:1, exportedAt:new Date().toISOString(), logs:S.logs, bw:S.bw, tests:S.tests, checkins:S.checkins||{}}; }
 window.addEventListener('online',syncStatusIdle); window.addEventListener('offline',syncStatusIdle);
+// Retour du réseau : tout ce qui a été enregistré sans connexion (séries, poids, tests, points du lundi) repart vers le serveur, en plus de la file d'attente Firestore.
+window.addEventListener('online',()=>{ if(USER&&fbDb){ setSync('pend','synchronisation…'); pushLocalToRemote().then(()=>syncStatusIdle()).catch(()=>syncStatusIdle()); } });
+document.addEventListener('visibilitychange',()=>{ if(!document.hidden&&navigator.onLine&&USER&&fbDb&&document.body.classList.contains('offline')) pushLocalToRemote().then(()=>syncStatusIdle()).catch(()=>{}); });
 $('#syncChip').onclick=()=>{};
 
 /* ---------- réglages ---------- */
@@ -624,7 +627,7 @@ function ivLevel(s){ const y=Number(s.years||0); const sc=perfScores(s); const L
   if(!sc.length){ return y===0?'debutant':y===1?'debutant':y===2?'intermediaire':'confirme'; }
   const sorted=sc.slice().sort((a,b)=>a-b); const med=sorted[Math.floor((sorted.length-1)/2)]; let k=Math.round((med+Math.max(...sc))/2); // médiane relevée par le point fort
   if(y===0) k=Math.min(k,1); if(y===1) k=Math.min(k,2); return L[Math.max(0,Math.min(3,k))]; }
-function ivSkills(s){ const P=s.perf||{}; const bw=Number(s.weight)||70; const out=[]; if(Number(P.pullups)>=10) out.push('pull10'); if(perfE1(P.squat)>=0.75*bw) out.push('squat'); if(perfE1(P.deadlift)>=bw) out.push('dl'); return out.length?out:['none']; }
+function ivSkills(s){ const P=s.perf||{}; const bw=Number(s.weight)||70; const out=[]; if(Number(P.pullups)>=10) out.push('pull10'); if(perfE1(P.squat)>=0.75*bw) out.push('squat'); if(perfE1(P.deadlift)>=bw) out.push('dl'); if(perfE1(P.bench)>=0.75*bw) out.push('bench'); return out.length?out:['none']; }
 function perfText(s){ const P=s.perf||{}; const parts=[]; if(P.pullups!=null) parts.push(`${P.pullups} tractions`); if(P.pushups!=null) parts.push(`${P.pushups} pompes`); ['squat','bench','deadlift'].forEach(k=>{ const x=P[k]; if(x&&x.w&&x.r) parts.push(`${({squat:'squat',bench:'développé couché',deadlift:'soulevé de terre'})[k]} ${x.w} kg × ${x.r}`); }); return parts.join(', '); }
 function ivGear(s){ const g=new Set(); const gym=s.gymGear||[], home=s.homeGear||[]; if(s.place==='salle'||s.place==='deux'){ g.add('salle'); if(gym.includes('halteres')) g.add('halteres'); if(gym.includes('barres')) g.add('barre'); if(gym.includes('traction')) g.add('traction'); if(gym.includes('cardio')) g.add('cardio'); } if(s.place==='maison'||s.place==='deux'){ home.forEach(h=>{ if(h==='banc') return; g.add(h); }); } if(!g.size) g.add('corps'); return [...g]; }
 // Répartition de la semaine par les règles (aperçu avant la fin de l'entretien, même logique côté serveur).
@@ -1284,7 +1287,7 @@ async function showDemo(ex){
   const tabsH=tabs.length?`<div class="tabs2">${tabs.map(([k,l])=>`<button type="button" class="${k===first?'on':''}" data-tabk="${k}">${l}</button>`).join('')}</div>${tabs.map(([k,,t])=>tab(k,t,k===first)).join('')}`:'';
   const p=rx(ex,curWeek()); const rxh=`<div class="rx3"><div><b>${p.sets} × ${esc(p.reps)}</b><span>${ex.per?esc(ex.per):'séries'}</span></div>${p.rir!=null?`<div data-lex="rir"><b>RIR ${p.rir}</b><span>réserve</span></div>`:''}<div><b>${esc(p.restText||'')}</b><span>repos</span></div></div>`;
   const myLoad=(S.loads||{})[ex.exId||ex.id];
-  const more=`<details class="more"><summary>Plus · tempo ${esc(ex.tempo||'')}${ex.seek?' · ce qu\'on cherche':''}${ex.reco?' · reconnaître la machine':''}</summary><dl class="dl">${ex.seek?`<dt>Ce qu'on cherche</dt><dd>${esc(ex.seek)}</dd>`:''}${ex.rule?`<dt>Règle de progression</dt><dd>${esc(ex.rule)}</dd>`:''}${ex.reco?`<dt>Reconnaître la machine</dt><dd>${esc(ex.reco)}</dd>`:''}<dt>Tempo</dt><dd>${esc(ex.tempo||'')} <button class="link" data-lex="tempo">?</button></dd></dl>
+  const more=`<details class="more"><summary>Plus · tempo ${esc(ex.tempo||'')}${ex.seek?' · ce qu\'on cherche':''}${ex.reco?' · reconnaître la machine':''}</summary><dl class="dl">${ex.seek?`<dt>Ce qu'on cherche</dt><dd>${esc(ex.seek)}</dd>`:''}${ex.rule?`<dt>Règle de progression</dt><dd>${esc(ex.rule)}</dd>`:''}${ex.tech&&ex.tech.text?`<dt>Technique d'intensification (dès S${ex.tech.from||2}, pas en décharge)</dt><dd>${esc(ex.tech.text)}</dd>`:''}${ex.reco?`<dt>Reconnaître la machine</dt><dd>${esc(ex.reco)}</dd>`:''}<dt>Tempo</dt><dd>${esc(ex.tempo||'')} <button class="link" data-lex="tempo">?</button></dd></dl>
     <div class="myload"><label>Ma charge habituelle <input type="number" step="0.5" min="0" inputmode="decimal" id="myLoad" value="${myLoad&&myLoad.kg?myLoad.kg:''}" placeholder="kg"></label></div>
     <div class="row2 dlinks">${ex.url?`<a class="btn sm" href="${esc(ex.url)}" target="_blank" rel="noopener" data-ext>Photo de la machine ↗</a>`:''}<a class="btn sm" href="${yt}" target="_blank" rel="noopener" data-ext>Vidéo ↗</a><button class="btn sm" id="dpPick">${id?'Autre illustration':'Choisir une illustration'}</button></div></details>`;
   const sheet=showSheet(`${id?`<div class="dplay ${demoExact(ex)?'':'approx'}" id="dplay"><img src="${demoImg(id,0)}" alt="Position de départ" class="on"><img src="${demoImg(id,1)}" alt="Position d'arrivée"><div class="dcap"><span class="on">Départ</span><span>Arrivée</span></div>${demoExact(ex)?'':'<em class="dapprox">Geste proche</em>'}</div>`:''}<h3 class="sh">${esc(ex.name)}</h3>${rxh}${tabsH}${ex.machine?`<div class="machine"><b>${esc(ex.machine)}</b>${ex.alt?`<span>alternative : ${esc(ex.alt)}</span>`:''}</div>`:''}${ex.note?`<div class="card kai"><div class="k">${esc(COACH_NAME.slice(0,1))}</div><div>${esc(ex.note)}</div></div>`:''}<div class="mmap-slot" id="mslot"></div>${more}<button class="btn" onclick="hideSheet()">Fermer</button>`);
@@ -1386,7 +1389,7 @@ function renderSeance(){
   { const wu=(PROGRAM.warmup||{})[ses.id.replace(/[AB]$/,'')]; const prevLog=Object.values(S.logs).filter(l=>l.session===ses.id&&l.date<date&&l.notes).sort((a,b)=>a.date<b.date?1:-1)[0];
     const parts=[]; if(ses.note) parts.push(`<p class="small">${esc(ses.note)}</p>`); if(wu) parts.push(`<p class="small"><b>Échauffement · 8-10 min.</b> ${esc(PROGRAM.warmup.common)} ${esc(wu)} ${esc(PROGRAM.warmup.ramp)}</p>`); if(prevLog) parts.push(`<p class="small"><b>Tes notes du ${fmtD(prevLog.date)}.</b> ${esc(prevLog.notes)}</p>`);
     if(parts.length&&!log.done) h+=`<details class="more wu"><summary>${[ses.note?'Consigne':'',wu?'Échauffement':'',prevLog?'Notes précédentes':''].filter(Boolean).join(' · ')}</summary>${parts.join('')}</details>`; }
-  if(ses.gtg){ h+=`<div class="gtgline"><button class="n" data-lex="gtg">GTG</button><span>Tractions 3 × 15, loin de l'échec</span><span class="gtgrow">${[0,1,2].map(i=>`<label><input type="checkbox" data-gtg="${i}" ${log.gtg[i]?'checked':''}><span>${i+1}</span></label>`).join('')}</span></div>`; }
+  if(ses.gtg){ h+=`<div class="gtgline"><button class="n" data-lex="gtg">GTG</button><span>${esc(ses.gtgText||'Tractions 3 × '+(ses.gtgReps||15)+', loin de l\'échec')}</span><span class="gtgrow">${[0,1,2].map(i=>`<label><input type="checkbox" data-gtg="${i}" ${log.gtg[i]?'checked':''}><span>${i+1}</span></label>`).join('')}</span></div>`; }
 
   states.forEach(st=>{
     const {ex,p,done,complete,skip,alt}=st; const isCur=current&&current.ex.id===ex.id;
@@ -1400,6 +1403,8 @@ function renderSeance(){
     h+=`<p class="mach clamp1"><span data-expand>${esc(ex.machine)}</span> <button class="link" data-sheet="${ex.id}">fiche</button></p>`;
     h+=`<div class="rx3"><div><b>${p.sets} × ${esc(p.reps)}</b><span>${ex.per?esc(ex.per):'séries'}</span></div>${p.rir!=null?`<div data-lex="rir"><b>RIR ${p.rir}</b><span>réserve</span></div>`:ex.mode==='emom'?`<div data-lex="emom"><b>EMOM</b><span>chaque minute</span></div>`:''}<div><b>${esc(p.restText)}</b><span>repos</span></div></div>`;
     if(o) h+=`<p class="coachline"><b>Coach</b> ${esc(o.change)}</p>`;
+    if(ex.tech&&ex.tech.text&&wk>=(ex.tech.from||2)&&wk<WEEKS.length&&!log.done) h+=`<p class="coachline tech"><b>Technique</b> ${esc(ex.tech.text)}</p>`;
+    if(ex.swapWhy&&wk===1) h+=`<p class="coachline"><b>${esc(COACH_NAME)}</b> ${esc(ex.swapWhy)}</p>`;
     let tgtW=null;
     if(ref){ const top=ref.sets.find(s=>s.w)||ref.sets[0]; let tgt=''; if(top&&top.w&&wk>1&&wk<WEEKS.length){ const hi=parseInt(String(p.reps).split('-').pop()); const allHi=ref.sets.every(s=>s.r>=hi); const lowRir=ref.sets.some(s=>s.rir!=null&&s.rir<Math.max(0,(p.rir??1)-1)); if(allHi&&!lowRir){ tgtW=Math.round(top.w*1.025*2)/2; tgt=` → <span class="tgt">${tgtW} kg</span> <span class="why">+2,5 % : haut de fourchette atteint partout</span>`; } else if(lowRir){ tgt=` → <span class="tgt">même charge</span> <span class="why">RIR plus bas que prévu la dernière fois</span>`; } else tgt=` → <span class="tgt">+1 rep</span> <span class="why">fourchette pas encore atteinte</span>`; } if(wk>=WEEKS.length&&top&&top.w){ tgtW=Math.round(top.w*0.9*2)/2; tgt=` → <span class="tgt">décharge ${tgtW} kg</span> <span class="why">−10 %, on récupère</span>`; } const topS=ref.sets.find(x=>x.w)||ref.sets[0]; if(ref.declared) tgt=''; h+=`<p class="ref">${ref.declared?'Charge habituelle':ref.carried?'Cycle précédent':'Dernier'} : <b>${ref.declared?topS.w+' kg':topS&&topS.w?topS.w+' kg × '+(topS.r??'?'):esc(fmtSets(ref.sets.slice(0,1)))}</b>${ref.sets.length>1?' <span class="muted">· '+ref.sets.length+' séries</span>':''}${tgt}</p>`; }
     const coachW=o&&typeof o.load==='number'?o.load:null;

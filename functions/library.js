@@ -58,7 +58,7 @@ function score(e, ctx) {
   if (goal === 'masse' && tags.includes('machine') && role !== 'main') s += 6;
   if (goal === 'masse' && e.uni && role === 'acc') s += 2;
   const lowerPat = ['squat', 'hinge', 'lunge', 'kneeflex', 'kneeext', 'calf'].includes(e.pattern);
-  if (goal === 'corps' && tags.includes('corps') && !lowerPat) s += 14; // objectif poids du corps : le biais ne concerne que le haut du corps, les jambes exploitent le parc
+  if (goal === 'corps' && (tags.includes('tractions') || /dips/i.test(e.name) || (!gym && tags.includes('corps') && !lowerPat))) s += 14; // objectif tractions : le biais poids du corps ne concerne que tractions et dips ; en salle, le reste exploite le parc
   if (goal === 'sante' && (tags.includes('machine') || e.tier === 3)) s += 6;
   if (goal === 'sante' && tags.includes('lourd')) s -= 8;
   if (goal === 'perf' && (tags.includes('explosif') || tags.includes('lourd'))) s += 6;
@@ -67,7 +67,11 @@ function score(e, ctx) {
   if (likes.includes('tractions') && tags.includes('tractions')) s += 8;
   if (likes.includes('explosif') && tags.includes('explosif')) s += 6;
   if (likes.includes('bras') && (e.pattern === 'biceps' || e.pattern === 'triceps') && e.tier === 3) s += 2;
-  if (gym && tags.includes('leger') && (goal !== 'corps' || lowerPat)) s -= role === 'acc' ? 14 : 22; // en salle, un exercice sans matériel n'exploite pas le parc
+  if (gym && tags.includes('leger') && !tags.includes('tractions') && !/dips|muscle-up/i.test(e.name)) s -= role === 'acc' ? 14 : 22; // en salle, un exercice sans matériel n'exploite pas le parc, quel que soit l'objectif
+  if ((level === 'confirme' || level === 'avance') && role !== 'acc' && e.tier === 3) s -= 20; // confirmé : un principal ou un second est un composé chargé, jamais une isolation
+  if ((level === 'confirme' || level === 'avance') && role === 'main' && tags.includes('lourd')) s += 8;
+  if ((level === 'confirme' || level === 'avance') && role === 'second' && e.tier === 1) s += 6;
+  if (skills.includes('bench') && ['bench', 'incline_bench', 'db_bench', 'db_incline'].includes(e.id) && role !== 'acc') s += 10; // développé couché maîtrisé : il prend la tête des poussées
   if (tags.includes('niche')) s -= 10; // utile en complément, jamais par défaut
   if (e.src === 'photo') s -= 6; // fiche issue de la base étendue : les fiches éditoriales restent prioritaires à qualité égale
   if (!gym && goal !== 'corps' && tags.includes('leger') && role !== 'acc') s -= 4;
@@ -80,7 +84,8 @@ function score(e, ctx) {
   if (['balance', 'skill', 'flex'].includes(e.pattern)) { const L = ['debutant', 'intermediaire', 'confirme', 'avance']; const d = Math.abs(L.indexOf(e.level || 'debutant') - Math.min(2, L.indexOf(level || 'intermediaire'))); s += d === 0 ? 20 : d === 1 ? 6 : -10; } // discipline : la progression du niveau de l'athlète, ni trop facile ni hors de portée
   if (ctx.pullMode === 'heavy' && e.pattern === 'vpull' && e.id === 'weighted_pullup') s += 25; // séance « lourd » : tractions lestées
   if (ctx.pullMode === 'heavy' && e.pattern === 'vpull' && (ctx.pullMax || 0) >= 12) { if (e.id === 'weighted_pullup') s += 40; else if (['pullup', 'chinup'].includes(e.id)) s -= 30; } // à 12 tractions et plus, 3-5 répétitions au poids du corps ne servent à rien : lest obligatoire
-  if (ctx.pullMode === 'volume' && e.pattern === 'vpull') { if (e.id === 'weighted_pullup') s -= 40; if (['pullup', 'chinup', 'neutral_pullup'].includes(e.id)) s += 18; } // séance « volume » : tractions au poids du corps, séries longues
+  if (ctx.pullMode === 'heavy' && e.pattern === 'vpull' && e.tier === 3) s -= 40; // jamais une isolation (pulldown bras tendus) sur un emplacement lourd
+  if ((ctx.pullMode === 'volume' || ctx.pullMode === 'density') && e.pattern === 'vpull') { if (e.id === 'weighted_pullup') s -= 40; if (['pullup', 'chinup', 'neutral_pullup'].includes(e.id)) s += 18; } // séance « volume » : tractions au poids du corps, séries longues
   if (ctx.goalPull && e.id === 'upright_row') s -= 60; // épaule déjà très sollicitée par les tractions : pas de tirage menton
   if (ctx.second === 'fessiers' && ['hip_thrust', 'hip_thrust_m', 'glute_bridge'].includes(e.id) && role !== 'acc') s += 16; // fessiers : le hip thrust prend la tête d'une séance bas du corps
   if ((ctx.want || []).includes(e.id)) s += 60; // demandé explicitement par l'athlète
@@ -145,7 +150,7 @@ function selectExercises(plan, profile, seedStr) {
         if (!cands.length) continue;
         const ctx = { pullMode: sl.pullMode || null, pullMax: plan.pullMax || 0, goalPull: !!plan.goalPull, role: sl.role, goal: plan.goal, level: plan.level, likes, soft, usedWeek, usedSession, seed, gym, second: plan.second || null, skills: plan.skills || sp.skills || [], age: plan.age || Number(p.age) || 0, flags: plan.flags || {}, favor: plan.favor || [], avoid: plan.avoid || [], want: plan.want || [] };
         cands.sort((a, b) => score(b, ctx) - score(a, ctx));
-        picked = cands[0]; alt = cands.find(c => c.id !== picked.id && !usedSession.has(c.id)) || null; usedPattern = pat; break;
+        picked = cands[0]; alt = cands.find(c => c.id !== picked.id && !usedSession.has(c.id)) || null; usedPattern = pat; sl.cands = cands.slice(1, 7).filter(c => !usedSession.has(c.id)).map(c => ({ id: c.id, name: c.name })); break;
       }
       if (!picked) { const safe = ['plank', 'dead_bug', 'side_plank', 'ytw', 'glute_bridge', 'bw_calf', 'wall_sit', 'shadow_box'].map(id => BY_ID[id]).find(x => x && !usedSession.has(x.id) && hasReq(x.req, gear)); picked = safe || BY_ID.plank; usedPattern = picked.pattern; }
       if (usedPattern !== sl.pattern) notes.push(`${se.name} : « ${sl.pattern} » remplacé par « ${usedPattern} » (matériel ou zone à ménager)`);

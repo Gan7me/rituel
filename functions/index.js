@@ -542,6 +542,16 @@ function dose(goal, role, level) {
   const rir = beginner ? [3, 3, 2, 4] : role === 'acc' ? [3, 2, 1, 4] : [3, 2, 1, 4];
   return { sets, reps, restSec: rest, tempo, rir, rule: role === 'main' ? 'Exercice principal : charge qui monte quand le haut de fourchette est atteint sur toutes les séries au RIR prévu.' : role === 'second' ? 'Second mouvement : volume, +1 rep avant +2,5 %.' : 'Isolation : on cherche la fatigue locale, RIR plus bas en fin de cycle.' };
 }
+// Souhaits en texte libre : les noms d'exercices cités deviennent des exercices voulus (ou refusés si « pas de », « sans », « éviter », « plus de » précède).
+function parseWishes(text) {
+  const t = String(text || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, ''); const want = [], avoid = [];
+  if (t.length < 4) return { want, avoid };
+  LIB.EXERCISES.filter(e => e.src !== 'photo').forEach(e => {
+    const names = [e.name].concat(e.id === 'leg_press' ? ['presse a cuisses', 'presse'] : e.id === 'hack_squat' ? ['hack'] : e.id === 'bench' ? ['developpe couche', 'bench'] : e.id === 'weighted_pullup' ? ['tractions lestees', 'lestees'] : e.id === 'deadlift' ? ['souleve de terre', 'deadlift'] : e.id === 'hip_thrust' ? ['hip thrust'] : e.id === 'bss' ? ['bulgare'] : []).map(n => n.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s*\(.*\)\s*/g, '')).filter(n => n.length >= 4);
+    for (const n of names) { const k = t.indexOf(n); if (k < 0) continue; const before = t.slice(Math.max(0, k - 14), k); if (/pas d|sans|evit|plus d|jamais|arret/.test(before)) avoid.push(e.id); else want.push(e.id); break; }
+  });
+  return { want: want.filter(id => !avoid.includes(id)), avoid };
+}
 function planStructure(profile, adjust) {
   const adj = adjust || {}; const p = profile || {}; const s = p.spec || {}; const gear = p.gear || []; const gym = gear.includes('salle'); const bodyOnly = !gym && (gear.length === 0 || gear.every(g => g === 'corps' || g === 'cardio'));
   const goal = s.goalMain || ({ force: 'force', masse: 'masse', perte: 'perte', seche: 'perte', sante: 'sante', perf: 'perf', tractions: 'corps', puissance: 'perf', endurance: 'perf', cardio: 'perte', fessiers: 'masse', silhouette: 'masse', bras: 'masse', jambes: 'force' }[(p.goals || [])[0]] || 'masse');
@@ -556,8 +566,10 @@ function planStructure(profile, adjust) {
     else soft.add(pt); }));
   if (bodyOnly) ['kneeext', 'carry'].forEach(x => banned.add(x));
   const refuse = s.refuse || []; const likes = s.likes || []; const second = s.goalSecond || (p.goals || [])[1] || null;
-  const sports = (s.sports || []).map(x => String(x).toLowerCase()); const age = Number(p.age || s.age) || 0; const skills = s.skills || [];
+  const sports = (s.sports || []).map(x => String(x).toLowerCase()); const age = Number(p.age || s.age) || 0; const skills = (s.skills || []).slice();
   const pullMax = Math.max(Number(adj.pullMax) || 0, Number((s.perf || {}).pullups) || 0);
+  { const P = s.perf || {}; const bw = Number(p.weight || s.weight) || 70; const e1 = x => x && x.w && x.r ? (x.r === 1 ? x.w : x.w * (1 + x.r / 30)) : 0; const add = k => { if (!skills.includes(k)) skills.push(k); };
+    if (pullMax >= 10) add('pull10'); if (e1(P.squat) >= 0.75 * bw) add('squat'); if (e1(P.deadlift) >= bw) add('dl'); if (e1(P.bench) >= 0.75 * bw) add('bench'); }
   const maxEx = Math.max(4, Math.min(caps.exPerSession, Math.round(minutes / 10)));
   // Objectif secondaire : un schéma supplémentaire ou prioritaire là où il ne gêne pas le principal.
   const SECOND = { tractions: { add: 'vpull', where: /Tirage|Haut|Corps/ }, jambes: { add: 'lunge', where: /Jambes|Bas|Corps/ }, bras: { add: 'biceps', add2: 'triceps', where: /Poussée|Tirage|Haut|Corps/ }, fessiers: { add: 'hinge', where: /Jambes|Bas|Corps/ }, seche: { add: 'cond', where: /./ }, cardio: { add: 'cond', where: /./ }, endurance: { add: 'cond', where: /./ }, puissance: { add: 'carry', where: /Jambes|Bas|Corps/ }, silhouette: { add: 'latdelt', where: /Poussée|Haut|Corps/ },
@@ -578,7 +590,7 @@ function planStructure(profile, adjust) {
     template = []; let li = 0, ui = 0; for (let k = 0; k < n; k++) { const pickLower = (li < L.length) && (ui >= U.length || li * U.length <= ui * L.length); template.push(pickLower ? L[li++] : U[ui++]); }
     const cnt = {}; template = template.map(([nm, pats]) => { const base = nm.replace(/ [ABC]$/, ''); cnt[base] = (cnt[base] || 0) + 1; const tot = base.startsWith('Bas') ? s.split.lower : s.split.upper; return [tot > 1 ? base + ' ' + 'ABCDEF'[cnt[base] - 1] : base, pats]; });
   }
-  const wantIds = (s.wantEx || []).filter(id => LIB.BY_ID[id]); const wantPats = wantIds.map(id => LIB.BY_ID[id].pattern);
+  const W = parseWishes(s.wishes); const wantIds = (s.wantEx || []).concat(W.want).filter((id, i, a) => LIB.BY_ID[id] && a.indexOf(id) === i).slice(0, 10); const wantPats = wantIds.map(id => LIB.BY_ID[id].pattern); const wishAvoid = W.avoid;
   const LOWER_PAT = new Set(['squat', 'hinge', 'lunge', 'kneeflex', 'kneeext', 'calf', 'plyo']);
   const UPPER_PAT = new Set(['hpush', 'vpush', 'hpull', 'vpull', 'biceps', 'triceps', 'latdelt', 'reardelt']);
   let upperCount = 0;
@@ -619,20 +631,37 @@ function planStructure(profile, adjust) {
     let upperIdx = -1; if (goalPull && !lowerOnly) { upperIdx = upperCount++; }
     const slots = list.map((pt, k) => { const kk = list.slice(0, k).filter(x => !DISC.has(x)).length; const role = DISC.has(pt) ? 'acc' : kk === 0 ? 'main' : kk === 1 ? 'second' : 'acc'; const d = dose(goal, role, level);
       if (DISC.has(pt)) { const D = { balance: [4, '6-10', 90, 'frais, en ouverture : l\'équilibre s\'apprend sans fatigue, par tentatives courtes et nombreuses'], skill: [4, '3-6', 120, 'figure : tenues ou répétitions courtes, loin de l\'échec, la qualité de position avant la durée'], flex: [2, '6-8', 30, 'souplesse : tenue longue, respiration lente, intensité 6/10, on gagne par le relâchement'] }[pt]; d.sets = D[0]; d.reps = D[1]; d.restSec = D[2]; d.tempo = ''; d.rir = pt === 'flex' ? [3, 3, 3, 4] : [2, 2, 2, 3]; d.rule = D[3]; }
-      let pullMode = null; if (goalPull && pt === 'vpull' && upperIdx >= 0) { const firstPull = list.indexOf('vpull') === k; pullMode = firstPull ? (upperIdx % 2 === 0 ? 'heavy' : 'volume') : (upperIdx % 2 === 0 ? 'volume' : 'heavy'); if (pullMode === 'heavy') { d.sets = Math.max(d.sets, 5); d.reps = '3-5'; d.restSec = Math.max(d.restSec, 150); } else { d.sets = Math.max(3, Math.min(d.sets, 4)); d.reps = level === 'debutant' ? '5-8' : '8-15'; d.rir = d.rir.map(r => Math.max(r, 2)); d.restSec = Math.min(d.restSec, 90);
+      let pullMode = null; if (goalPull && pt === 'vpull' && upperIdx >= 0) { const firstPull = list.indexOf('vpull') === k; const nUp = template.filter(([, pp]) => !(pp.some(x => LOWER_PAT.has(x)) && !pp.some(x => UPPER_PAT.has(x)))).length; const ROT = pullMax >= 15 && nUp >= 3 ? ['heavy', 'volume', 'density'] : ['heavy', 'volume']; const m0 = ROT[upperIdx % ROT.length]; pullMode = firstPull ? m0 : (m0 === 'heavy' ? 'volume' : m0 === 'density' ? 'volume' : 'heavy');
+      if (pullMode === 'density') { d.sets = 8; d.reps = String(Math.max(4, Math.round(pullMax * 0.3))); d.restSec = 60; d.rir = [3, 3, 2, 4]; d.tempo = '1-0-X-0'; d.rule = `Densité : une série chaque minute (EMOM), ${Math.max(4, Math.round(pullMax * 0.3))} répétitions nettes, 8 minutes. +1 minute par semaine, jamais à l'échec : c'est le volume total qui fait monter le max.`; }
+      else if (pullMode === 'heavy') { d.sets = Math.max(d.sets, 5); d.reps = '3-5'; d.restSec = Math.max(d.restSec, 150); } else { d.sets = Math.max(3, Math.min(d.sets, 4)); d.reps = level === 'debutant' ? '5-8' : '8-15'; d.rir = d.rir.map(r => Math.max(r, 2)); d.restSec = Math.min(d.restSec, 90);
           // volume réglé sur le maximum mesuré (test ou entretien) : séries à 40-60 % du max, jamais une fourchette en dessous du niveau réel
           if (pullMax >= 8) { d.reps = `${Math.max(5, Math.round(pullMax * 0.4))}-${Math.max(8, Math.round(pullMax * 0.6))}`; d.sets = pullMax >= 20 ? 4 : d.sets; } } }
+      const ISO = new Set(['latdelt', 'reardelt', 'calf', 'biceps', 'triceps', 'kneeext', 'kneeflex']); const adv = level === 'confirme' || level === 'avance';
+      if (role === 'acc' && !DISC.has(pt) && !pullMode && goal !== 'sante') { if (ISO.has(pt)) { d.reps = pt === 'calf' ? '12-20' : '12-15'; d.restSec = 60; } else if (['hpush', 'vpush', 'hpull', 'vpull', 'squat', 'hinge', 'lunge'].includes(pt)) { d.reps = '8-12'; d.restSec = 90; } } // accessoires : composés en 8-12, isolations en 12-15, pas une séance entière en 3 × 10-15
+      // techniques d'intensification (confirmé, avancé ; intermédiaire sur les isolations) : actives dès la semaine 2, jamais en décharge
+      if ((adv || level === 'intermediaire') && !DISC.has(pt) && pt !== 'core' && pt !== 'cond' && pt !== 'carry') {
+        const heavyGoal = ['force', 'perf', 'corps'].includes(goal);
+        let t = null;
+        if (pullMode === 'heavy') t = 'Cluster : chaque série en blocs 2-2-1 avec 15 s de repos entre blocs, même lest. Tu fais 5 reps propres avec une charge que tu ne tiendrais pas d\'une traite.';
+        else if (pullMode === 'volume') t = 'Myo-reps : après la série principale, 15 s de repos puis 5 × 3-5 reps avec 5 respirations entre chaque. Volume de qualité sans aller à l\'échec.';
+        else if (pullMode === 'density') t = null;
+        else if (role === 'main' && adv) t = heavyGoal ? 'Top set + back-off : une série lourde à RIR 1, puis les suivantes à −10 % pour le volume.' : 'Dernière série : rest-pause. À RIR 0, 15 s de repos, puis 3 à 5 répétitions de plus.';
+        else if (role === 'second' && adv) t = ISO.has(pt) ? 'Dernière série : drop set, −30 % de charge sans repos, jusqu\'à RIR 0.' : 'Dernière série : rest-pause. À RIR 0, 15 s de repos, puis 3 à 5 répétitions de plus.';
+        else if (role === 'acc') { if (pt === 'calf') t = 'Pause 2 s en bas, étiré, 1 s de contraction en haut : aucun rebond.'; else if (pt === 'kneeext') t = 'Reps 1 et demi : amplitude complète + demi-rep basse = 1 répétition.'; else if (pt === 'lunge') t = 'Tempo 3-1-1-0 : 3 s de descente, 1 s en bas, montée franche.'; else if (ISO.has(pt) || pt === 'hpush' && adv) t = 'Dernière série : drop set, −30 % de charge sans repos, jusqu\'à RIR 0.'; else if (adv && ['hpull', 'vpush', 'squat', 'hinge'].includes(pt)) t = 'Dernière série : rest-pause. À RIR 0, 15 s de repos, puis 3 à 5 répétitions de plus.'; }
+        if (t) d.tech = { text: t, from: adv ? 2 : 3 };
+      }
       if (age >= 50) { d.rir = d.rir.map(r => Math.max(r, 2)); d.restSec = Math.round(d.restSec * 1.15); } if (second === 'endurance' && role !== 'main') { d.reps = role === 'second' ? '12-15' : '15-20'; d.restSec = Math.min(d.restSec, 60); } if (adj.volume && adj.volume !== 1) d.sets = Math.max(2, Math.round(d.sets * adj.volume)); if (adj.rir) d.rir = d.rir.map((r, i) => i === d.rir.length - 1 ? r : Math.min(4, Math.max(0, r + adj.rir))); return Object.assign({ pattern: pt, role, star: kk < 2 && !DISC.has(pt), soft: soft.has(pt), pullMode }, d); });
     // borne de volume par niveau
-    let total = slots.reduce((a, x) => a + x.sets, 0); while (total > caps.setsPerSession) { const big = slots.reduce((m, x) => x.sets > m.sets ? x : m, slots[0]); if (big.sets <= 2) break; big.sets--; total--; }
-    const dayIdx = days[i]; return { id: 's' + (i + 1), day: (dayIdx + 1) % 7, dayName: DAY_FR[dayIdx], name: goal === 'perte' ? name.replace('force', 'densité') : name, slots };
+    let total = slots.reduce((a, x) => a + x.sets, 0); while (total > caps.setsPerSession) { const pool = slots.filter(x => x.pullMode !== 'density'); const big = pool.reduce((m, x) => x.sets > m.sets ? x : m, pool[0]); if (!big || big.sets <= 2) break; big.sets--; total--; }
+    const dayIdx = days[i]; return { id: 's' + (i + 1), day: (dayIdx + 1) % 7, dayName: DAY_FR[dayIdx], name: goal === 'perte' ? name.replace('force', 'densité') : name, slots, gtg: !!(goalPull && pullMax >= 15 && lowerOnly && !banned.has('vpull')), gtgReps: Math.max(5, Math.round(pullMax * 0.4)) };
   });
-  return { goal, second, level, days, minutes, gym, bodyOnly, banned: [...banned], soft: [...soft], sessions, caps, age, skills, sports, pullMax, flags: { runner, climber, swimmer, contact, cyclist, operational, physicalJob, sedentary: s.activity === 'sedentaire' }, favor: (adj.favor || []).concat(wantIds), avoid: adj.avoid || [], want: wantIds, adjust: adj, goalPull: goal === 'corps' || second === 'tractions' || likes.includes('tractions') };
+  return { goal, second, level, days, minutes, gym, bodyOnly, banned: [...banned], soft: [...soft], sessions, caps, age, skills, sports, pullMax, flags: { runner, climber, swimmer, contact, cyclist, operational, physicalJob, sedentary: s.activity === 'sedentaire' }, favor: (adj.favor || []).concat(wantIds), avoid: (adj.avoid || []).concat(wishAvoid), want: wantIds, adjust: adj, goalPull: goal === 'corps' || second === 'tractions' || likes.includes('tractions') };
 }
 // Rendu du programme déjà construit pour le coach : il rédige, il ne choisit pas. Les exercices viennent de la bibliothèque.
+function hashStr(str) { let h = 2166136261; for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0).toString(36); }
 function skeletonText(plan, profile) {
   const pr = profile || {};
-  return `PROGRAMME DÉJÀ CONSTRUIT (structure et exercices fixés par les règles et la bibliothèque, à partir de la fiche ; tu ne les changes pas) :\n` + plan.sessions.map(se => `${se.id} · ${se.dayName} · « ${se.name} » :\n` + se.slots.map((sl, k) => `  ${se.id}-${k + 1}. ${sl.ex.name}${sl.ex.machine ? ' (' + sl.ex.machine + ')' : ''} — ${sl.ex.target || PATTERNS[sl.usedPattern || sl.pattern].muscle} — ${sl.sets} × ${sl.reps}, RIR ${sl.rir.join('/')}, repos ${sl.restSec} s, tempo ${sl.tempo}${sl.star ? ', prioritaire' : ''}${sl.soft ? ', zone fragile : charge modérée' : ''}`).join('\n')).join('\n') +
+  return `PROGRAMME DÉJÀ CONSTRUIT (structure, séries, répétitions et repos fixés par les règles ; les exercices viennent de la bibliothèque). Tu peux remplacer un exercice UNIQUEMENT par l'une des alternatives listées à son emplacement, et seulement si la fiche de l'athlète le justifie (demande explicite, matériel préféré, autre pratique, douleur déclarée, variété par rapport au cycle précédent) : alors tu le déclares dans "swaps". Sans raison, tu ne changes rien.\n` + plan.sessions.map(se => `${se.id} · ${se.dayName} · « ${se.name} » :\n` + se.slots.map((sl, k) => `  ${se.id}-${k + 1}. ${sl.ex.name}${sl.ex.machine ? ' (' + sl.ex.machine + ')' : ''} — ${sl.ex.target || PATTERNS[sl.usedPattern || sl.pattern].muscle} — ${sl.sets} × ${sl.reps}, RIR ${sl.rir.join('/')}, repos ${sl.restSec} s, tempo ${sl.tempo}${sl.star ? ', prioritaire' : ''}${sl.pullMode ? ', tractions mode ' + sl.pullMode : ''}${sl.tech ? ', technique : ' + sl.tech.text : ''}${sl.soft ? ', zone fragile : charge modérée' : ''}${(sl.cands || []).length ? ' · alternatives : ' + sl.cands.map(c => c.id + ' (' + c.name + ')').join(', ') : ''}`).join('\n')).join('\n') +
     `\n\nTon travail : écrire pour ${pr.name || 'cet athlète'} le "rationale" (commence par « Pour ${pr.name || 'toi'} », explique les arbitrages faits pour cette personne et la progression semaine par semaine), la "nutrition" (cibles chiffrées pour son gabarit et son objectif), l'échauffement "warmup", et pour chaque exercice une "note" personnelle d'une phrase (pourquoi lui pour cette personne, ou un point d'attention lié à sa fiche) dans "notes" : {"<id exercice>": "..."}. Pas d'autre champ.${plan.banned.length ? ` Schémas exclus par les zones à ménager : ${plan.banned.map(b => PATTERNS[b] ? PATTERNS[b].label : b).join(' ; ')}.` : ''}`;
 }
 // Programme complet depuis le plan et la bibliothèque : structure, exercices, textes de coach de la fiche, illustration exacte.
@@ -644,9 +673,9 @@ function programFromPlan(plan, profile, startISO, weeksN) {
       const e = sl.ex; const id = se.id + '-' + (k + 1); if (e.illus && ILLUS_IDS.includes(e.illus)) demos[id] = e.illus;
       // exercices chronométrés (gainage, port de charge, finisher) : la consigne remplace la fourchette de répétitions
       const isCond = e.pattern === 'cond'; const sets = isCond ? 1 : sl.sets; const reps = e.timed ? e.timed : sl.reps; const restSec = isCond ? 60 : sl.restSec;
-      return { id, n: k + 1, exId: e.id, name: e.name, machine: e.machine || '', alt: sl.alt ? sl.alt.name : '', altId: sl.alt ? sl.alt.id : '', star: sl.star && !e.timed, sets, reps, timed: !!e.timed, per: e.uni && !/par côté/.test(e.timed || '') ? 'par côté' : '', rir: sl.rir.slice(), tempo: e.timed ? '' : sl.tempo, restSec, restText: restSec >= 60 ? Math.round(restSec / 60 * 10) / 10 + ' min' : restSec + ' s', mode: 'normal', setsText: isCond ? reps : `${sets} × ${reps}`, chargeNote: e.timed ? 'Tenue ou cadence, pas de charge maximale' : `RIR ${sl.rir[0]} → ${sl.rir[1]} → ${sl.rir[2]}`, pattern: sl.usedPattern || sl.pattern, role: sl.role, rule: sl.rule, reco: e.reco || '', why: e.why || '', target: e.target || '', exec: e.exec || '', seek: e.seek || '', note: '', url: 'https://www.google.com/search?tbm=isch&q=' + encodeURIComponent(e.machine || e.name) };
+      return { id, n: k + 1, exId: e.id, name: e.name, machine: e.machine || '', alt: sl.alt ? sl.alt.name : '', altId: sl.alt ? sl.alt.id : '', star: sl.star && !e.timed, sets, reps, timed: !!e.timed, per: e.uni && !/par côté/.test(e.timed || '') ? 'par côté' : '', rir: sl.rir.slice(), tempo: e.timed ? '' : sl.tempo, restSec, tech: (!e.timed && sl.tech) ? sl.tech : null, restText: restSec >= 60 ? Math.round(restSec / 60 * 10) / 10 + ' min' : restSec + ' s', mode: 'normal', setsText: isCond ? reps : `${sets} × ${reps}`, chargeNote: e.timed ? 'Tenue ou cadence, pas de charge maximale' : `RIR ${sl.rir[0]} → ${sl.rir[1]} → ${sl.rir[2]}`, pattern: sl.usedPattern || sl.pattern, role: sl.role, rule: sl.rule, reco: e.reco || '', why: e.why || '', target: e.target || '', exec: e.exec || '', seek: e.seek || '', note: '', url: 'https://www.google.com/search?tbm=isch&q=' + encodeURIComponent(e.machine || e.name) };
     });
-    return { id: se.id, day: se.day, dayName: se.dayName, name: se.name, sub: exercises.slice(0, 2).map(x => x.target.split(',')[0]).join(', '), duration: plan.minutes + ' min', place: '', gtg: false, note: '', exercises };
+    return { id: se.id, day: se.day, dayName: se.dayName, name: se.name, sub: exercises.slice(0, 2).map(x => x.target.split(',')[0]).join(', '), duration: plan.minutes + ' min', place: '', gtg: !!se.gtg, gtgReps: se.gtg ? se.gtgReps : 0, gtgText: se.gtg ? `Tractions 3 × ${se.gtgReps} dans la journée, loin de l'échec (grease the groove)` : '', note: '', exercises };
   });
   prog.demos = demos; prog.demosAt = Date.now();
   prog.promise = buildPromise(plan, profile); prog.recovery = buildRecovery(plan, profile); prog.nutritionBase = buildNutrition(plan, profile);
@@ -728,11 +757,22 @@ function mergeCoachTexts(prog, parsed) {
   if (typeof pd.nutrition === 'string' && pd.nutrition.trim()) out.nutrition = pd.nutrition.trim();
   if (pd.warmup && typeof pd.warmup === 'object') out.warmup = pd.warmup;
   if (typeof pd.cycleName === 'string' && pd.cycleName.trim()) out.cycleName = pd.cycleName.trim().slice(0, 80);
+  // Remplacements proposés par le coach : acceptés seulement parmi les alternatives calculées pour l'emplacement (même schéma, matériel et zones déjà vérifiés).
+  const swaps = Array.isArray(pd.swaps) ? pd.swaps.slice(0, 8) : []; const applied = [];
+  if (swaps.length && out._cands) swaps.forEach(sw => { if (!sw || typeof sw.id !== 'string' || typeof sw.exId !== 'string') return; const ok = (out._cands[sw.id] || []).some(c => c.id === sw.exId); const pick = LIB.BY_ID[sw.exId]; if (!ok || !pick) return;
+    out.sessions.forEach(se => { const e = se.exercises.find(x => x.id === sw.id); if (!e || e.exId === pick.id || se.exercises.some(x => x.exId === pick.id)) return; const prevName = e.name;
+      delete e.machineModel; delete e.machineAlts; Object.assign(e, { exId: pick.id, name: pick.name, machine: pick.machine || '', alt: '', altId: '', reco: pick.reco || '', why: pick.why || '', target: pick.target || '', exec: pick.exec || '', seek: pick.seek || '', url: 'https://www.google.com/search?tbm=isch&q=' + encodeURIComponent(pick.machine || pick.name), swapWhy: String(sw.why || '').slice(0, 200), swappedFrom: prevName });
+      if (pick.timed) { e.reps = pick.timed; e.timed = true; e.setsText = `${e.sets} × ${e.reps}`; e.star = false; e.tempo = ''; e.tech = null; }
+      if (out.demos) { if (pick.illus && ILLUS_IDS.includes(pick.illus)) out.demos[e.id] = pick.illus; else delete out.demos[e.id]; }
+      if (out.parc && PARCS[out.parc] && PARCS[out.parc][pick.id]) { const m = PARCS[out.parc][pick.id]; e.machineModel = m[0]; e.machineAlts = m.slice(1); e.machine = m[0] + (e.machine ? ' · ' + e.machine : ''); e.url = 'https://www.google.com/search?tbm=isch&q=' + encodeURIComponent(m[0]); }
+      applied.push(`${se.name} : ${prevName} → ${pick.name}${sw.why ? ' (' + String(sw.why).slice(0, 160) + ')' : ''}`); }); });
+  if (applied.length) { out.engine = out.engine || {}; out.engine.swaps = applied; out.cycleReason = (out.cycleReason || '') + ' Choix du coach : ' + applied.join(' ; ') + '.'; }
+  delete out._cands;
   const notes = pd.notes && typeof pd.notes === 'object' ? pd.notes : {};
   out.sessions.forEach(se => se.exercises.forEach(e => { if (typeof notes[e.id] === 'string' && notes[e.id].trim()) e.note = notes[e.id].trim().slice(0, 300); }));
   return out;
 }
-const COACH_TEXT_SCHEMA = `Réponds UNIQUEMENT avec un objet JSON valide (pas de texte autour) : {"cycleName":"Mésocycle 1 · <thème> · <mois année>","rationale":"markdown léger, 150 à 250 mots","nutrition":"60 à 120 mots, cibles chiffrées","warmup":{"common":"...","ramp":"..."},"notes":{"s1-1":"une phrase","s1-2":"..."}}`;
+const COACH_TEXT_SCHEMA = `Réponds UNIQUEMENT avec un objet JSON valide (pas de texte autour) : {"cycleName":"Mésocycle 1 · <thème> · <mois année>","rationale":"markdown léger, 150 à 250 mots","nutrition":"60 à 120 mots, cibles chiffrées","warmup":{"common":"...","ramp":"..."},"notes":{"s1-1":"une phrase","s1-2":"..."},"swaps":[{"id":"s2-4","exId":"<identifiant pris dans les alternatives de cet emplacement>","why":"une phrase, liée à la fiche"}]}. "swaps" peut être vide.`;
 
 /* Bilan de fin de cycle, déterministe : on observe l'état réel (assiduité, charges, forme hebdomadaire, douleurs)
    et on en déduit les réglages du cycle suivant. Le programme suivant part de ce qui s'est passé, pas de la fiche seule. */
@@ -901,6 +941,7 @@ async function buildProgram(profile, apiKey, model, seed, review) {
   const start = nextMonday();
   let prog = programFromPlan(plan, profile, start, design.weeks);
   applyRefs(prog, review && review.refs, cycleN);
+  prog._cands = {}; plan.sessions.forEach(se => se.slots.forEach((sl, k) => { prog._cands[se.id + '-' + (k + 1)] = sl.cands || []; }));
   prog.cycleDesign = { weeks: design.weeks, focus: design.focus, focusLabel: design.focusLabel, reasons: design.reasons, testAtEnd: !!design.adjust.test };
   prog.cycleName = String(prog.cycleName || 'Mésocycle').replace(/ · ([^·]+) · /, ' · $1 · ' + design.focusLabel + ' · ');
   prog.cycleReason = (review && review.done ? review.summary + ' ' : '') + 'Ce cycle : ' + design.reasons.join(' ; ') + '.';
@@ -915,7 +956,7 @@ async function buildProgram(profile, apiKey, model, seed, review) {
   // 2. Le coach rédige (rationale, nutrition, échauffement, notes). Borné dans le temps ; s'il échoue, le programme est livré sans ses textes et complété plus tard.
   const sys = systemFor(profile, null);
   const pr = profile || {};
-  const user = `Construis les textes du mésocycle de cet athlète (départ le ${start}). Sois concret et exigeant au niveau déclaré. Le programme doit être visiblement écrit pour ${pr.name || 'cette personne'} : relie chaque choix à ses objectifs (${(pr.goals || []).join(', ') || 'non précisés'}), son niveau (${pr.level || '?'}), son matériel, ses contraintes et ses autres pratiques.${(pr.spec && pr.spec.wishes) ? '\n\nDemande explicite de l\'athlète (à prendre en compte dans le rationale et les notes) : « ' + String(pr.spec.wishes).slice(0, 500) + ' »' : ''}${review && review.done ? '\n\nBilan mesuré du cycle précédent (à commenter dans le rationale, chiffres à reprendre tels quels) : ' + review.summary : ''}\n\n${skeletonText(plan, profile)}\n\n${COACH_TEXT_SCHEMA}`;
+  const user = `Construis les textes du mésocycle de cet athlète (départ le ${start}). Sois concret et exigeant au niveau déclaré. Le programme doit être visiblement écrit pour ${pr.name || 'cette personne'} : relie chaque choix à ses objectifs (${(pr.goals || []).join(', ') || 'non précisés'}), son niveau (${pr.level || '?'}), son matériel, ses contraintes et ses autres pratiques.${(pr.spec && pr.spec.wishes) ? '\n\nDemande explicite de l\'athlète (elle doit se voir dans le programme : remplace des exercices via "swaps" quand une alternative y répond, et explique-le dans le rationale) : « ' + String(pr.spec.wishes).slice(0, 500) + ' »' : ''}${(pr.spec && (pr.spec.wantEx || []).length) ? '\n\nExercices voulus : ' + pr.spec.wantEx.map(id => (LIB.BY_ID[id] || {}).name || id).join(', ') : ''}${(pr.spec && (pr.spec.avoidEx || []).length) ? '\nExercices refusés : ' + pr.spec.avoidEx.map(id => (LIB.BY_ID[id] || {}).name || id).join(', ') : ''}${(pr.spec && pr.spec.perfNote) ? '\nPrécisions sur son niveau : ' + String(pr.spec.perfNote).slice(0, 300) : ''}${review && review.done ? '\n\nBilan mesuré du cycle précédent (à commenter dans le rationale, chiffres à reprendre tels quels) : ' + review.summary : ''}\n\n${skeletonText(plan, profile)}\n\n${COACH_TEXT_SCHEMA}`;
   let lastErr = '';
   for (let attempt = 1; attempt <= 2; attempt++) {
     try {
@@ -924,7 +965,7 @@ async function buildProgram(profile, apiKey, model, seed, review) {
       mergeCoachTexts(prog, parsed); numberCycle(prog); prog.degraded = null; prog.checks.attempts = attempt; return prog;
     } catch (e) { lastErr = String(e && e.message || e); if (/401|refusée/.test(lastErr)) throw e; }
   }
-  prog.degraded = 'coach'; prog.engine.notes.push('textes du coach indisponibles : ' + lastErr.slice(0, 160)); prog.checks.attempts = 2;
+  delete prog._cands; prog.degraded = 'coach'; prog.engine.notes.push('textes du coach indisponibles : ' + lastErr.slice(0, 160)); prog.checks.attempts = 2;
   return prog;
 }
 // Complément différé : un programme livré sans les textes du coach les reçoit dès qu'il répond (appel suivant ou tâche planifiée).
@@ -950,7 +991,8 @@ async function generateProgramFor(uid, meta, apiKey, model) {
         const hist = (await db.collection('users').doc(uid).collection('meta').doc('history').get().catch(() => null)); const hc = hist && hist.exists ? (hist.data().cycles || []) : [];
         if (review) { review.refs = buildRefs(prev, ls.docs.map(d => d.data()), hc); const tm = tests.filter(t => t && t.reps).sort((a, b) => a.date < b.date ? 1 : -1); if (tm.length) review.pullMax = Math.max(Number(tm[0].reps) || 0, tm.length > 1 ? Number(tm[1].reps) || 0 : 0); } }
     } catch (e) { review = null; if (process.env.RITUEL_TEST === '1') console.error('review error', e); }
-    try { prog = await buildProgram(meta.profile, apiKey, model, uid, review); if (meta.profile.cycleCount) prog.cycleCount = meta.profile.cycleCount; }
+    const seedStr = uid + '|' + (meta.profile.cycleCount || 1) + '|' + hashStr(JSON.stringify(meta.profile.spec || {}) + JSON.stringify(meta.profile.goals || []));
+    try { prog = await buildProgram(meta.profile, apiKey, model, seedStr, review); if (meta.profile.cycleCount) prog.cycleCount = meta.profile.cycleCount; }
     catch (e) { await refundQuota(uid, 'program'); throw e; } // un échec ne consomme pas une génération
     // Historique des cycles : le programme remplacé est archivé (dates, exercices par identifiant, bilan) pour que la progression reste lisible d'un cycle à l'autre.
     try { const prev = meta.program && meta.program.generatedAt ? meta.program : null; if (prev) { const hRef = db.collection('users').doc(uid).collection('meta').doc('history'); const h = (await hRef.get()).data() || { cycles: [] }; const exMap = {}; (prev.sessions || []).forEach(se => (se.exercises || []).forEach(e => { exMap[e.id] = { exId: e.exId || null, name: e.name, star: !!e.star }; })); const entry = { cycleName: prev.cycleName || '', generatedAt: prev.generatedAt, from: prev.weeks && prev.weeks[0] ? prev.weeks[0].from : null, to: prev.weeks && prev.weeks.length ? prev.weeks[prev.weeks.length - 1].to : null, weeks: (prev.weeks || []).length, sessions: (prev.sessions || []).map(se => ({ id: se.id, name: se.name, day: se.day })), exMap, review: review ? { adherence: review.adherence, done: review.done, planned: review.planned, progress: review.progress, readiness: review.readiness, prs: review.prs || 0, tests: review.tests || null, weight: review.weight || null, summary: review.summary } : null, design: prev.cycleDesign || null, promise: prev.promise ? { label: prev.promise.label, target: prev.promise.target, metric: prev.promise.metric } : null }; const cycles = (h.cycles || []).filter(c => c.generatedAt !== prev.generatedAt).concat([entry]).slice(-24); await hRef.set({ cycles, updatedAt: Date.now() }); } } catch (e) { console.error('history', e && e.message || e); }
@@ -1228,4 +1270,4 @@ exports.dailyNudge = onSchedule({ schedule: '0 18 * * *', timeZone: 'Europe/Pari
 });
 
 // Banc d'essai local uniquement (jamais exposé en production) : accès au moteur pur pour tester des milliers de profils sans appel réseau.
-if (process.env.RITUEL_TEST === '1') exports._engine = { planStructure, programFromPlan, checkProgram, repairProgram, reviewCycle, goalPatterns, cycleDesign, buildRefs, applyRefs, LIB, LEVEL_CAPS };
+if (process.env.RITUEL_TEST === '1') exports._engine = { planStructure, programFromPlan, checkProgram, repairProgram, reviewCycle, goalPatterns, cycleDesign, buildRefs, applyRefs, mergeCoachTexts, skeletonText, LIB, LEVEL_CAPS };
